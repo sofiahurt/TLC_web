@@ -1,0 +1,139 @@
+<%- include('partials/header', { titulo: 'Domicilios' }) %>
+<%- include('partials/sidebar') %>
+<div id="page-content">
+  <div class="d-flex align-items-center mb-3">
+    <button class="btn btn-sm btn-outline-secondary me-3 d-md-none" id="sidebarToggle"><i class="bi bi-list fs-5"></i></button>
+    <h4 class="mb-0 fw-bold flex-grow-1">Domicilios de Carga/Descarga</h4>
+  </div>
+  <div class="card border-0 shadow-sm mb-3"><div class="card-body py-2">
+    <div class="row align-items-center g-2">
+      <div class="col-auto"><select id="searchCol" class="form-select form-select-sm">
+        <option value="DESCRIPCION">Descripción</option><option value="TIPO">Tipo</option><option value="CIUDAD">Ciudad</option><option value="ID_CLIENTE">ID Cliente</option>
+      </select></div>
+      <div class="col col-md-4"><input type="text" id="searchInput" class="form-control form-select-sm" placeholder="Buscar..."></div>
+      <div class="col-auto ms-auto btn-action-group">
+        <button class="btn btn-sm btn-success" onclick="openAdd()"><i class="bi bi-plus-lg"></i> Agregar</button>
+        <button class="btn btn-sm btn-primary" data-requires-selection disabled onclick="openEdit()"><i class="bi bi-pencil"></i> Editar</button>
+        <button class="btn btn-sm btn-danger" data-requires-selection disabled onclick="confirmDelete()"><i class="bi bi-trash"></i> Eliminar</button>
+      </div>
+    </div>
+  </div></div>
+  <div class="card border-0 shadow-sm"><div class="card-body p-0">
+    <div class="table-responsive"><table class="table table-hover table-sm mb-0">
+      <thead class="table-dark"><tr>
+        <th data-sort="ID_CLIENTE" style="width:90px">ID Cliente <span class="sort-icon"></span></th>
+        <th data-sort="ID_DOMICILIO" style="width:70px">ID Dom. <span class="sort-icon"></span></th>
+        <th data-sort="DESCRIPCION">Descripción <span class="sort-icon"></span></th>
+        <th data-sort="TIPO" style="width:90px">Tipo <span class="sort-icon"></span></th>
+        <th data-sort="CIUDAD">Ciudad <span class="sort-icon"></span></th>
+        <th data-sort="ESTADO">Estado <span class="sort-icon"></span></th>
+      </tr></thead>
+      <tbody id="tableBody"></tbody>
+    </table></div>
+  </div>
+  <div class="card-footer bg-white d-flex align-items-center justify-content-between py-2">
+    <span class="page-info" id="pageInfo"></span>
+    <div id="pagination">
+      <button class="btn btn-sm btn-outline-secondary" data-action="prev"><i class="bi bi-chevron-left"></i> Anterior</button>
+      <button class="btn btn-sm btn-outline-secondary" data-action="next">Siguiente <i class="bi bi-chevron-right"></i></button>
+    </div>
+  </div></div>
+</div>
+
+<div class="modal fade" id="frmModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-xl">
+  <div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title" id="frmTitle">Domicilio</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <div id="frmError" class="alert alert-danger d-none py-2 small"></div>
+      <div class="row g-3">
+        <div class="col-md-5">
+          <label class="form-label fw-semibold">Cliente <span class="text-danger">*</span></label>
+          <div class="input-group">
+            <input type="hidden" id="f_ID_CLIENTE">
+            <input type="text" id="f_NOMBRECOMUN" class="form-control" placeholder="Seleccionar cliente..." readonly>
+            <button class="btn btn-outline-secondary" type="button" onclick="openLookupCli()"><i class="bi bi-search"></i></button>
+          </div>
+        </div>
+        <div class="col-md-2"><label class="form-label fw-semibold">ID Dom. <span class="text-danger">*</span></label><input type="number" id="f_ID_DOMICILIO" class="form-control"></div>
+        <div class="col-md-2"><label class="form-label fw-semibold">Tipo</label><input type="text" id="f_TIPO" class="form-control" maxlength="10"></div>
+        <div class="col-md-3"><label class="form-label fw-semibold">Nac/Inter</label><input type="text" id="f_NACINTER" class="form-control" maxlength="15"></div>
+        <div class="col-md-6"><label class="form-label fw-semibold">Descripción</label><input type="text" id="f_DESCRIPCION" class="form-control" maxlength="80"></div>
+        <div class="col-md-4"><label class="form-label fw-semibold">Calle</label><input type="text" id="f_CALLE" class="form-control" maxlength="100"></div>
+        <div class="col-md-2"><label class="form-label fw-semibold">No. Ext</label><input type="text" id="f_NOEXT" class="form-control" maxlength="20"></div>
+        <div class="col-md-2"><label class="form-label fw-semibold">No. Int</label><input type="text" id="f_NOINT" class="form-control" maxlength="20"></div>
+        <div class="col-md-4">
+          <label class="form-label fw-semibold">Colonia</label>
+          <div class="input-group">
+            <input type="hidden" id="f_ID_COLONIA">
+            <input type="text" id="f_COLONIA" class="form-control" maxlength="80" placeholder="Seleccionar..." readonly>
+            <button class="btn btn-outline-secondary" type="button" onclick="openLookupCol()"><i class="bi bi-search"></i></button>
+          </div>
+        </div>
+        <div class="col-md-2"><label class="form-label fw-semibold">C.P.</label><input type="text" id="f_CP" class="form-control" maxlength="6" readonly></div>
+        <div class="col-md-3"><label class="form-label fw-semibold">Ciudad</label><input type="text" id="f_CIUDAD" class="form-control" maxlength="80"></div>
+        <div class="col-md-3"><label class="form-label fw-semibold">Municipio</label><input type="text" id="f_MUNICIPIO" class="form-control" maxlength="40"></div>
+        <div class="col-md-2"><label class="form-label fw-semibold">Estado</label><input type="text" id="f_ESTADO" class="form-control" maxlength="30"></div>
+        <div class="col-md-2"><label class="form-label fw-semibold">País</label><input type="text" id="f_PAIS" class="form-control" maxlength="20"></div>
+        <div class="col-md-2"><label class="form-label fw-semibold">Teléfono</label><input type="text" id="f_TELEFONO" class="form-control" maxlength="15"></div>
+        <div class="col-md-4"><label class="form-label fw-semibold">Contacto</label><input type="text" id="f_CONTACTO" class="form-control" maxlength="150"></div>
+        <div class="col-md-8"><label class="form-label fw-semibold">Observaciones</label><input type="text" id="f_OBSERVACIONES" class="form-control" maxlength="255"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" data-bs-dismiss="modal"><i class="bi bi-x-lg"></i> Cancelar</button>
+      <button class="btn btn-primary" onclick="guardar()"><i class="bi bi-floppy"></i> Guardar</button>
+    </div>
+  </div>
+</div></div>
+
+<!-- Lookup Clientes -->
+<div class="modal fade modal-lookup" id="lookupCli" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-lg">
+  <div class="modal-content">
+    <div class="modal-header py-2"><h6 class="modal-title">Seleccionar Cliente</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <input type="text" id="lkCliQ" class="form-control form-control-sm mb-2" placeholder="Buscar...">
+      <table class="table table-hover table-sm"><thead class="table-secondary"><tr><th>ID</th><th>Nombre</th><th>RFC</th></tr></thead><tbody id="lkCliBody"></tbody></table>
+      <div class="d-flex justify-content-between align-items-center"><span id="lkCliInfo" class="small text-muted"></span><div><button class="btn btn-sm btn-outline-secondary" id="lkCliPrev">‹</button> <button class="btn btn-sm btn-outline-secondary" id="lkCliNext">›</button></div></div>
+    </div>
+  </div>
+</div></div>
+
+<!-- Lookup Colonias -->
+<div class="modal fade modal-lookup" id="lookupCol" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-lg">
+  <div class="modal-content">
+    <div class="modal-header py-2"><h6 class="modal-title">Seleccionar Colonia</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <input type="text" id="lkColQ" class="form-control form-control-sm mb-2" placeholder="Buscar colonia o C.P...">
+      <table class="table table-hover table-sm"><thead class="table-secondary"><tr><th>ID</th><th>Colonia</th><th>C.P.</th></tr></thead><tbody id="lkColBody"></tbody></table>
+      <div class="d-flex justify-content-between align-items-center"><span id="lkColInfo" class="small text-muted"></span><div><button class="btn btn-sm btn-outline-secondary" id="lkColPrev">‹</button> <button class="btn btn-sm btn-outline-secondary" id="lkColNext">›</button></div></div>
+    </div>
+  </div>
+</div></div>
+
+<%- include('partials/footer') %>
+<script>
+const browse=initBrowse({searchInput:document.getElementById('searchInput'),searchColumn:document.getElementById('searchCol'),tableBody:document.getElementById('tableBody'),paginationEl:document.getElementById('pagination'),infoEl:document.getElementById('pageInfo'),fetchUrl:'/domicilios/data'});
+let _mode='add';const modal=new bootstrap.Modal(document.getElementById('frmModal'));
+const flds=['ID_DOMICILIO','TIPO','NACINTER','DESCRIPCION','CALLE','NOEXT','NOINT','CIUDAD','MUNICIPIO','ESTADO','PAIS','CP','TELEFONO','CONTACTO','OBSERVACIONES'];
+function clearForm(){flds.forEach(f=>document.getElementById('f_'+f).value='');document.getElementById('f_ID_CLIENTE').value='';document.getElementById('f_NOMBRECOMUN').value='';document.getElementById('f_COLONIA').value='';document.getElementById('f_ID_COLONIA').value='';}
+function openAdd(){_mode='add';document.getElementById('frmTitle').textContent='Nuevo Domicilio';clearForm();document.getElementById('f_ID_DOMICILIO').readOnly=false;document.getElementById('frmError').classList.add('d-none');modal.show();}
+function openEdit(){if(!window._selectedRow)return;_mode='edit';const r=window._selectedRow;document.getElementById('frmTitle').textContent='Editar Domicilio';clearForm();document.getElementById('f_ID_CLIENTE').value=r.ID_CLIENTE;document.getElementById('f_ID_DOMICILIO').value=r.ID_DOMICILIO;document.getElementById('f_DESCRIPCION').value=r.DESCRIPCION||'';document.getElementById('f_TIPO').value=r.TIPO||'';document.getElementById('f_CIUDAD').value=r.CIUDAD||'';document.getElementById('f_ESTADO').value=r.ESTADO||'';document.getElementById('f_COLONIA').value=r.COLONIA||'';document.getElementById('f_CP').value=r.CP||'';document.getElementById('f_ID_COLONIA').value=r.ID_COLONIA||'';document.getElementById('f_CALLE').value=r.CALLE||'';document.getElementById('f_NOEXT').value=r.NOEXT||'';document.getElementById('f_NOINT').value=r.NOINT||'';document.getElementById('f_MUNICIPIO').value=r.MUNICIPIO||'';document.getElementById('f_ESTADO').value=r.ESTADO||'';document.getElementById('f_PAIS').value=r.PAIS||'';document.getElementById('f_OBSERVACIONES').value=r.OBSERVACIONES||'';document.getElementById('f_ID_DOMICILIO').readOnly=true;document.getElementById('frmError').classList.add('d-none');modal.show();}
+function guardar(){const idcli=document.getElementById('f_ID_CLIENTE').value,iddom=document.getElementById('f_ID_DOMICILIO').value,errEl=document.getElementById('frmError');if(!idcli||!iddom){errEl.textContent='Cliente e ID de domicilio son requeridos.';errEl.classList.remove('d-none');return;}const body={_mode,ID_CLIENTE:idcli,ID_DOMICILIO:iddom,ID_COLONIA:document.getElementById('f_ID_COLONIA').value,COLONIA:document.getElementById('f_COLONIA').value};flds.slice(1).forEach(f=>body[f]=document.getElementById('f_'+f).value);fetch('/domicilios/guardar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json()).then(d=>{if(d.error){errEl.textContent=d.error;errEl.classList.remove('d-none');return;}modal.hide();browse.load();});}
+function confirmDelete(){if(!window._selectedRow)return;if(!confirm('¿Eliminar este domicilio?'))return;fetch('/domicilios/eliminar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ID_CLIENTE:window._selectedRow.ID_CLIENTE,ID_DOMICILIO:window._selectedRow.ID_DOMICILIO})}).then(r=>r.json()).then(d=>{if(!d.error)browse.load();});}
+// Lookups
+let lkCliPage=1,lkColPage=1;
+const lkCliModal=new bootstrap.Modal(document.getElementById('lookupCli'));
+const lkColModal=new bootstrap.Modal(document.getElementById('lookupCol'));
+function openLookupCli(){lkCliPage=1;document.getElementById('lkCliQ').value='';loadLkCli();lkCliModal.show();}
+function loadLkCli(){fetch(`/clientes/lookup?q=${encodeURIComponent(document.getElementById('lkCliQ').value)}&page=${lkCliPage}`).then(r=>r.json()).then(d=>{document.getElementById('lkCliBody').innerHTML=d.rows.map(r=>`<tr data-id="${r.ID_CLIENTE}" data-nom="${(r.NOMBRECOMUN||'').trim()}" style="cursor:pointer"><td>${r.ID_CLIENTE}</td><td>${(r.NOMBRECOMUN||'').trim()}</td><td>${(r.RFC||'').trim()}</td></tr>`).join('');document.getElementById('lkCliInfo').textContent=`Pág ${d.page}/${d.totalPages}`;});}
+document.getElementById('lkCliQ').addEventListener('input',debounce(()=>{lkCliPage=1;loadLkCli();},300));
+document.getElementById('lkCliPrev').addEventListener('click',()=>{if(lkCliPage>1){lkCliPage--;loadLkCli();}});
+document.getElementById('lkCliNext').addEventListener('click',()=>{lkCliPage++;loadLkCli();});
+document.getElementById('lkCliBody').addEventListener('click',e=>{const row=e.target.closest('tr[data-id]');if(!row)return;document.getElementById('f_ID_CLIENTE').value=row.dataset.id;document.getElementById('f_NOMBRECOMUN').value=row.dataset.nom;lkCliModal.hide();});
+function openLookupCol(){lkColPage=1;document.getElementById('lkColQ').value='';loadLkCol();lkColModal.show();}
+function loadLkCol(){fetch(`/clientes/lookup/colonias?q=${encodeURIComponent(document.getElementById('lkColQ').value)}&page=${lkColPage}`).then(r=>r.json()).then(d=>{document.getElementById('lkColBody').innerHTML=d.rows.map(r=>`<tr data-id="${r.ID_COLONIA}" data-col="${(r.COLONIA||'').trim()}" data-cp="${(r.CP||'').trim()}" style="cursor:pointer"><td>${r.ID_COLONIA}</td><td>${(r.COLONIA||'').trim()}</td><td>${(r.CP||'').trim()}</td></tr>`).join('');document.getElementById('lkColInfo').textContent=`Pág ${d.page}/${d.totalPages}`;});}
+document.getElementById('lkColQ').addEventListener('input',debounce(()=>{lkColPage=1;loadLkCol();},300));
+document.getElementById('lkColPrev').addEventListener('click',()=>{if(lkColPage>1){lkColPage--;loadLkCol();}});
+document.getElementById('lkColNext').addEventListener('click',()=>{lkColPage++;loadLkCol();});
+document.getElementById('lkColBody').addEventListener('click',e=>{const row=e.target.closest('tr[data-id]');if(!row)return;document.getElementById('f_ID_COLONIA').value=row.dataset.id;document.getElementById('f_COLONIA').value=row.dataset.col;document.getElementById('f_CP').value=row.dataset.cp;lkColModal.hide();});
+</script>

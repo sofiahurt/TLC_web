@@ -1,0 +1,72 @@
+<%- include('partials/header', { titulo: 'Productos y Servicios' }) %>
+<%- include('partials/sidebar') %>
+<div id="page-content">
+  <div class="d-flex align-items-center mb-3">
+    <button class="btn btn-sm btn-outline-secondary me-3 d-md-none" id="sidebarToggle"><i class="bi bi-list fs-5"></i></button>
+    <h4 class="mb-0 fw-bold flex-grow-1">Productos y Servicios</h4>
+  </div>
+  <div class="card border-0 shadow-sm mb-3"><div class="card-body py-2">
+    <div class="row align-items-center g-2">
+      <div class="col-auto"><select id="searchCol" class="form-select form-select-sm">
+        <option value="ProdServ">Descripción</option><option value="Clave">Clave</option><option value="Unidad">Unidad</option>
+      </select></div>
+      <div class="col col-md-4"><input type="text" id="searchInput" class="form-control form-select-sm" placeholder="Buscar..."></div>
+      <div class="col-auto ms-auto btn-action-group">
+        <button class="btn btn-sm btn-success" onclick="openAdd()"><i class="bi bi-plus-lg"></i> Agregar</button>
+        <button class="btn btn-sm btn-primary" data-requires-selection disabled onclick="openEdit()"><i class="bi bi-pencil"></i> Editar</button>
+        <button class="btn btn-sm btn-danger" data-requires-selection disabled onclick="confirmDelete()"><i class="bi bi-trash"></i> Eliminar</button>
+      </div>
+    </div>
+  </div></div>
+  <div class="card border-0 shadow-sm"><div class="card-body p-0">
+    <div class="table-responsive"><table class="table table-hover table-sm mb-0">
+      <thead class="table-dark"><tr>
+        <th data-sort="Clave" style="width:120px">Clave <span class="sort-icon"></span></th>
+        <th data-sort="ProdServ">Descripción <span class="sort-icon"></span></th>
+        <th data-sort="Descripcion_SAT">Desc. SAT <span class="sort-icon"></span></th>
+        <th data-sort="Unidad" style="width:120px">Unidad <span class="sort-icon"></span></th>
+        <th data-sort="Precio" style="width:100px">Precio <span class="sort-icon"></span></th>
+      </tr></thead>
+      <tbody id="tableBody"></tbody>
+    </table></div>
+  </div>
+  <div class="card-footer bg-white d-flex align-items-center justify-content-between py-2">
+    <span class="page-info" id="pageInfo"></span>
+    <div id="pagination">
+      <button class="btn btn-sm btn-outline-secondary" data-action="prev"><i class="bi bi-chevron-left"></i> Anterior</button>
+      <button class="btn btn-sm btn-outline-secondary" data-action="next">Siguiente <i class="bi bi-chevron-right"></i></button>
+    </div>
+  </div></div>
+</div>
+<div class="modal fade" id="frmModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-lg">
+  <div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title" id="frmTitle">Producto/Servicio</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <div id="frmError" class="alert alert-danger d-none py-2 small"></div>
+      <div class="row g-3">
+        <div class="col-md-4"><label class="form-label fw-semibold">Clave <span class="text-danger">*</span></label><input type="text" id="f_Clave" class="form-control" maxlength="30"></div>
+        <div class="col-md-8"><label class="form-label fw-semibold">Descripción</label><input type="text" id="f_ProdServ" class="form-control" maxlength="100"></div>
+        <div class="col-md-4"><label class="form-label fw-semibold">c_ProdServ (SAT)</label><input type="text" id="f_c_ProdServ" class="form-control" maxlength="20"></div>
+        <div class="col-md-8"><label class="form-label fw-semibold">Desc. SAT</label><input type="text" id="f_Descripcion_SAT" class="form-control" maxlength="100"></div>
+        <div class="col-md-3"><label class="form-label fw-semibold">c_Unidad</label><input type="text" id="f_c_Unidad" class="form-control" maxlength="5"></div>
+        <div class="col-md-5"><label class="form-label fw-semibold">Unidad</label><input type="text" id="f_Unidad" class="form-control" maxlength="100"></div>
+        <div class="col-md-4"><label class="form-label fw-semibold">Precio</label><input type="number" id="f_Precio" class="form-control" step="0.01"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" data-bs-dismiss="modal"><i class="bi bi-x-lg"></i> Cancelar</button>
+      <button class="btn btn-primary" onclick="guardar()"><i class="bi bi-floppy"></i> Guardar</button>
+    </div>
+  </div>
+</div></div>
+<%- include('partials/footer') %>
+<script>
+const browse=initBrowse({searchInput:document.getElementById('searchInput'),searchColumn:document.getElementById('searchCol'),tableBody:document.getElementById('tableBody'),paginationEl:document.getElementById('pagination'),infoEl:document.getElementById('pageInfo'),fetchUrl:'/prodserv/data'});
+let _mode='add';const modal=new bootstrap.Modal(document.getElementById('frmModal'));
+const fields=['Clave','ProdServ','c_ProdServ','Descripcion_SAT','c_Unidad','Unidad','Precio'];
+function clearForm(){fields.forEach(f=>document.getElementById('f_'+f).value='');}
+function openAdd(){_mode='add';document.getElementById('frmTitle').textContent='Nuevo Producto/Servicio';clearForm();document.getElementById('f_Clave').readOnly=false;document.getElementById('frmError').classList.add('d-none');modal.show();}
+function openEdit(){if(!window._selectedRow)return;_mode='edit';document.getElementById('frmTitle').textContent='Editar Producto/Servicio';const r=window._selectedRow;['Clave','ProdServ','Descripcion_SAT','Unidad','Precio'].forEach(f=>document.getElementById('f_'+f).value=r[f]||'');document.getElementById('f_Clave').readOnly=true;document.getElementById('frmError').classList.add('d-none');modal.show();}
+function guardar(){const clave=document.getElementById('f_Clave').value.trim(),errEl=document.getElementById('frmError');if(!clave){errEl.textContent='Clave es requerida.';errEl.classList.remove('d-none');return;}const body={_mode};fields.forEach(f=>body[f]=document.getElementById('f_'+f).value.trim());fetch('/prodserv/guardar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json()).then(d=>{if(d.error){errEl.textContent=d.error;errEl.classList.remove('d-none');return;}modal.hide();browse.load();});}
+function confirmDelete(){if(!window._selectedRow)return;if(!confirm(`¿Eliminar "${window._selectedRow.Clave}"?`))return;fetch('/prodserv/eliminar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({Clave:window._selectedRow.Clave})}).then(r=>r.json()).then(d=>{if(!d.error)browse.load();});}
+</script>

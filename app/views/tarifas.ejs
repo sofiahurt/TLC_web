@@ -1,0 +1,142 @@
+<%- include('partials/header', { titulo: 'Tarifas' }) %>
+<%- include('partials/sidebar') %>
+<div id="page-content">
+  <div class="d-flex align-items-center mb-3">
+    <button class="btn btn-sm btn-outline-secondary me-3 d-md-none" id="sidebarToggle"><i class="bi bi-list fs-5"></i></button>
+    <h4 class="mb-0 fw-bold flex-grow-1">Tarifas</h4>
+  </div>
+  <div class="card border-0 shadow-sm mb-3"><div class="card-body py-2">
+    <div class="row align-items-center g-2">
+      <div class="col-auto"><select id="searchCol" class="form-select form-select-sm">
+        <option value="CDORIGEN">Origen</option><option value="CDDESTINO">Destino</option><option value="FLETE">Tipo Flete</option><option value="NOMBRECOMUNCLI">Cliente</option><option value="NOMBRECOMUNTRANS">Transportista</option>
+      </select></div>
+      <div class="col col-md-4"><input type="text" id="searchInput" class="form-control form-select-sm" placeholder="Buscar..."></div>
+      <div class="col-auto ms-auto btn-action-group">
+        <button class="btn btn-sm btn-success" onclick="openAdd()"><i class="bi bi-plus-lg"></i> Agregar</button>
+        <button class="btn btn-sm btn-primary" data-requires-selection disabled onclick="openEdit()"><i class="bi bi-pencil"></i> Editar</button>
+        <button class="btn btn-sm btn-danger" data-requires-selection disabled onclick="confirmDelete()"><i class="bi bi-trash"></i> Eliminar</button>
+      </div>
+    </div>
+  </div></div>
+  <div class="card border-0 shadow-sm"><div class="card-body p-0">
+    <div class="table-responsive"><table class="table table-hover table-sm mb-0">
+      <thead class="table-dark"><tr>
+        <th data-sort="ID_TARIFA" style="width:70px">ID <span class="sort-icon"></span></th>
+        <th data-sort="CDORIGEN">Origen <span class="sort-icon"></span></th>
+        <th data-sort="CDDESTINO">Destino <span class="sort-icon"></span></th>
+        <th data-sort="FLETE">Flete <span class="sort-icon"></span></th>
+        <th data-sort="NOMBRECOMUNCLI">Cliente <span class="sort-icon"></span></th>
+        <th data-sort="NOMBRECOMUNTRANS">Transportista <span class="sort-icon"></span></th>
+        <th data-sort="COSTO" style="width:80px">Costo <span class="sort-icon"></span></th>
+        <th data-sort="VENTA" style="width:80px">Venta <span class="sort-icon"></span></th>
+      </tr></thead>
+      <tbody id="tableBody"></tbody>
+    </table></div>
+  </div>
+  <div class="card-footer bg-white d-flex align-items-center justify-content-between py-2">
+    <span class="page-info" id="pageInfo"></span>
+    <div id="pagination">
+      <button class="btn btn-sm btn-outline-secondary" data-action="prev"><i class="bi bi-chevron-left"></i> Anterior</button>
+      <button class="btn btn-sm btn-outline-secondary" data-action="next">Siguiente <i class="bi bi-chevron-right"></i></button>
+    </div>
+  </div></div>
+</div>
+
+<!-- Modal Formulario -->
+<div class="modal fade" id="frmModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-xl">
+  <div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title" id="frmTitle">Tarifa</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body" style="max-height:75vh;overflow-y:auto">
+      <div id="frmError" class="alert alert-danger d-none py-2 small"></div>
+      <div class="row g-3">
+        <div class="col-md-2"><label class="form-label fw-semibold">ID <span class="text-danger">*</span></label><input type="number" id="f_ID_TARIFA" class="form-control"></div>
+        <!-- Origen -->
+        <div class="col-md-4">
+          <label class="form-label fw-semibold">Ciudad Origen</label>
+          <div class="input-group"><input type="hidden" id="f_ID_CIUDADORIGEN"><input type="text" id="f_CDORIGEN" class="form-control" placeholder="Seleccionar..." readonly><button class="btn btn-outline-secondary" type="button" onclick="openLk('origen')"><i class="bi bi-search"></i></button></div>
+        </div>
+        <!-- Destino -->
+        <div class="col-md-4">
+          <label class="form-label fw-semibold">Ciudad Destino</label>
+          <div class="input-group"><input type="hidden" id="f_ID_CIUDADDESTINO"><input type="text" id="f_CDDESTINO" class="form-control" placeholder="Seleccionar..." readonly><button class="btn btn-outline-secondary" type="button" onclick="openLk('destino')"><i class="bi bi-search"></i></button></div>
+        </div>
+        <!-- Tipo Flete -->
+        <div class="col-md-4">
+          <label class="form-label fw-semibold">Tipo de Flete</label>
+          <div class="input-group"><input type="hidden" id="f_ID_TIPOFLETE"><input type="text" id="f_FLETE" class="form-control" placeholder="Seleccionar..." readonly><button class="btn btn-outline-secondary" type="button" onclick="openLk('tipoflete')"><i class="bi bi-search"></i></button></div>
+        </div>
+        <!-- Transportista -->
+        <div class="col-md-5">
+          <label class="form-label fw-semibold">Transportista</label>
+          <div class="input-group"><input type="hidden" id="f_ID_TRANSPORTISTA"><input type="text" id="f_NOMBRECOMUNTRANS" class="form-control" placeholder="Seleccionar..." readonly><button class="btn btn-outline-secondary" type="button" onclick="openLk('transport')"><i class="bi bi-search"></i></button></div>
+        </div>
+        <!-- Cliente -->
+        <div class="col-md-5">
+          <label class="form-label fw-semibold">Cliente</label>
+          <div class="input-group"><input type="hidden" id="f_ID_CLIENTE"><input type="text" id="f_NOMBRECOMUNCLI" class="form-control" placeholder="Seleccionar..." readonly><button class="btn btn-outline-secondary" type="button" onclick="openLk('clientes')"><i class="bi bi-search"></i></button></div>
+        </div>
+        <div class="col-md-6"><label class="form-label fw-semibold">Descripción Flete</label><input type="text" id="f_DESFLETE" class="form-control" maxlength="80"></div>
+        <div class="col-md-2"><label class="form-label fw-semibold">Costo</label><input type="number" id="f_COSTO" class="form-control" step="0.01"></div>
+        <div class="col-md-2"><label class="form-label fw-semibold">Venta</label><input type="number" id="f_VENTA" class="form-control" step="0.01"></div>
+        <div class="col-md-2"><label class="form-label fw-semibold">Rep. Cliente</label><input type="number" id="f_REPCLIENTE" class="form-control" step="0.01"></div>
+        <div class="col-md-2"><label class="form-label fw-semibold">Rep. Trans.</label><input type="number" id="f_REPTRANS" class="form-control" step="0.01"></div>
+        <div class="col-md-2"><label class="form-label fw-semibold">Mon. Compra</label><input type="text" id="f_MONCOMPRA" class="form-control" maxlength="10"></div>
+        <div class="col-md-2"><label class="form-label fw-semibold">Mon. Venta</label><input type="text" id="f_MONVENTA" class="form-control" maxlength="10"></div>
+        <div class="col-md-2"><label class="form-label fw-semibold">Tipo Cambio</label><input type="number" id="f_TIPOCAMBIO" class="form-control" step="0.0001"></div>
+        <div class="col-md-2"><label class="form-label fw-semibold">Kilómetros</label><input type="number" id="f_KILOMETROS" class="form-control"></div>
+        <div class="col-md-4"><label class="form-label fw-semibold">Realizó</label><input type="text" id="f_REALIZO" class="form-control" maxlength="100"></div>
+        <div class="col-md-2 d-flex align-items-end pb-1"><div class="form-check"><input type="checkbox" id="f_FLAGOCULTAR" class="form-check-input"><label class="form-check-label" for="f_FLAGOCULTAR">Ocultar</label></div></div>
+        <div class="col-md-2 d-flex align-items-end pb-1"><div class="form-check"><input type="checkbox" id="f_FLAGIVA" class="form-check-input"><label class="form-check-label" for="f_FLAGIVA">IVA</label></div></div>
+        <div class="col-md-2 d-flex align-items-end pb-1"><div class="form-check"><input type="checkbox" id="f_FLAGRET" class="form-check-input"><label class="form-check-label" for="f_FLAGRET">Retención</label></div></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" data-bs-dismiss="modal"><i class="bi bi-x-lg"></i> Cancelar</button>
+      <button class="btn btn-primary" onclick="guardar()"><i class="bi bi-floppy"></i> Guardar</button>
+    </div>
+  </div>
+</div></div>
+
+<!-- Lookup genérico -->
+<div class="modal fade modal-lookup" id="lookupGen" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-lg">
+  <div class="modal-content">
+    <div class="modal-header py-2"><h6 class="modal-title" id="lkGenTitle">Seleccionar</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <input type="text" id="lkGenQ" class="form-control form-control-sm mb-2" placeholder="Buscar...">
+      <table class="table table-hover table-sm"><thead class="table-secondary"><tr id="lkGenHead"></tr></thead><tbody id="lkGenBody"></tbody></table>
+      <div class="d-flex justify-content-between align-items-center"><span id="lkGenInfo" class="small text-muted"></span><div><button class="btn btn-sm btn-outline-secondary" id="lkGenPrev">‹</button> <button class="btn btn-sm btn-outline-secondary" id="lkGenNext">›</button></div></div>
+    </div>
+  </div>
+</div></div>
+
+<%- include('partials/footer') %>
+<script>
+const browse=initBrowse({searchInput:document.getElementById('searchInput'),searchColumn:document.getElementById('searchCol'),tableBody:document.getElementById('tableBody'),paginationEl:document.getElementById('pagination'),infoEl:document.getElementById('pageInfo'),fetchUrl:'/tarifas/data'});
+let _mode='add';const modal=new bootstrap.Modal(document.getElementById('frmModal'));
+const numFlds=['ID_TARIFA','COSTO','VENTA','REPCLIENTE','REPTRANS','TIPOCAMBIO','KILOMETROS'];
+const txtFlds=['DESFLETE','MONCOMPRA','MONVENTA','REALIZO'];
+const chkFlds=['FLAGOCULTAR','FLAGIVA','FLAGRET'];
+function clearForm(){[...numFlds,...txtFlds].forEach(f=>{const el=document.getElementById('f_'+f);if(el)el.value='';});chkFlds.forEach(f=>document.getElementById('f_'+f).checked=false);['f_ID_CIUDADORIGEN','f_ID_CIUDADDESTINO','f_ID_TIPOFLETE','f_ID_TRANSPORTISTA','f_ID_CLIENTE'].forEach(f=>document.getElementById(f).value='');['f_CDORIGEN','f_CDDESTINO','f_FLETE','f_NOMBRECOMUNTRANS','f_NOMBRECOMUNCLI'].forEach(f=>document.getElementById(f).value='');}
+function openAdd(){_mode='add';document.getElementById('frmTitle').textContent='Nueva Tarifa';clearForm();document.getElementById('f_ID_TARIFA').readOnly=false;document.getElementById('frmError').classList.add('d-none');modal.show();}
+function openEdit(){if(!window._selectedRow)return;_mode='edit';const r=window._selectedRow;document.getElementById('frmTitle').textContent='Editar Tarifa';clearForm();document.getElementById('f_ID_TARIFA').value=r.ID_TARIFA;document.getElementById('f_CDORIGEN').value=r.CDORIGEN||'';document.getElementById('f_ID_CIUDADORIGEN').value=r.ID_CIUDADORIGEN||'';document.getElementById('f_CDDESTINO').value=r.CDDESTINO||'';document.getElementById('f_ID_CIUDADDESTINO').value=r.ID_CIUDADDESTINO||'';document.getElementById('f_FLETE').value=r.FLETE||'';document.getElementById('f_ID_TIPOFLETE').value=r.ID_TIPOFLETE||'';document.getElementById('f_NOMBRECOMUNTRANS').value=r.NOMBRECOMUNTRANS||'';document.getElementById('f_ID_TRANSPORTISTA').value=r.ID_TRANSPORTISTA||'';document.getElementById('f_NOMBRECOMUNCLI').value=r.NOMBRECOMUNCLI||'';document.getElementById('f_ID_CLIENTE').value=r.ID_CLIENTE||'';document.getElementById('f_COSTO').value=r.COSTO||'';document.getElementById('f_VENTA').value=r.VENTA||'';document.getElementById('f_DESFLETE').value=r.DESFLETE||'';document.getElementById('f_MONCOMPRA').value=r.MONCOMPRA||'';document.getElementById('f_MONVENTA').value=r.MONVENTA||'';document.getElementById('f_TIPOCAMBIO').value=r.TIPOCAMBIO||'';document.getElementById('f_KILOMETROS').value=r.KILOMETROS||'';document.getElementById('f_FLAGOCULTAR').checked=r.FLAGOCULTAR=='1';document.getElementById('f_FLAGIVA').checked=r.FLAGIVA=='1';document.getElementById('f_FLAGRET').checked=r.FLAGRET=='1';document.getElementById('f_ID_TARIFA').readOnly=true;document.getElementById('frmError').classList.add('d-none');modal.show();}
+function getBody(){const b={_mode};numFlds.forEach(f=>{const el=document.getElementById('f_'+f);if(el)b[f]=el.value;});txtFlds.forEach(f=>{const el=document.getElementById('f_'+f);if(el)b[f]=el.value;});chkFlds.forEach(f=>b[f]=document.getElementById('f_'+f).checked?1:0);b.ID_CIUDADORIGEN=document.getElementById('f_ID_CIUDADORIGEN').value;b.ID_CIUDADDESTINO=document.getElementById('f_ID_CIUDADDESTINO').value;b.ID_TIPOFLETE=document.getElementById('f_ID_TIPOFLETE').value;b.ID_TRANSPORTISTA=document.getElementById('f_ID_TRANSPORTISTA').value;b.ID_CLIENTE=document.getElementById('f_ID_CLIENTE').value;b.CDORIGEN=document.getElementById('f_CDORIGEN').value;b.CDDESTINO=document.getElementById('f_CDDESTINO').value;b.FLETE=document.getElementById('f_FLETE').value;b.NOMBRECOMUNTRANS=document.getElementById('f_NOMBRECOMUNTRANS').value;b.NOMBRECOMUNCLI=document.getElementById('f_NOMBRECOMUNCLI').value;return b;}
+function guardar(){const id=document.getElementById('f_ID_TARIFA').value,errEl=document.getElementById('frmError');if(!id){errEl.textContent='ID es requerido.';errEl.classList.remove('d-none');return;}fetch('/tarifas/guardar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(getBody())}).then(r=>r.json()).then(d=>{if(d.error){errEl.textContent=d.error;errEl.classList.remove('d-none');return;}modal.hide();browse.load();});}
+function confirmDelete(){if(!window._selectedRow)return;if(!confirm('¿Eliminar esta tarifa?'))return;fetch('/tarifas/eliminar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ID_TARIFA:window._selectedRow.ID_TARIFA})}).then(r=>r.json()).then(d=>{if(!d.error)browse.load();});}
+
+// Lookup genérico
+const lkCfg={
+  origen:{url:'/tarifas/lookup/ciudades',title:'Seleccionar Ciudad Origen',heads:['ID','Ciudad'],row:r=>`<tr data-id="${r.ID_CIUDAD}" data-desc="${(r.CIUDAD||'').trim()}" style="cursor:pointer"><td>${r.ID_CIUDAD}</td><td>${(r.CIUDAD||'').trim()}</td></tr>`,onSelect:row=>{document.getElementById('f_ID_CIUDADORIGEN').value=row.dataset.id;document.getElementById('f_CDORIGEN').value=row.dataset.desc;}},
+  destino:{url:'/tarifas/lookup/ciudades',title:'Seleccionar Ciudad Destino',heads:['ID','Ciudad'],row:r=>`<tr data-id="${r.ID_CIUDAD}" data-desc="${(r.CIUDAD||'').trim()}" style="cursor:pointer"><td>${r.ID_CIUDAD}</td><td>${(r.CIUDAD||'').trim()}</td></tr>`,onSelect:row=>{document.getElementById('f_ID_CIUDADDESTINO').value=row.dataset.id;document.getElementById('f_CDDESTINO').value=row.dataset.desc;}},
+  tipoflete:{url:'/tarifas/lookup/tipoflete',title:'Seleccionar Tipo de Flete',heads:['ID','Flete'],row:r=>`<tr data-id="${r.ID_TIPOFLETE}" data-desc="${(r.FLETE||'').trim()}" style="cursor:pointer"><td>${r.ID_TIPOFLETE}</td><td>${(r.FLETE||'').trim()}</td></tr>`,onSelect:row=>{document.getElementById('f_ID_TIPOFLETE').value=row.dataset.id;document.getElementById('f_FLETE').value=row.dataset.desc;}},
+  transport:{url:'/tarifas/lookup/transport',title:'Seleccionar Transportista',heads:['ID','Nombre'],row:r=>`<tr data-id="${r.ID_TRANSPORTISTA}" data-desc="${(r.NOMBRECOMUN||'').trim()}" style="cursor:pointer"><td>${r.ID_TRANSPORTISTA}</td><td>${(r.NOMBRECOMUN||'').trim()}</td></tr>`,onSelect:row=>{document.getElementById('f_ID_TRANSPORTISTA').value=row.dataset.id;document.getElementById('f_NOMBRECOMUNTRANS').value=row.dataset.desc;}},
+  clientes:{url:'/tarifas/lookup/clientes',title:'Seleccionar Cliente',heads:['ID','Nombre'],row:r=>`<tr data-id="${r.ID_CLIENTE}" data-desc="${(r.NOMBRECOMUN||'').trim()}" style="cursor:pointer"><td>${r.ID_CLIENTE}</td><td>${(r.NOMBRECOMUN||'').trim()}</td></tr>`,onSelect:row=>{document.getElementById('f_ID_CLIENTE').value=row.dataset.id;document.getElementById('f_NOMBRECOMUNCLI').value=row.dataset.desc;}}
+};
+let lkCurrent=null,lkPage=1;
+const lkGenModal=new bootstrap.Modal(document.getElementById('lookupGen'));
+function openLk(type){lkCurrent=lkCfg[type];lkPage=1;document.getElementById('lkGenTitle').textContent=lkCurrent.title;document.getElementById('lkGenHead').innerHTML=lkCurrent.heads.map(h=>`<th>${h}</th>`).join('');document.getElementById('lkGenQ').value='';loadLkGen();lkGenModal.show();}
+function loadLkGen(){if(!lkCurrent)return;fetch(`${lkCurrent.url}?q=${encodeURIComponent(document.getElementById('lkGenQ').value)}&page=${lkPage}`).then(r=>r.json()).then(d=>{document.getElementById('lkGenBody').innerHTML=d.rows.map(lkCurrent.row).join('');document.getElementById('lkGenInfo').textContent=`Pág ${d.page}/${d.totalPages}`;document.getElementById('lkGenPrev').disabled=d.page<=1;document.getElementById('lkGenNext').disabled=d.page>=d.totalPages;});}
+document.getElementById('lkGenQ').addEventListener('input',debounce(()=>{lkPage=1;loadLkGen();},300));
+document.getElementById('lkGenPrev').addEventListener('click',()=>{if(lkPage>1){lkPage--;loadLkGen();}});
+document.getElementById('lkGenNext').addEventListener('click',()=>{lkPage++;loadLkGen();});
+document.getElementById('lkGenBody').addEventListener('click',e=>{const row=e.target.closest('tr[data-id]');if(!row||!lkCurrent)return;lkCurrent.onSelect(row);lkGenModal.hide();});
+</script>

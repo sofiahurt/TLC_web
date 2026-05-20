@@ -1,0 +1,72 @@
+:root {
+  --sidebar-width: 240px;
+  --sidebar-bg: #1e2a38;
+  --sidebar-hover: #2c3e50;
+  --sidebar-active: #2980b9;
+}
+
+body { background: #f4f6f9; }
+
+/* SIDEBAR */
+.sidebar {
+  width: var(--sidebar-width);
+  min-height: 100vh;
+  background: var(--sidebar-bg);
+  position: fixed;
+  top: 0; left: 0;
+  z-index: 100;
+  transition: transform .25s ease;
+}
+
+.sidebar-header { border-bottom: 1px solid rgba(255,255,255,.1); }
+
+.sidebar-section {
+  font-size: .7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: rgba(255,255,255,.4);
+  letter-spacing: .08em;
+  padding: .4rem .5rem .2rem;
+}
+
+.sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .45rem .75rem;
+  border-radius: 6px;
+  color: rgba(255,255,255,.75);
+  text-decoration: none;
+  font-size: .88rem;
+  transition: background .15s;
+  margin-bottom: 1px;
+}
+.sidebar-link:hover { background: var(--sidebar-hover); color: #fff; }
+.sidebar-link.active { background: var(--sidebar-active); color: #fff; }
+
+/* CONTENT */
+#page-content {
+  margin-left: var(--sidebar-width);
+  min-height: 100vh;
+  padding: 1.5rem;
+  width: calc(100% - var(--sidebar-width));
+}
+
+/* TABLE */
+.table-hover tbody tr { cursor: pointer; }
+.table-hover tbody tr.selected { background: #d0e8f8 !important; }
+
+/* BUTTONS */
+.btn-action-group { display: flex; gap: .4rem; }
+
+/* PAGINATION */
+.page-info { font-size: .85rem; color: #6c757d; }
+
+/* MODAL LOOKUP */
+.modal-lookup .modal-body { padding: .75rem; }
+
+@media (max-width: 768px) {
+  .sidebar { transform: translateX(-100%); }
+  .sidebar.show { transform: translateX(0); }
+  #page-content { margin-left: 0; width: 100%; }
+}

@@ -1,0 +1,277 @@
+Crea una aplicación web con Node.js y Bootstrap 5 que sea completamente 
+responsive. La base de datos es SQL Server y debes usar el paquete `mssql` 
+para la conexión. Usa Express.js como framework, express-session para 
+sesiones, y bcrypt NO se usará — las contraseñas se almacenan y comparan 
+en texto plano.
+
+## ESTRUCTURA DE CARPETAS
+/app
+/config         → conexión a SQL Server
+/routes         → una ruta por módulo
+/views          → archivos EJS por módulo
+/partials     → header, sidebar, footer
+/public
+/css
+/js
+app.js
+
+## BASE DE DATOS — SQL Server
+Esquema: Empresa2 (excepto UsuariosWeb que es dbo)
+Cadena de conexión configurable en /config/db.js con variables:
+- server, database, user, password, port
+
+### TABLAS Y CAMPOS RELEVANTES:
+
+**[dbo].[UsuariosWeb]**
+ID_USUARIOWEB decimal(5) PK, NOMBRE char(80) UNIQUE NOT NULL,
+APELLIDO char(100), PASSWORD char(20), SERIE char(3),
+FLAGCARTAPORTE tinyint, FLAGMTTO tinyint, FLAGSOLALMA tinyint,
+FLAGORDENCOM tinyint, FLAGENTRADA tinyint, FLAGBITACORA tinyint,
+FLAGBD tinyint, FLAGLIQUIDA tinyint, FLAGFACTURA tinyint,
+FLAGSOLDEPOSITO tinyint, ACTIVO tinyint, SEESIONID varchar(254),
+FLAGCAMCEN tinyint
+
+**[Empresa2].[Camiones]**
+ID_CAMION char(10) PK, TIPO char(20), C_SUBTIPO char(7),
+SUBTIPO char(100), MARCA char(20), PLACA char(8), ANIOMODELO char(10),
+NOMASEG char(100), NUMPOLIZA char(40), DESCRIPCION char(40),
+ID_OPERADOR int FK→Operadores, OPERADOR char(45), NOCAJA char(8),
+NOCAJA2 char(8), RENDIMIENTO decimal(5,2), PAGOKILOMETRO decimal(7,2),
+PAGOVIAJE decimal(7,2), FLAGRENTA tinyint, SUBTIPOREM char(10),
+CONFIGVEHICULAR char(10), PERMSCT char(10), NUMPERMISOSCT char(50),
+PESOBRUTOVEHICULAR decimal(7,2)
+
+**[Empresa2].[Ciudades]**
+ID_CIUDAD decimal(9) PK, CIUDAD char(80)
+
+**[Empresa2].[Clientes]**
+ID_CLIENTE decimal(7) PK, TIPOCLIENTE char(20), NOMBRECOM char(150),
+NOMBRECOMUN char(80), CALLENUM char(150), NOEXT char(20), NOINT char(20),
+ID_COLONIA decimal(7) FK→ColCP, COLONIA char(80), CIUDAD char(80),
+MUNICIPIO char(40), ESTADO char(40), PAIS char(40), CP char(6),
+RFC char(15), C_REGIMENFISCAL char(6), REGIMENFISCAL varchar(199),
+EMAILFACTURAS char(200), DIASCREDITO decimal(3), FLETETARIMAS tinyint,
+PUTARIMAS decimal(9,2), FLETEPESO tinyint, PUPESO decimal(9,2),
+REALIZO char(60), NOTASFACTURA char(80), LOGISTICA tinyint,
+CLAVEMP char(3), METODOPAGO char(60), BANCO char(45),
+NUMCTAPAGO char(25), FORMATOFACTURA char(255), FLAGCOBRENTA tinyint,
+C_CLAVEPRODSERV char(20), DESCRIPCION_PRO char(100), C_FORMAPAGO char(4),
+C_USOCFDI char(5), FLAGADDENDA tinyint, FLAGCOMPLEMENTO tinyint,
+BLOQUEADD char(20), PREFIJOADD char(10), NONIVELES decimal(3),
+FLAGEXTRANJERO tinyint, CLAVEIDFISCAL char(20)
+
+**[Empresa2].[ColCP]**
+ID_COLONIA decimal(7) PK, COLONIA char(80), CP char(6)
+
+**[Empresa2].[Contacto]**
+ID_CLIENTE decimal(7) PK+FK→Clientes, ID_CONTACTO decimal(3) PK,
+CONTACTO char(60), EMAIL char(64), AREA char(45),
+TIPOTEL1 char(10), TELEFONO1 char(20), TIPOTEL2 char(10),
+TELEFONO2 char(20), TIPOTEL3 char(10), TELEFONO3 char(20)
+
+**[Empresa2].[DieselPre]**
+ID_DIESELPRECIO decimal(9), FECHA date, PRECIOLITRO decimal(7,2),
+IEPS decimal(9,4)
+
+**[Empresa2].[DomCarDes]**
+ID_CLIENTE decimal(7) PK+FK→Clientes, ID_DOMICILIO decimal(3) PK,
+TIPO char(10), NACINTER char(15), DESCRIPCION char(80),
+CALLE char(100), NOEXT char(20), NOINT char(20),
+ID_COLONIA decimal(7) FK→ColCP, C_COLONIA int, COLONIA char(80),
+C_LOCALIDAD int, CIUDAD char(80), C_MUNICIPIO int, MUNICIPIO char(40),
+ESTADO char(30), PAIS char(20), CP char(6), TELEFONO char(15),
+CONTACTO char(150), OBSERVACIONES char(255)
+
+**[Empresa2].[Operadores]**
+ID_OPERADOR int PK, OPERADOR char(254), RFC char(18),
+NOLICENCIA char(16), CALLE char(100), NOEXT char(20), NOINT char(20),
+C_COLONIA int, COLONIA char(150), C_LOCALIDAD int, CIUDAD char(150),
+C_MUNICIPIO int, MUNICIPIO char(40), ESTADO char(30), PAIS char(20),
+CP char(5), TELEFONO char(15), NEXTEL char(15), CELULAR char(15),
+INFONAVIT decimal(13,2), TIPODESINFONAVIT char(20), FECHABAJA date,
+STATUS char(20)
+
+**[Empresa2].[ProdServ]**
+Clave varchar(30) PK, ProdServ varchar(100), c_ProdServ varchar(20),
+Descripcion_SAT varchar(100), c_Unidad varchar(5), Unidad varchar(100),
+Precio decimal(9,2)
+
+**[Empresa2].[Tarifas]**
+ID_TARIFA decimal(7) PK, COSTO decimal(9,2), VENTA decimal(9,2),
+REPCLIENTE decimal(9,2), REPTRANS decimal(9,2),
+ID_CIUDADORIGEN decimal(9) FK→Ciudades, ID_CIUDADDESTINO decimal(9) FK→Ciudades,
+CDORIGEN char(50), CDDESTINO char(50), DESFLETE char(80),
+ID_TIPOFLETE decimal(7) FK→TipoFlete, FLETE char(50),
+ID_TRANSPORTISTA decimal(7) FK→Transport, NOMBRECOMUNTRANS char(80),
+ID_CLIENTE decimal(7) FK→Clientes, NOMBRECOMUNCLI char(80),
+MONCOMPRA char(10), MONVENTA char(10), TIPOCAMBIO decimal(9,4),
+REALIZO char(100), FLAGOCULTAR tinyint, KILOMETROS decimal(7),
+FLAGMARK tinyint, COSTOPORKILO decimal(9,4), COSTOKILOMTS decimal(9,2),
+COSTOAUTOPISTAS decimal(9,2), RENTA decimal(11,2),
+DIESELPERMITIDO decimal(7,2), PAGOTARIFA decimal(9,2),
+FLAGIVA tinyint, FLAGRET tinyint
+
+**[Empresa2].[TarKilomts]**
+Id_TarKmts decimal(3), Fecha date, PrecioKmt decimal(9,4)
+
+**[Empresa2].[TipoFlete]**
+ID_TIPOFLETE decimal(7) PK, FLETE char(50)
+
+**[Empresa2].[Transport]**
+ID_TRANSPORTISTA decimal(7) PK, NOMBRECOM char(150),
+NOMBRECOMUN char(80), CALLENUM char(150), ID_COLONIA decimal(7) FK→ColCP,
+COLONIA char(80), CP char(6), CIUDAD char(80), RFC char(15),
+REALIZO char(60), SALDOANIOANTVEN decimal(13,2),
+SALDOANIOANTXVEN decimal(13,2), SALDOANIOANTVENUSD decimal(13,2),
+SALDOANIOANTXVENUSD decimal(13,2)
+
+---
+
+## LOGIN
+
+- Ruta GET /login → muestra formulario (usuario + contraseña)
+- Ruta POST /login → busca en UsuariosWeb por NOMBRE, compara PASSWORD 
+  en texto plano, verifica ACTIVO = 1
+- Si es válido: guarda en sesión { id, nombre, apellido, serie } 
+  y redirige a /dashboard
+- Si falla: muestra mensaje de error en el mismo formulario
+- Todas las rutas excepto /login requieren middleware de autenticación 
+  que verifique req.session.usuario, si no existe redirige a /login
+- Ruta GET /logout → destruye sesión y redirige a /login
+
+---
+
+## MENÚ LATERAL (sidebar tipo task panel)
+
+Fijo en el lado izquierdo, colapsable en móvil. Muestra el nombre 
+del usuario logueado en la parte superior. Agrupa los módulos así:
+
+**Catálogos**
+- Ciudades
+- Colonias (ColCP)
+- Tipos de Flete (TipoFlete)
+- Operadores
+- Productos y Servicios (ProdServ)
+
+**Clientes y Transportistas**
+- Clientes
+- Contactos
+- Domicilios (DomCarDes)
+- Transportistas (Transport)
+
+**Flota**
+- Camiones
+
+**Tarifas**
+- Tarifas
+- Tarifas por Kilómetro (TarKilomts)
+- Precios Diesel (DieselPre)
+
+Resalta el módulo activo. Botón de cerrar sesión al fondo del sidebar.
+
+---
+
+## BROWSE (listado de registros)
+
+Aplica estas reglas a TODOS los módulos:
+
+1. **Paginación**: máximo 20 registros por página. Botones Anterior / 
+   Siguiente. Indicador "Página X de Y — Z registros totales".
+
+2. **Ordenamiento**: clic en cualquier encabezado de columna ordena 
+   ascendente; segundo clic ordena descendente. Indicador visual 
+   de columna activa y dirección.
+
+3. **Buscador**: en la parte superior izquierda del browse. Tiene dos 
+   controles: un dropdown para seleccionar la columna de búsqueda, 
+   y un input de texto. Al teclear (evento oninput) realiza búsqueda 
+   automática sin botón, usando LIKE '%valor%' en la columna 
+   seleccionada, sin importar posición. La búsqueda resetea a página 1.
+
+4. **Botones CRUD**: agrupados a la derecha, fuera de la tabla:
+   - [+ Agregar] → abre popup de alta
+   - [✏ Editar] → abre popup de edición con el registro seleccionado
+   - [🗑 Eliminar] → muestra confirmación, luego DELETE físico
+   - Editar y Eliminar se activan solo cuando hay un registro 
+     seleccionado (clic en fila lo resalta).
+
+5. **Columnas a mostrar por tabla** (mostrar las más relevantes, 
+   no todas):
+   - Camiones: ID_CAMION, MARCA, PLACA, TIPO, OPERADOR, DESCRIPCION
+   - Ciudades: ID_CIUDAD, CIUDAD
+   - Clientes: ID_CLIENTE, NOMBRECOMUN, RFC, CIUDAD, ESTADO, TIPOCLIENTE
+   - ColCP: ID_COLONIA, COLONIA, CP
+   - Contacto: ID_CLIENTE, ID_CONTACTO, CONTACTO, EMAIL, AREA, TELEFONO1
+   - DieselPre: ID_DIESELPRECIO, FECHA, PRECIOLITRO, IEPS
+   - DomCarDes: ID_CLIENTE, ID_DOMICILIO, DESCRIPCION, TIPO, CIUDAD, ESTADO
+   - Operadores: ID_OPERADOR, OPERADOR, RFC, CIUDAD, STATUS
+   - ProdServ: Clave, ProdServ, Descripcion_SAT, Unidad, Precio
+   - Tarifas: ID_TARIFA, CDORIGEN, CDDESTINO, FLETE, NOMBRECOMUNCLI, 
+               NOMBRECOMUNTRANS, COSTO, VENTA
+   - TarKilomts: Id_TarKmts, Fecha, PrecioKmt
+   - TipoFlete: ID_TIPOFLETE, FLETE
+   - Transport: ID_TRANSPORTISTA, NOMBRECOMUN, RFC, CIUDAD, CP
+
+---
+
+## FORMULARIOS (popups modal Bootstrap)
+
+Aplica estas reglas a TODOS los formularios de alta y edición:
+
+1. **Tipo**: modal Bootstrap centrado, tamaño lg o xl según la cantidad 
+   de campos.
+
+2. **Layout**: campos organizados en filas de 2 o 3 columnas usando 
+   el grid de Bootstrap. Todos los labels alineados y los inputs 
+   con ancho proporcional al tipo de dato (un ID corto no ocupa 
+   lo mismo que una dirección).
+
+3. **Campos con lookup** (relación a otra tabla): mostrar el campo 
+   descriptivo como texto readonly + botón de lupa [🔍] al lado. 
+   Al hacer clic abre un segundo modal (lookup) con:
+   - Browse de la tabla relacionada (máximo 10 registros, paginado)
+   - Buscador en la parte superior
+   - Al hacer clic en un registro: cierra el lookup, llena el ID 
+     (hidden) y el campo descriptivo (readonly) en el formulario padre
+
+4. **Lookups requeridos por tabla**:
+   - Camiones → Operadores (ID_OPERADOR / OPERADOR)
+   - Clientes → ColCP (ID_COLONIA / COLONIA+CP)
+   - DomCarDes → Clientes (ID_CLIENTE / NOMBRECOMUN), 
+                  ColCP (ID_COLONIA / COLONIA)
+   - Contacto → Clientes (ID_CLIENTE / NOMBRECOMUN)
+   - Transport → ColCP (ID_COLONIA / COLONIA)
+   - Tarifas → Ciudades origen (ID_CIUDADORIGEN / CIUDAD),
+               Ciudades destino (ID_CIUDADDESTINO / CIUDAD),
+               TipoFlete (ID_TIPOFLETE / FLETE),
+               Transport (ID_TRANSPORTISTA / NOMBRECOMUN),
+               Clientes (ID_CLIENTE / NOMBRECOMUN)
+
+5. **Botones del formulario**: [💾 Guardar] y [✖ Cancelar] alineados 
+   a la derecha en el footer del modal.
+
+6. **Validaciones mínimas**: campos PK y NOT NULL requeridos. 
+   Mostrar mensaje de error inline si fallan.
+
+7. **Al guardar**: INSERT en alta, UPDATE en edición. Cerrar modal 
+   y refrescar el browse automáticamente.
+
+---
+
+## NOTAS TÉCNICAS
+
+- Usa EJS como motor de plantillas
+- El partial del sidebar y header se incluyen en todas las vistas
+- Los IDs de tipo tinyint deben mostrarse como checkbox en los 
+  formularios (0 = desmarcado, 1 = marcado)
+- Los campos decimales usan input type="number" con step apropiado
+- Los campos date usan input type="date"
+- Todos los CHAR de la BD devuelven strings con espacios al final; 
+  aplica .trim() siempre antes de mostrar o comparar
+- Las queries usan parámetros (@param) nunca concatenación de strings 
+  para evitar SQL injection
+- El archivo package.json debe incluir todos los paquetes necesarios: 
+  express, ejs, mssql, express-session, y cualquier otro que uses
+- Incluye un archivo .env.example con las variables de configuración 
+  de la BD
+- Incluye un README.md con instrucciones de instalación y arranque

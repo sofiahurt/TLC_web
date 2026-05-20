@@ -1,0 +1,37 @@
+<nav id="sidebar" class="sidebar d-flex flex-column flex-shrink-0 p-0">
+  <div class="sidebar-header p-3">
+    <div class="fw-bold text-white fs-5">TLC Web</div>
+    <div class="text-white-50 small mt-1">
+      <i class="bi bi-person-circle me-1"></i>
+      <%= usuario.nombre.trim() %> <%= usuario.apellido ? usuario.apellido.trim() : '' %>
+    </div>
+  </div>
+
+  <div class="sidebar-menu flex-grow-1 overflow-auto px-2 py-1">
+
+    <div class="sidebar-section">Catálogos</div>
+    <a href="/ciudades"   class="sidebar-link <%= modulo==='ciudades'  ?'active':'' %>"><i class="bi bi-geo-alt"></i> Ciudades</a>
+    <a href="/colonias"   class="sidebar-link <%= modulo==='colonias'  ?'active':'' %>"><i class="bi bi-mailbox"></i> Colonias</a>
+    <a href="/tipoflete"  class="sidebar-link <%= modulo==='tipoflete' ?'active':'' %>"><i class="bi bi-tags"></i> Tipos de Flete</a>
+    <a href="/operadores" class="sidebar-link <%= modulo==='operadores'?'active':'' %>"><i class="bi bi-person-badge"></i> Operadores</a>
+    <a href="/prodserv"   class="sidebar-link <%= modulo==='prodserv'  ?'active':'' %>"><i class="bi bi-box-seam"></i> Productos y Servicios</a>
+
+    <div class="sidebar-section mt-2">Clientes y Transportistas</div>
+    <a href="/clientes"   class="sidebar-link <%= modulo==='clientes'  ?'active':'' %>"><i class="bi bi-building"></i> Clientes</a>
+    <a href="/contacto"   class="sidebar-link <%= modulo==='contacto'  ?'active':'' %>"><i class="bi bi-person-lines-fill"></i> Contactos</a>
+    <a href="/domicilios" class="sidebar-link <%= modulo==='domicilios'?'active':'' %>"><i class="bi bi-house"></i> Domicilios</a>
+    <a href="/transport"  class="sidebar-link <%= modulo==='transport' ?'active':'' %>"><i class="bi bi-truck"></i> Transportistas</a>
+
+    <div class="sidebar-section mt-2">Flota</div>
+    <a href="/camiones"   class="sidebar-link <%= modulo==='camiones'  ?'active':'' %>"><i class="bi bi-truck-front"></i> Camiones</a>
+
+    <div class="sidebar-section mt-2">Tarifas</div>
+    <a href="/tarifas"    class="sidebar-link <%= modulo==='tarifas'   ?'active':'' %>"><i class="bi bi-currency-dollar"></i> Tarifas</a>
+    <a href="/tarkilomts" class="sidebar-link <%= modulo==='tarkilomts'?'active':'' %>"><i class="bi bi-speedometer2"></i> Tarifas x Km</a>
+    <a href="/dieselpre"  class="sidebar-link <%= modulo==='dieselpre' ?'active':'' %>"><i class="bi bi-fuel-pump"></i> Precios Diesel</a>
+  </div>
+
+  <div class="p-2 border-top border-secondary">
+    <a href="/logout" class="sidebar-link text-danger"><i class="bi bi-box-arrow-left"></i> Cerrar sesión</a>
+  </div>
+</nav>
