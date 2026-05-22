@@ -1,22 +1,24 @@
 :root {
   --sidebar-width: 240px;
   --sidebar-bg:    #1e3d5c;
-  --sidebar-hover: #2B5F8E;
-  --sidebar-active:#4A86B8;
-  --blue-dark:     #2B5F8E;
-  --blue-mid:      #4A86B8;
-  --blue-light:    #EBF3FA;
-  --orange:        #D4820A;
-  --border-blue:   #C5D9E8;
+  --sidebar-hover: #3A6E9E;
+  --sidebar-active:#4D7FAC;
+  --blue-dark:     #2B5C8E;
+  --blue-mid:      #4D7FAC;
+  --blue-field:    #D6E8F5;
+  --blue-green:    #EBF4FB;
+  --orange:        #E8861A;
+  --border-blue:   #B8CEE0;
+  --text-dark:     #1A2E40;
 }
 
-body { background: #f0f4f8; }
+body { background: #E8EFF5; }
 
 /* ─── SIDEBAR ─────────────────────────────────────── */
 .sidebar {
   width: var(--sidebar-width);
   min-height: 100vh;
-  background: linear-gradient(180deg, #1e3d5c 0%, #2B5F8E 100%);
+  background: linear-gradient(180deg, #1e3d5c 0%, #2B5C8E 100%);
   position: fixed;
   top: 0; left: 0;
   z-index: 100;
@@ -24,7 +26,7 @@ body { background: #f0f4f8; }
 }
 
 .sidebar-header {
-  border-bottom: 1px solid rgba(255,255,255,.15);
+  border-bottom: 1px solid #4D7FAC;
   background: rgba(0,0,0,.2);
 }
 
@@ -32,7 +34,7 @@ body { background: #f0f4f8; }
   font-size: .7rem;
   font-weight: 700;
   text-transform: uppercase;
-  color: rgba(255,255,255,.4);
+  color: #8FB8D8;
   letter-spacing: .08em;
   padding: .4rem .5rem .2rem;
 }
@@ -75,8 +77,13 @@ body { background: #f0f4f8; }
   transition: background .15s;
   margin-bottom: 1px;
 }
-.sidebar-link:hover  { background: var(--sidebar-hover); color: #fff; }
-.sidebar-link.active { background: var(--sidebar-active); color: #fff; }
+.sidebar-link:hover { background: var(--sidebar-hover); color: #fff; }
+.sidebar-link.active {
+  background: var(--sidebar-active);
+  color: #fff;
+  border-left: 3px solid var(--orange);
+  padding-left: calc(.75rem - 3px);
+}
 
 /* ─── CONTENT ─────────────────────────────────────── */
 #page-content {
@@ -87,47 +94,66 @@ body { background: #f0f4f8; }
 }
 
 /* ─── CARDS ───────────────────────────────────────── */
-.card { border-left: 3px solid var(--blue-mid) !important; }
+.card { border-top: 3px solid var(--blue-mid) !important; }
+.card-footer { background-color: #F5FAFF !important; }
 
 /* ─── TABLE — Greenbar ────────────────────────────── */
 .thead-tlc { background-color: var(--blue-dark) !important; }
 .thead-tlc th {
   color: #fff !important;
-  border-color: rgba(255,255,255,.15) !important;
+  border-color: var(--blue-mid) !important;
   font-weight: 600;
 }
-.table tbody tr:nth-child(even) { background-color: var(--blue-light); }
-.table-hover tbody tr           { cursor: pointer; }
-.table-hover tbody tr:hover     { background-color: #d4e9f7 !important; }
-.table-hover tbody tr.selected  {
-  background-color: #b8d9f0 !important;
-  box-shadow: inset 3px 0 0 var(--blue-dark);
+.thead-tlc th[data-sort]:hover { background-color: #3A6E9E; }
+
+/*
+  Bootstrap 5 aplica hover como box-shadow en las CELDAS (td/th),
+  no en el tr. Para que greenbar y seleccion funcionen correctamente
+  hay que apuntar a los hijos directos > *
+*/
+.table-hover tbody tr { cursor: pointer; }
+.table-hover tbody tr:nth-child(odd)  > * { background-color: #FFFFFF; }
+.table-hover tbody tr:nth-child(even) > * { background-color: var(--blue-green); }
+
+/* Fila seleccionada — gana sobre greenbar y sobre hover de Bootstrap */
+.table-hover tbody tr.selected > *,
+.table-hover tbody tr.selected:nth-child(odd)  > *,
+.table-hover tbody tr.selected:nth-child(even) > * {
+  background-color: #C8CDD3 !important;
+  font-weight: 600;
+}
+/* Borde izquierdo en primera celda (funciona con border-collapse) */
+.table-hover tbody tr.selected > td:first-child,
+.table-hover tbody tr.selected:nth-child(odd)  > td:first-child,
+.table-hover tbody tr.selected:nth-child(even) > td:first-child {
+  border-left: 3px solid var(--blue-dark) !important;
 }
 
 /* ─── BUTTONS ─────────────────────────────────────── */
 .btn-action-group { display: flex; gap: .4rem; }
 .btn-primary { background-color: var(--blue-dark); border-color: var(--blue-dark); }
 .btn-primary:hover, .btn-primary:focus {
-  background-color: var(--blue-mid);
-  border-color: var(--blue-mid);
+  background-color: #1e3d5c;
+  border-color: #1e3d5c;
 }
 .btn-outline-primary { color: var(--blue-dark); border-color: var(--blue-dark); }
 .btn-outline-primary:hover { background-color: var(--blue-dark); }
+.btn:disabled { opacity: .45; }
 
 /* ─── MODALS ──────────────────────────────────────── */
 .modal-header {
   background-color: var(--blue-dark);
-  border-bottom: 1px solid rgba(255,255,255,.15);
+  border-bottom: 1px solid var(--blue-mid);
 }
 .modal-header .modal-title,
 .modal-header h5,
 .modal-header h6 { color: #fff; }
-.modal-header .btn-close { filter: brightness(0) invert(1); opacity: .8; }
-.modal-footer { background-color: #f8fafc; }
+.modal-header .btn-close { filter: invert(1); opacity: .8; }
+.modal-footer { background-color: #F5FAFF; }
 
 /* NAV TABS */
-.nav-tabs .nav-link       { color: var(--blue-dark); }
-.nav-tabs .nav-link:hover { color: var(--blue-mid); }
+.nav-tabs .nav-link       { color: var(--blue-mid); }
+.nav-tabs .nav-link:hover { color: var(--blue-dark); }
 .nav-tabs .nav-link.active {
   color: var(--orange);
   border-bottom: 2px solid var(--orange);
@@ -137,9 +163,9 @@ body { background: #f0f4f8; }
 /* FORM FOCUS */
 .form-control:focus,
 .form-select:focus {
-  background-color: var(--blue-light);
+  background-color: #F5FAFF;
   border-color: var(--blue-mid);
-  box-shadow: 0 0 0 .2rem rgba(74,134,184,.2);
+  box-shadow: 0 0 0 .2rem rgba(77,127,172,.25);
 }
 
 /* ─── PAGINATION ──────────────────────────────────── */

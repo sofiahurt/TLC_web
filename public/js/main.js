@@ -17,6 +17,13 @@ document.addEventListener('click', function(e) {
   });
 });
 
+// Double-click to edit
+document.addEventListener('dblclick', function(e) {
+  const row = e.target.closest('tr[data-id]');
+  if (!row || e.target.closest('.modal-lookup')) return;
+  if (typeof openEdit === 'function') openEdit();
+});
+
 // Sidebar toggle (mobile)
 const toggleBtn = document.getElementById('sidebarToggle');
 if (toggleBtn) {
