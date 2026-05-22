@@ -23,6 +23,32 @@ if (toggleBtn) {
   });
 }
 
+// Sidebar accordion
+(function () {
+  const groups = document.querySelectorAll('.sidebar-group');
+
+  // Restore saved state; always expand group that contains the active link
+  groups.forEach(group => {
+    const key = 'tlc_sidebar_' + group.dataset.group;
+    const saved = localStorage.getItem(key);
+    const hasActive = !!group.querySelector('.sidebar-link.active');
+    if (hasActive || saved === '1') group.classList.add('open');
+  });
+
+  // Toggle on header click
+  groups.forEach(group => {
+    const toggle = group.querySelector('.sidebar-toggle');
+    if (!toggle) return;
+    toggle.addEventListener('click', () => {
+      group.classList.toggle('open');
+      localStorage.setItem(
+        'tlc_sidebar_' + group.dataset.group,
+        group.classList.contains('open') ? '1' : '0'
+      );
+    });
+  });
+})();
+
 // Search debounce helper
 function debounce(fn, ms) {
   let t;

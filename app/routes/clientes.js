@@ -1,7 +1,43 @@
 const express = require('express');
 const router = express.Router();
+const path = require('path');
 const { getPool, sql } = require('../config/db');
 const { browseQuery } = require('../config/browse');
+
+// SAT SQLite catalog helpers (read-only, cached per table)
+let _satDb = null;
+const _satCache = {};
+
+function getSatCatalog(table, claveCol) {
+  if (!_satCache[table]) {
+    if (!_satDb) {
+      const Database = require('better-sqlite3');
+      _satDb = new Database(
+        path.join(__dirname, '../../storage/catalogos/sat_catalogos.sqlite'),
+        { readonly: true }
+      );
+    }
+    _satCache[table] = _satDb
+      .prepare(`SELECT ${claveCol} AS clave, descripcion FROM ${table} ORDER BY clave`)
+      .all();
+  }
+  return _satCache[table];
+}
+
+function satLookupHandler(table, claveCol) {
+  return (req, res) => {
+    const q = (req.query.q || '').trim().toLowerCase();
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const all = getSatCatalog(table, claveCol);
+    const filtered = q
+      ? all.filter(r => r.clave.toLowerCase().includes(q) || r.descripcion.toLowerCase().includes(q))
+      : all;
+    const total = filtered.length;
+    const totalPages = Math.max(1, Math.ceil(total / 10));
+    const rows = filtered.slice((page - 1) * 10, page * 10);
+    res.json({ rows, total, totalPages, page });
+  };
+}
 
 router.get('/', (req, res) => res.render('clientes', { usuario: req.session.usuario, modulo: 'clientes' }));
 
@@ -9,7 +45,7 @@ router.get('/data', async (req, res) => {
   try {
     const data = await browseQuery({
       table: 'Empresa2.Clientes',
-      columns: ['ID_CLIENTE','TIPOCLIENTE','NOMBRECOM','NOMBRECOMUN','RFC','CIUDAD','ESTADO','COLONIA','CP','ID_COLONIA','DIASCREDITO','LOGISTICA','FLAGEXTRANJERO'],
+      columns: ['ID_CLIENTE','TIPOCLIENTE','NOMBRECOM','NOMBRECOMUN','RFC','CIUDAD','ESTADO','COLONIA','CP','ID_COLONIA','DIASCREDITO','LOGISTICA','FLAGEXTRANJERO','C_REGIMENFISCAL','REGIMENFISCAL','C_FORMAPAGO','C_USOCFDI','CLAVEMP','METODOPAGO'],
       searchableCols: ['ID_CLIENTE','NOMBRECOMUN','NOMBRECOM','RFC','CIUDAD','ESTADO','TIPOCLIENTE'],
       req
     });
@@ -28,6 +64,12 @@ router.get('/data', async (req, res) => {
         <td data-field="DIASCREDITO" data-value="${r.DIASCREDITO||''}" style="display:none">${r.DIASCREDITO||''}</td>
         <td data-field="LOGISTICA" data-value="${r.LOGISTICA||0}" style="display:none">${r.LOGISTICA||0}</td>
         <td data-field="FLAGEXTRANJERO" data-value="${r.FLAGEXTRANJERO||0}" style="display:none">${r.FLAGEXTRANJERO||0}</td>
+        <td data-field="C_REGIMENFISCAL" data-value="${(r.C_REGIMENFISCAL||'').trim()}" style="display:none"></td>
+        <td data-field="REGIMENFISCAL" data-value="${(r.REGIMENFISCAL||'').trim()}" style="display:none"></td>
+        <td data-field="C_FORMAPAGO" data-value="${(r.C_FORMAPAGO||'').trim()}" style="display:none"></td>
+        <td data-field="C_USOCFDI" data-value="${(r.C_USOCFDI||'').trim()}" style="display:none"></td>
+        <td data-field="CLAVEMP" data-value="${(r.CLAVEMP||'').trim()}" style="display:none"></td>
+        <td data-field="METODOPAGO" data-value="${(r.METODOPAGO||'').trim()}" style="display:none"></td>
       </tr>`).join('');
     res.json({ rows, page: data.page, totalPages: data.totalPages, total: data.total });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -63,6 +105,11 @@ router.get('/lookup/colonias', async (req, res) => {
     res.json({ rows: result.recordset, total, totalPages: Math.ceil(total/10), page });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
+router.get('/lookup/sat/regimen-fiscal', satLookupHandler('sat_regimenfiscal', 'c_regimenfiscal'));
+router.get('/lookup/sat/forma-pago',     satLookupHandler('sat_formas_pago',   'c_FormaPago'));
+router.get('/lookup/sat/uso-cfdi',       satLookupHandler('sat_usoCDFI',       'c_usocfdi'));
+router.get('/lookup/sat/metodo-pago',    satLookupHandler('sat_metodo_pago',   'c_metodopago'));
 
 router.post('/guardar', async (req, res) => {
   const f = req.body;

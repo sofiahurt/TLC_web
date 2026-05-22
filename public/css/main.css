@@ -29,6 +29,32 @@ body { background: #f4f6f9; }
   padding: .4rem .5rem .2rem;
 }
 
+/* ACCORDION */
+.sidebar-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+  border-radius: 4px;
+  transition: background .15s;
+}
+.sidebar-toggle:hover { background: rgba(255,255,255,.06); }
+
+.sidebar-chevron {
+  font-size: .75rem;
+  color: rgba(255,255,255,.35);
+  transition: transform .22s ease;
+}
+.sidebar-group.open .sidebar-chevron { transform: rotate(180deg); }
+
+.sidebar-group-body {
+  overflow: hidden;
+  max-height: 0;
+  transition: max-height .25s ease;
+}
+.sidebar-group.open .sidebar-group-body { max-height: 400px; }
+
 .sidebar-link {
   display: flex;
   align-items: center;
