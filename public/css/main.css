@@ -1,24 +1,32 @@
 :root {
   --sidebar-width: 240px;
-  --sidebar-bg: #1e2a38;
-  --sidebar-hover: #2c3e50;
-  --sidebar-active: #2980b9;
+  --sidebar-bg:    #1e3d5c;
+  --sidebar-hover: #2B5F8E;
+  --sidebar-active:#4A86B8;
+  --blue-dark:     #2B5F8E;
+  --blue-mid:      #4A86B8;
+  --blue-light:    #EBF3FA;
+  --orange:        #D4820A;
+  --border-blue:   #C5D9E8;
 }
 
-body { background: #f4f6f9; }
+body { background: #f0f4f8; }
 
-/* SIDEBAR */
+/* ─── SIDEBAR ─────────────────────────────────────── */
 .sidebar {
   width: var(--sidebar-width);
   min-height: 100vh;
-  background: var(--sidebar-bg);
+  background: linear-gradient(180deg, #1e3d5c 0%, #2B5F8E 100%);
   position: fixed;
   top: 0; left: 0;
   z-index: 100;
   transition: transform .25s ease;
 }
 
-.sidebar-header { border-bottom: 1px solid rgba(255,255,255,.1); }
+.sidebar-header {
+  border-bottom: 1px solid rgba(255,255,255,.15);
+  background: rgba(0,0,0,.2);
+}
 
 .sidebar-section {
   font-size: .7rem;
@@ -39,11 +47,11 @@ body { background: #f4f6f9; }
   border-radius: 4px;
   transition: background .15s;
 }
-.sidebar-toggle:hover { background: rgba(255,255,255,.06); }
+.sidebar-toggle:hover { background: rgba(255,255,255,.08); }
 
 .sidebar-chevron {
   font-size: .75rem;
-  color: rgba(255,255,255,.35);
+  color: rgba(255,255,255,.4);
   transition: transform .22s ease;
 }
 .sidebar-group.open .sidebar-chevron { transform: rotate(180deg); }
@@ -67,10 +75,10 @@ body { background: #f4f6f9; }
   transition: background .15s;
   margin-bottom: 1px;
 }
-.sidebar-link:hover { background: var(--sidebar-hover); color: #fff; }
+.sidebar-link:hover  { background: var(--sidebar-hover); color: #fff; }
 .sidebar-link.active { background: var(--sidebar-active); color: #fff; }
 
-/* CONTENT */
+/* ─── CONTENT ─────────────────────────────────────── */
 #page-content {
   margin-left: var(--sidebar-width);
   min-height: 100vh;
@@ -78,17 +86,66 @@ body { background: #f4f6f9; }
   width: calc(100% - var(--sidebar-width));
 }
 
-/* TABLE */
-.table-hover tbody tr { cursor: pointer; }
-.table-hover tbody tr.selected { background: #d0e8f8 !important; }
+/* ─── CARDS ───────────────────────────────────────── */
+.card { border-left: 3px solid var(--blue-mid) !important; }
 
-/* BUTTONS */
+/* ─── TABLE — Greenbar ────────────────────────────── */
+.thead-tlc { background-color: var(--blue-dark) !important; }
+.thead-tlc th {
+  color: #fff !important;
+  border-color: rgba(255,255,255,.15) !important;
+  font-weight: 600;
+}
+.table tbody tr:nth-child(even) { background-color: var(--blue-light); }
+.table-hover tbody tr           { cursor: pointer; }
+.table-hover tbody tr:hover     { background-color: #d4e9f7 !important; }
+.table-hover tbody tr.selected  {
+  background-color: #b8d9f0 !important;
+  box-shadow: inset 3px 0 0 var(--blue-dark);
+}
+
+/* ─── BUTTONS ─────────────────────────────────────── */
 .btn-action-group { display: flex; gap: .4rem; }
+.btn-primary { background-color: var(--blue-dark); border-color: var(--blue-dark); }
+.btn-primary:hover, .btn-primary:focus {
+  background-color: var(--blue-mid);
+  border-color: var(--blue-mid);
+}
+.btn-outline-primary { color: var(--blue-dark); border-color: var(--blue-dark); }
+.btn-outline-primary:hover { background-color: var(--blue-dark); }
 
-/* PAGINATION */
+/* ─── MODALS ──────────────────────────────────────── */
+.modal-header {
+  background-color: var(--blue-dark);
+  border-bottom: 1px solid rgba(255,255,255,.15);
+}
+.modal-header .modal-title,
+.modal-header h5,
+.modal-header h6 { color: #fff; }
+.modal-header .btn-close { filter: brightness(0) invert(1); opacity: .8; }
+.modal-footer { background-color: #f8fafc; }
+
+/* NAV TABS */
+.nav-tabs .nav-link       { color: var(--blue-dark); }
+.nav-tabs .nav-link:hover { color: var(--blue-mid); }
+.nav-tabs .nav-link.active {
+  color: var(--orange);
+  border-bottom: 2px solid var(--orange);
+  font-weight: 600;
+}
+
+/* FORM FOCUS */
+.form-control:focus,
+.form-select:focus {
+  background-color: var(--blue-light);
+  border-color: var(--blue-mid);
+  box-shadow: 0 0 0 .2rem rgba(74,134,184,.2);
+}
+
+/* ─── PAGINATION ──────────────────────────────────── */
 .page-info { font-size: .85rem; color: #6c757d; }
 
-/* MODAL LOOKUP */
+/* ─── MODAL LOOKUP ────────────────────────────────── */
 .modal-lookup .modal-body { padding: .75rem; }
 
 @media (max-width: 768px) {

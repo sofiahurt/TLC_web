@@ -6,6 +6,8 @@ document.addEventListener('click', function(e) {
   table.querySelectorAll('tr.selected').forEach(r => r.classList.remove('selected'));
   row.classList.add('selected');
   const id = row.dataset.id;
+  // Track selected ID only for main browse tables, not lookup modals
+  if (!e.target.closest('.modal-lookup')) window._selectedId = id;
   document.querySelectorAll('[data-requires-selection]').forEach(btn => btn.disabled = false);
   document.querySelectorAll('[data-selected-id]').forEach(el => el.value = id);
   // store all row data for edit
@@ -69,14 +71,26 @@ function initBrowse(options) {
     fetch(url)
       .then(r => r.json())
       .then(data => {
+        const prevId = window._selectedId || null;
         tableBody.innerHTML = data.rows;
         if (infoEl) infoEl.textContent = `Página ${data.page} de ${data.totalPages} — ${data.total} registros`;
         if (paginationEl) {
           paginationEl.querySelector('[data-action=prev]').disabled = data.page <= 1;
           paginationEl.querySelector('[data-action=next]').disabled = data.page >= data.totalPages;
         }
-        document.querySelectorAll('[data-requires-selection]').forEach(b => b.disabled = true);
-        window._selectedRow = null;
+        // Restore row highlight if the selected row is still visible on this page
+        const restoredRow = prevId ? tableBody.querySelector(`tr[data-id="${prevId}"]`) : null;
+        if (restoredRow) {
+          restoredRow.classList.add('selected');
+          window._selectedRow = {};
+          restoredRow.querySelectorAll('td[data-field]').forEach(td => {
+            window._selectedRow[td.dataset.field] = td.dataset.value ?? td.textContent.trim();
+          });
+        } else {
+          window._selectedRow = null;
+          window._selectedId = null;
+          document.querySelectorAll('[data-requires-selection]').forEach(b => b.disabled = true);
+        }
       });
   }
 
