@@ -98,13 +98,13 @@ body { background: #E8EFF5; }
 .card-footer { background-color: #F5FAFF !important; }
 
 /* ─── TABLE — Greenbar ────────────────────────────── */
-.thead-tlc { background-color: var(--blue-dark) !important; }
 .thead-tlc th {
+  background-color: var(--blue-dark) !important;
   color: #fff !important;
   border-color: var(--blue-mid) !important;
   font-weight: 600;
 }
-.thead-tlc th[data-sort]:hover { background-color: #3A6E9E; }
+.thead-tlc th[data-sort]:hover { background-color: #3A6E9E !important; }
 
 /*
   Bootstrap 5 aplica hover como box-shadow en las CELDAS (td/th),
