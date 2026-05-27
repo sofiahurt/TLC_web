@@ -124,12 +124,14 @@ router.get('/lookup/clientes', async (req, res) => {
     const q = (req.query.q || '').trim();
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const pool = await getPool();
-    const where = q ? `WHERE NOMBRECOMUN LIKE @q OR NOMBRECOM LIKE @q` : '';
-    const cr = await pool.request().input('q', `%${q}%`).query(`SELECT COUNT(*) AS total FROM Empresa2.Clientes ${where}`);
+    const isNum = q && /^\d+$/.test(q);
+    const where = q ? `WHERE NOMBRECOMUN LIKE @q OR NOMBRECOM LIKE @q${isNum ? ' OR CAST(ID_CLIENTE AS NVARCHAR) = @qexact' : ''}` : '';
+    const crReq = pool.request(); if (q) crReq.input('q', `%${q}%`); if (isNum) crReq.input('qexact', q);
+    const cr = await crReq.query(`SELECT COUNT(*) AS total FROM Empresa2.Clientes ${where}`);
     const total = cr.recordset[0].total;
     const offset = (page - 1) * 10;
-    const dr = await pool.request().input('q', `%${q}%`)
-      .query(`SELECT ID_CLIENTE,NOMBRECOMUN,RFC FROM Empresa2.Clientes ${where} ORDER BY NOMBRECOMUN OFFSET ${offset} ROWS FETCH NEXT 10 ROWS ONLY`);
+    const drReq = pool.request(); if (q) drReq.input('q', `%${q}%`); if (isNum) drReq.input('qexact', q);
+    const dr = await drReq.query(`SELECT ID_CLIENTE,NOMBRECOMUN,RFC FROM Empresa2.Clientes ${where} ORDER BY NOMBRECOMUN OFFSET ${offset} ROWS FETCH NEXT 10 ROWS ONLY`);
     res.json({ rows: dr.recordset, total, totalPages: Math.ceil(total/10)||1, page });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -201,12 +203,13 @@ router.get('/lookup/operadores', async (req, res) => {
     const q = (req.query.q || '').trim();
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const pool = await getPool();
-    const where = q ? `WHERE OPERADOR LIKE @q OR RFC LIKE @q` : '';
-    const cr = pool.request(); if (q) cr.input('q', `%${q}%`);
+    const isNum = q && /^\d+$/.test(q);
+    const where = q ? `WHERE OPERADOR LIKE @q OR RFC LIKE @q${isNum ? ' OR CAST(ID_OPERADOR AS NVARCHAR) = @qexact' : ''}` : '';
+    const cr = pool.request(); if (q) cr.input('q', `%${q}%`); if (isNum) cr.input('qexact', q);
     const cnt = await cr.query(`SELECT COUNT(*) AS total FROM Empresa2.Operadores ${where}`);
     const total = cnt.recordset[0].total;
     const offset = (page - 1) * 10;
-    const dr = pool.request(); if (q) dr.input('q', `%${q}%`);
+    const dr = pool.request(); if (q) dr.input('q', `%${q}%`); if (isNum) dr.input('qexact', q);
     const data = await dr.query(
       `SELECT ID_OPERADOR,OPERADOR,RFC,NOLICENCIA,STATUS FROM Empresa2.Operadores ${where}
        ORDER BY OPERADOR OFFSET ${offset} ROWS FETCH NEXT 10 ROWS ONLY`
