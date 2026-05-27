@@ -19,14 +19,14 @@ router.get('/data', async (req, res) => {
     const serie  = req.session.usuario.serie;
     const anio   = req.session.anio;
 
-    let where = 'WHERE Serie = @serie AND AnioFactura = @anio';
-    const r = pool.request().input('serie', sql.VarChar(3), serie).input('anio', sql.Decimal(4), anio);
+    let where = 'WHERE Serie = @serie';
+    const r = pool.request().input('serie', sql.VarChar(3), serie);
     if (q && SEARCH_COLS.has(col)) {
       where += ` AND ${col} LIKE @q COLLATE Modern_Spanish_CI_AS`;
       r.input('q', `%${q}%`);
     }
 
-    const cr = pool.request().input('serie', sql.VarChar(3), serie).input('anio', sql.Decimal(4), anio);
+    const cr = pool.request().input('serie', sql.VarChar(3), serie);
     if (q && SEARCH_COLS.has(col)) cr.input('q', `%${q}%`);
     const cntRes = await cr.query(`SELECT COUNT(*) AS total FROM Empresa2.CartaPorte ${where}`);
     const total = cntRes.recordset[0].total;
@@ -34,7 +34,7 @@ router.get('/data', async (req, res) => {
     const safePage   = Math.min(page, totalPages);
     const offset     = (safePage - 1) * 20;
 
-    const dr = pool.request().input('serie', sql.VarChar(3), serie).input('anio', sql.Decimal(4), anio);
+    const dr = pool.request().input('serie', sql.VarChar(3), serie);
     if (q && SEARCH_COLS.has(col)) dr.input('q', `%${q}%`);
     const dataRes = await dr.query(
       `SELECT Serie,CartaPorte,Id_Pedido,FechaPedido,FehcaCarga,NombreComunCli,DesFlete,Status,RealizoPedido
