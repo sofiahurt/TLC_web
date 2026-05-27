@@ -44,12 +44,13 @@ router.get('/data', async (req, res) => {
     );
 
     const fmt = v => v ? (v instanceof Date ? v.toISOString().slice(0,10) : String(v).trim()) : '';
+    const fmtDate = v => { if (!v) return ''; const iso = v instanceof Date ? v.toISOString().slice(0,10) : String(v).trim().slice(0,10); return iso.length >= 10 ? `${iso.slice(8,10)}/${iso.slice(5,7)}/${iso.slice(0,4)}` : iso; };
     const rows = dataRes.recordset.map(r =>
       `<tr data-id="${r.CartaPorte}">
         <td data-field="Serie"         data-value="${fmt(r.Serie)}">${fmt(r.Serie)}</td>
         <td data-field="CartaPorte"    data-value="${fmt(r.CartaPorte)}">${fmt(r.CartaPorte)}</td>
-        <td data-field="FechaPedido"   data-value="${fmt(r.FechaPedido)}">${fmt(r.FechaPedido)}</td>
-        <td data-field="FehcaCarga"    data-value="${fmt(r.FehcaCarga)}">${fmt(r.FehcaCarga)}</td>
+        <td data-field="FechaPedido"   data-value="${fmt(r.FechaPedido)}">${fmtDate(r.FechaPedido)}</td>
+        <td data-field="FehcaCarga"    data-value="${fmt(r.FehcaCarga)}">${fmtDate(r.FehcaCarga)}</td>
         <td data-field="NombreComunCli" data-value="${fmt(r.NombreComunCli)}">${fmt(r.NombreComunCli)}</td>
         <td data-field="DesFlete"      data-value="${fmt(r.DesFlete)}">${fmt(r.DesFlete)}</td>
         <td data-field="Status"        data-value="${fmt(r.Status)}">${fmt(r.Status)}</td>
@@ -444,7 +445,7 @@ router.post('/guardar', async (req, res) => {
         .input('cp',       sql.VarChar(30),  cartaPorte)
         .input('fechaPed', sql.Date,         f.FechaPedido || hoy)
         .input('fechaCap', sql.Date,         hoy)
-        .input('realizo',  sql.VarChar(60),  req.session.usuario.nombre)
+        .input('realizo',  sql.VarChar(60),  [req.session.usuario.nombre, req.session.usuario.apellido].filter(Boolean).join(' '))
         .input('anio',     sql.Decimal(4),   req.session.anio)
         .input('fehcaCar', sql.Date,         f.FehcaCarga||null)
         .input('horaCar',  sql.DateTime,     f.HoraCarga ? new Date(`${f.FehcaCarga}T${f.HoraCarga}`) : null)
@@ -559,6 +560,7 @@ router.post('/guardar', async (req, res) => {
       await pool.request()
         .input('serie',    sql.VarChar(3),   f.Serie||serie)
         .input('cp',       sql.VarChar(30),  f.CartaPorte)
+        .input('fechaPed', sql.Date,         f.FechaPedido || hoy)
         .input('fehcaCar', sql.Date,         f.FehcaCarga||null)
         .input('horaCar',  sql.DateTime,     f.FehcaCarga && f.HoraCarga ? new Date(`${f.FehcaCarga}T${f.HoraCarga}`) : null)
         .input('fechaDes', sql.Date,         f.FechaDesCarta||null)
@@ -637,6 +639,7 @@ router.post('/guardar', async (req, res) => {
         .input('cont',     sql.VarChar(20),  f.Contenedor||null)
         .input('whoMod',   sql.VarChar(60),  req.session.usuario.nombre)
         .query(`UPDATE Empresa2.CartaPorte SET
+          FechaPedido=@fechaPed,
           FehcaCarga=@fehcaCar,HoraCarga=@horaCar,FechaDesCarta=@fechaDes,HorarioDesCarta=@horaDes,
           Id_Cliente=@idCli,NombreComunCli=@nCli,Id_ClienteEnt=@idCliEnt,ClienteEnt=@cliEnt,
           Id_ClienteCarga=@idCliCar,ClienteCarga=@cliCar,

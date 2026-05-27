@@ -468,7 +468,7 @@
 <script>
 // ── ESTADO ────────────────────────────────────────────────────────────────────
 let _mode = 'add';
-const _usuarioNombre = '<%= usuario.nombre.trim() %>';
+const _usuarioNombre = '<%= usuario.nombre.trim() %><%= usuario.apellido ? " " + usuario.apellido.trim() : "" %>';
 let _readOnly = false;
 let _currentSerie = '';
 let _currentCP = '';
