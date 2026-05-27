@@ -475,6 +475,7 @@
 <script>
 // ── ESTADO ────────────────────────────────────────────────────────────────────
 let _mode = 'add';
+const _usuarioNombre = '<%= usuario.nombre.trim() %>';
 let _readOnly = false;
 let _currentSerie = '';
 let _currentCP = '';
@@ -538,6 +539,11 @@ function loadForm(cp, serie, ro) {
     .then(d => {
       if (d.error) { alert(d.error); return; }
       populateForm(d);
+      if (_mode === 'edit') {
+        if (!document.getElementById('f_FechaPedido').value) document.getElementById('f_FechaPedido').value = today;
+        if (!document.getElementById('f_Status').value)      document.getElementById('f_Status').value = 'EMITIDO';
+        document.getElementById('f_RealizoPedido').value = _usuarioNombre;
+      }
       setReadOnly(ro);
       _currentIdCliente = String(d.Id_Cliente || '');
       toggleSeccionCliente();
