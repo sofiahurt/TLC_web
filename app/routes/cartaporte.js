@@ -637,9 +637,10 @@ router.post('/guardar', async (req, res) => {
         .input('obs',      sql.VarChar(255), f.Observaciones||null)
         .input('booking2', sql.VarChar(20),  f.Booking||null)
         .input('cont',     sql.VarChar(20),  f.Contenedor||null)
-        .input('whoMod',   sql.VarChar(60),  req.session.usuario.nombre)
+        .input('whoMod',   sql.VarChar(60),  [req.session.usuario.nombre, req.session.usuario.apellido].filter(Boolean).join(' '))
+        .input('realizo',  sql.VarChar(60),  [req.session.usuario.nombre, req.session.usuario.apellido].filter(Boolean).join(' '))
         .query(`UPDATE Empresa2.CartaPorte SET
-          FechaPedido=@fechaPed,
+          FechaPedido=@fechaPed,RealizoPedido=@realizo,
           FehcaCarga=@fehcaCar,HoraCarga=@horaCar,FechaDesCarta=@fechaDes,HorarioDesCarta=@horaDes,
           Id_Cliente=@idCli,NombreComunCli=@nCli,Id_ClienteEnt=@idCliEnt,ClienteEnt=@cliEnt,
           Id_ClienteCarga=@idCliCar,ClienteCarga=@cliCar,
