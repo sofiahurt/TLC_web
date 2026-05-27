@@ -19,12 +19,19 @@ app.use(session({
   cookie: { maxAge: 8 * 60 * 60 * 1000 }
 }));
 
+app.use((req, res, next) => {
+  res.locals.anio  = req.session.anio  || null;
+  res.locals.serie = req.session.usuario ? req.session.usuario.serie : null;
+  next();
+});
+
 function requireAuth(req, res, next) {
   if (!req.session.usuario) return res.redirect('/login');
+  if (!req.session.anio)    return res.redirect('/seleccionar-anio');
   next();
 }
 
-app.use('/login', require('./app/routes/auth'));
+app.use('/', require('./app/routes/auth'));
 app.get('/logout', (req, res) => {
   req.session.destroy(() => res.redirect('/login'));
 });
