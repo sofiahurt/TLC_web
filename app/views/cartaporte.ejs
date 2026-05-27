@@ -516,6 +516,9 @@ document.addEventListener('click', function(e) {
 // ── OPEN MODAL ────────────────────────────────────────────────────────────────
 function openEdit() {
   if (!window._selectedRow) return;
+  if ((window._selectedRow.Status || '').trim().toLowerCase() === 'facturado') {
+    openVisualizar(); return;
+  }
   _mode = 'edit'; _readOnly = false;
   document.getElementById('frmTitle').textContent = 'Editar Carta Porte';
   document.getElementById('btnGuardar').style.display = '';
@@ -545,9 +548,24 @@ function loadForm(cp, serie, ro) {
         document.getElementById('f_RealizoPedido').value = _usuarioNombre;
       }
       setReadOnly(ro);
+      applyRequiredHighlight(!ro);
       _currentIdCliente = String(d.Id_Cliente || '');
       toggleSeccionCliente();
     });
+}
+
+const _REQUIRED_FIELDS = [
+  'f_FehcaCarga','f_FechaDesCarta',
+  'f_NombreComunCli','f_DesFlete','f_NoCamion',
+  'f_NoCaja','f_Operador','f_DomCarga','f_DomDescarga'
+];
+function applyRequiredHighlight(show) {
+  _REQUIRED_FIELDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.style.backgroundColor = show ? '#FFF8DC' : '';
+    el.style.borderColor     = show ? '#E8A020' : '';
+  });
 }
 
 function populateForm(d) {
