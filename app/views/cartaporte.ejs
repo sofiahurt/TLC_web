@@ -1,0 +1,1038 @@
+<%- include('partials/header', { titulo: 'Carta Porte' }) %>
+<%- include('partials/sidebar') %>
+<div id="page-content">
+  <div class="d-flex align-items-center mb-3">
+    <button class="btn btn-sm btn-outline-secondary me-3 d-md-none" id="sidebarToggle"><i class="bi bi-list fs-5"></i></button>
+    <h4 class="mb-0 fw-bold flex-grow-1">Carta Porte</h4>
+    <span class="badge bg-secondary ms-2">Serie: <strong><%= usuario.serie || '—' %></strong></span>
+    <span class="badge bg-warning text-dark ms-1">Año: <strong><%= anio %></strong></span>
+  </div>
+
+  <!-- Search + Buttons -->
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-body py-2">
+      <div class="row align-items-center g-2">
+        <div class="col-auto">
+          <select id="searchCol" class="form-select form-select-sm">
+            <option value="NombreComunCli">Cliente</option>
+            <option value="CartaPorte">Carta Porte</option>
+            <option value="DesFlete">Descripción flete</option>
+            <option value="Status">Status</option>
+            <option value="RealizoPedido">Realizó</option>
+          </select>
+        </div>
+        <div class="col col-md-4">
+          <input type="text" id="searchInput" class="form-control form-control-sm" placeholder="Buscar...">
+        </div>
+        <div class="col-auto ms-auto btn-action-group">
+          <% if (anio === new Date().getFullYear()) { %>
+          <button class="btn btn-sm btn-success" id="btnAgregar" onclick="openAdd()"><i class="bi bi-plus-lg"></i> Agregar</button>
+          <button class="btn btn-sm btn-primary" id="btnEditar" data-requires-selection disabled onclick="openEdit()"><i class="bi bi-pencil"></i> Editar</button>
+          <button class="btn btn-sm btn-danger" id="btnEliminar" data-requires-selection disabled onclick="confirmDelete()"><i class="bi bi-trash"></i> Eliminar</button>
+          <% } %>
+          <button class="btn btn-sm btn-outline-primary" data-requires-selection disabled onclick="openVisualizar()"><i class="bi bi-eye"></i> Visualizar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover table-sm mb-0">
+          <thead class="thead-tlc">
+            <tr>
+              <th data-sort="Serie" style="width:70px">Serie <span class="sort-icon"></span></th>
+              <th data-sort="CartaPorte" style="width:120px">Carta Porte <span class="sort-icon"></span></th>
+              <th data-sort="FechaPedido" style="width:105px">F. Pedido <span class="sort-icon"></span></th>
+              <th data-sort="FehcaCarga" style="width:105px">F. Carga <span class="sort-icon"></span></th>
+              <th data-sort="NombreComunCli">Cliente <span class="sort-icon"></span></th>
+              <th data-sort="DesFlete">Descripción flete <span class="sort-icon"></span></th>
+              <th data-sort="Status" style="width:100px">Status <span class="sort-icon"></span></th>
+              <th data-sort="RealizoPedido" style="width:110px">Realizó <span class="sort-icon"></span></th>
+            </tr>
+          </thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card-footer bg-white d-flex align-items-center justify-content-between py-2">
+      <span class="page-info" id="pageInfo"></span>
+      <div id="pagination">
+        <button class="btn btn-sm btn-outline-secondary" data-action="prev"><i class="bi bi-chevron-left"></i> Anterior</button>
+        <button class="btn btn-sm btn-outline-secondary" data-action="next">Siguiente <i class="bi bi-chevron-right"></i></button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ MODAL PRINCIPAL ═══════════════════════════════════════ -->
+<div class="modal fade" id="frmModal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="frmTitle">Carta Porte</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="frmError" class="alert alert-danger d-none py-2 small"></div>
+        <ul class="nav nav-tabs mb-3" id="cpTabs" role="tablist">
+          <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tabCP">Carta Porte</a></li>
+          <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabMerc" id="tabMercLink">Mercancías</a></li>
+          <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabDepo" id="tabDepoLink">Depósitos</a></li>
+          <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabCostos">Costos</a></li>
+        </ul>
+        <div class="tab-content">
+
+          <!-- ── TAB 1: CARTA PORTE ─────────────────────────────────────── -->
+          <div class="tab-pane fade show active" id="tabCP">
+            <!-- Fila 1 -->
+            <div class="row g-2 mb-2">
+              <div class="col-md-2">
+                <label class="form-label fw-semibold small mb-1">Serie</label>
+                <input type="text" id="f_Serie" class="form-control form-control-sm" readonly>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label fw-semibold small mb-1">Carta Porte</label>
+                <input type="text" id="f_CartaPorte" class="form-control form-control-sm" readonly>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label fw-semibold small mb-1">Fecha pedido</label>
+                <input type="date" id="f_FechaPedido" class="form-control form-control-sm" readonly>
+              </div>
+              <div class="col-md-2">
+                <label class="form-label fw-semibold small mb-1">Status</label>
+                <input type="text" id="f_Status" class="form-control form-control-sm" maxlength="20">
+              </div>
+              <div class="col-md-2">
+                <label class="form-label fw-semibold small mb-1">Realizó</label>
+                <input type="text" id="f_RealizoPedido" class="form-control form-control-sm" readonly>
+              </div>
+            </div>
+            <!-- Fila 2 -->
+            <div class="row g-2 mb-2">
+              <div class="col-md-2">
+                <label class="form-label fw-semibold small mb-1">F. Carga <span class="text-danger">*</span></label>
+                <input type="date" id="f_FehcaCarga" class="form-control form-control-sm">
+              </div>
+              <div class="col-md-2">
+                <label class="form-label fw-semibold small mb-1">Hora carga</label>
+                <input type="time" id="f_HoraCarga" class="form-control form-control-sm">
+              </div>
+              <div class="col-md-2">
+                <label class="form-label fw-semibold small mb-1">F. Descarga <span class="text-danger">*</span></label>
+                <input type="date" id="f_FechaDesCarta" class="form-control form-control-sm">
+              </div>
+              <div class="col-md-2">
+                <label class="form-label fw-semibold small mb-1">Hora descarga</label>
+                <input type="time" id="f_HorarioDesCarta" class="form-control form-control-sm">
+              </div>
+              <div class="col-md-2">
+                <label class="form-label fw-semibold small mb-1">Booking</label>
+                <input type="text" id="f_Booking" class="form-control form-control-sm" maxlength="20">
+              </div>
+              <div class="col-md-2">
+                <label class="form-label fw-semibold small mb-1">No. Rainde</label>
+                <input type="text" id="f_NoRainde" class="form-control form-control-sm" maxlength="20">
+              </div>
+            </div>
+            <!-- Fila 3: Cliente -->
+            <div class="row g-2 mb-2">
+              <div class="col-md-8">
+                <label class="form-label fw-semibold small mb-1">Cliente <span class="text-danger">*</span></label>
+                <div class="input-group input-group-sm">
+                  <input type="hidden" id="f_Id_Cliente">
+                  <input type="text" id="f_NombreComunCli" class="form-control form-control-sm" readonly placeholder="Seleccionar...">
+                  <button class="btn btn-outline-secondary" type="button" onclick="openLkCliente('principal')"><i class="bi bi-search"></i></button>
+                  <button class="btn btn-outline-danger btn-sm" type="button" onclick="clearCliente()" title="Limpiar"><i class="bi bi-x"></i></button>
+                </div>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label fw-semibold small mb-1">Contenedor</label>
+                <input type="text" id="f_Contenedor" class="form-control form-control-sm" maxlength="20">
+              </div>
+            </div>
+            <!-- Fila 4 -->
+            <div class="row g-2 mb-2">
+              <div class="col-md-6">
+                <label class="form-label fw-semibold small mb-1">Cliente entrega</label>
+                <div class="input-group input-group-sm">
+                  <input type="hidden" id="f_Id_ClienteEnt">
+                  <input type="text" id="f_ClienteEnt" class="form-control form-control-sm" readonly placeholder="Seleccionar...">
+                  <button class="btn btn-outline-secondary" type="button" onclick="openLkCliente('ent')"><i class="bi bi-search"></i></button>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label fw-semibold small mb-1">Cliente carga</label>
+                <div class="input-group input-group-sm">
+                  <input type="hidden" id="f_Id_ClienteCarga">
+                  <input type="text" id="f_ClienteCarga" class="form-control form-control-sm" readonly placeholder="Seleccionar...">
+                  <button class="btn btn-outline-secondary" type="button" onclick="openLkCliente('carga')"><i class="bi bi-search"></i></button>
+                </div>
+              </div>
+            </div>
+            <!-- Lookups dependientes del cliente -->
+            <div id="seccionDependienteCliente" style="display:none">
+              <!-- Fila 5: Tarifa -->
+              <div class="row g-2 mb-2">
+                <div class="col-md-8">
+                  <label class="form-label fw-semibold small mb-1">Tarifa / Descripción flete <span class="text-danger">*</span></label>
+                  <div class="input-group input-group-sm">
+                    <input type="hidden" id="f_Id_Tarifa">
+                    <input type="text" id="f_DesFlete" class="form-control form-control-sm" readonly placeholder="Seleccionar tarifa...">
+                    <button class="btn btn-outline-secondary" type="button" onclick="openLkTarifa()"><i class="bi bi-search"></i></button>
+                  </div>
+                </div>
+              </div>
+              <!-- Fila 6: Camion + Operador -->
+              <div class="row g-2 mb-2">
+                <div class="col-md-4">
+                  <label class="form-label fw-semibold small mb-1">Camión <span class="text-danger">*</span></label>
+                  <div class="input-group input-group-sm">
+                    <input type="hidden" id="f_Id_Camion">
+                    <input type="text" id="f_NoCamion" class="form-control form-control-sm" readonly placeholder="Seleccionar...">
+                    <button class="btn btn-outline-secondary" type="button" onclick="openLkCamion()"><i class="bi bi-search"></i></button>
+                  </div>
+                </div>
+                <div class="col-md-2">
+                  <label class="form-label fw-semibold small mb-1">Placas</label>
+                  <input type="text" id="f_NoPlacas" class="form-control form-control-sm" readonly>
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label fw-semibold small mb-1">Caja 1 <span class="text-danger">*</span></label>
+                  <div class="input-group input-group-sm">
+                    <input type="text" id="f_NoCaja" class="form-control form-control-sm" readonly placeholder="Seleccionar...">
+                    <button class="btn btn-outline-secondary" type="button" onclick="openLkRemolque('caja1')"><i class="bi bi-search"></i></button>
+                  </div>
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label fw-semibold small mb-1">Caja 2</label>
+                  <div class="input-group input-group-sm">
+                    <input type="text" id="f_NoCaja2" class="form-control form-control-sm" readonly placeholder="Seleccionar...">
+                    <button class="btn btn-outline-secondary" type="button" onclick="openLkRemolque('caja2')"><i class="bi bi-search"></i></button>
+                  </div>
+                </div>
+              </div>
+              <!-- Fila 7: Operador -->
+              <div class="row g-2 mb-2">
+                <div class="col-md-6">
+                  <label class="form-label fw-semibold small mb-1">Operador <span class="text-danger">*</span></label>
+                  <div class="input-group input-group-sm">
+                    <input type="hidden" id="f_Id_Operador">
+                    <input type="text" id="f_Operador" class="form-control form-control-sm" readonly placeholder="Seleccionar...">
+                    <button class="btn btn-outline-secondary" type="button" onclick="openLkOperador()"><i class="bi bi-search"></i></button>
+                  </div>
+                </div>
+              </div>
+              <!-- Fila 8: Domicilios -->
+              <div class="row g-2 mb-2">
+                <div class="col-md-6">
+                  <label class="form-label fw-semibold small mb-1">Dom. carga <span class="text-danger">*</span></label>
+                  <div class="input-group input-group-sm">
+                    <input type="hidden" id="f_Id_DomCarga">
+                    <input type="text" id="f_DomCarga" class="form-control form-control-sm" readonly placeholder="Seleccionar...">
+                    <button class="btn btn-outline-secondary" type="button" onclick="openLkDom('carga')"><i class="bi bi-search"></i></button>
+                  </div>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label fw-semibold small mb-1">Dom. descarga <span class="text-danger">*</span></label>
+                  <div class="input-group input-group-sm">
+                    <input type="hidden" id="f_Id_DomDescarga1">
+                    <input type="text" id="f_DomDescarga" class="form-control form-control-sm" readonly placeholder="Seleccionar...">
+                    <button class="btn btn-outline-secondary" type="button" onclick="openLkDom('descarga')"><i class="bi bi-search"></i></button>
+                  </div>
+                </div>
+              </div>
+            </div><!-- /seccionDependienteCliente -->
+
+            <!-- Observaciones -->
+            <div class="row g-2 mb-2">
+              <div class="col-12">
+                <label class="form-label fw-semibold small mb-1">Observaciones</label>
+                <textarea id="f_Observaciones" class="form-control form-control-sm" rows="2" maxlength="255"></textarea>
+              </div>
+            </div>
+          </div><!-- /tabCP -->
+
+          <!-- ── TAB 2: MERCANCÍAS ──────────────────────────────────────── -->
+          <div class="tab-pane fade" id="tabMerc">
+            <div class="d-flex justify-content-end mb-2">
+              <button class="btn btn-sm btn-success" onclick="openAddMerc()"><i class="bi bi-plus-lg"></i> Agregar mercancía</button>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-hover table-sm mb-0">
+                <thead class="thead-tlc">
+                  <tr>
+                    <th style="width:50px">#</th>
+                    <th>SKU</th>
+                    <th>Descripción</th>
+                    <th style="width:80px">Cantidad</th>
+                    <th style="width:90px">Clave Unidad</th>
+                    <th style="width:90px">Peso (kg)</th>
+                    <th style="width:110px">Valor</th>
+                    <th style="width:60px"></th>
+                  </tr>
+                </thead>
+                <tbody id="mercBody"></tbody>
+              </table>
+            </div>
+          </div><!-- /tabMerc -->
+
+          <!-- ── TAB 3: DEPÓSITOS ───────────────────────────────────────── -->
+          <div class="tab-pane fade" id="tabDepo">
+            <div class="d-flex justify-content-end mb-2">
+              <button class="btn btn-sm btn-success" onclick="openAddDepo()"><i class="bi bi-plus-lg"></i> Agregar depósito</button>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-hover table-sm mb-0">
+                <thead class="thead-tlc">
+                  <tr>
+                    <th style="width:70px">ID</th>
+                    <th style="width:100px">Fecha</th>
+                    <th>Operador</th>
+                    <th>Origen</th>
+                    <th>Destino</th>
+                    <th style="width:90px">Monto</th>
+                    <th style="width:80px">Autorizado</th>
+                    <th style="width:60px"></th>
+                  </tr>
+                </thead>
+                <tbody id="depoBody"></tbody>
+              </table>
+            </div>
+          </div><!-- /tabDepo -->
+
+          <!-- ── TAB 4: COSTOS ──────────────────────────────────────────── -->
+          <div class="tab-pane fade" id="tabCostos">
+            <div class="row g-2">
+              <div class="col-12"><h6 class="text-primary fw-bold border-bottom pb-1 mb-2">Costos de venta</h6></div>
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Flete</label><input type="number" id="f_CostoFlete" class="form-control form-control-sm" step="0.01"></div>
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Maniobras</label><input type="number" id="f_CostoManiobras" class="form-control form-control-sm" step="0.01"></div>
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Demoras</label><input type="number" id="f_CostoDemoras" class="form-control form-control-sm" step="0.01"></div>
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Autopistas</label><input type="number" id="f_CostoAutopistas" class="form-control form-control-sm" step="0.01"></div>
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Dob. operador</label><input type="number" id="f_CostoDobOpe" class="form-control form-control-sm" step="0.01"></div>
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Diesel venta</label><input type="number" id="f_CostoDisel" class="form-control form-control-sm" step="0.01"></div>
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">No. paradas</label><input type="number" id="f_NoParadas" class="form-control form-control-sm"></div>
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Costo parada</label><input type="number" id="f_CostoParada" class="form-control form-control-sm" step="0.01"></div>
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Otros costos</label><input type="number" id="f_CostosOtros" class="form-control form-control-sm" step="0.01"></div>
+              <div class="col-md-4"><label class="form-label fw-semibold small mb-1">Desc. otros costos</label><input type="text" id="f_DesOtrosCostos" class="form-control form-control-sm" maxlength="255"></div>
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Cargo extra trans</label><input type="number" id="f_CargoExtraTrans" class="form-control form-control-sm" step="0.01"></div>
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Kilómetros</label><input type="number" id="f_Kilometros" class="form-control form-control-sm" step="0.01"></div>
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Km tarifa</label><input type="number" id="f_KilometrosTar" class="form-control form-control-sm"></div>
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Retención/km</label><input type="number" id="f_RetenKilo" class="form-control form-control-sm" step="0.01"></div>
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Moneda</label><input type="text" id="f_c_Moneda" class="form-control form-control-sm" maxlength="10"></div>
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Tipo cambio</label><input type="number" id="f_TipoCambio" class="form-control form-control-sm" step="0.01"></div>
+
+              <div class="col-12"><h6 class="text-primary fw-bold border-bottom pb-1 mb-2 mt-2">Flags de cobro</h6></div>
+              <div class="col-md-2"><div class="form-check"><input class="form-check-input" type="checkbox" id="f_FlagCobMan"><label class="form-check-label small">Cob. maniobras</label></div></div>
+              <div class="col-md-2"><div class="form-check"><input class="form-check-input" type="checkbox" id="f_FlagCobDem"><label class="form-check-label small">Cob. demoras</label></div></div>
+              <div class="col-md-2"><div class="form-check"><input class="form-check-input" type="checkbox" id="f_FlagCobAuto"><label class="form-check-label small">Cob. autopistas</label></div></div>
+              <div class="col-md-2"><div class="form-check"><input class="form-check-input" type="checkbox" id="f_FlagCobDO"><label class="form-check-label small">Cob. dob. oper.</label></div></div>
+              <div class="col-md-2"><div class="form-check"><input class="form-check-input" type="checkbox" id="f_FlagConDis"><label class="form-check-label small">Con diesel</label></div></div>
+              <div class="col-md-2"><div class="form-check"><input class="form-check-input" type="checkbox" id="f_FlagCobParada"><label class="form-check-label small">Cob. parada</label></div></div>
+              <div class="col-md-2"><div class="form-check"><input class="form-check-input" type="checkbox" id="f_FlagCobOtros"><label class="form-check-label small">Cob. otros</label></div></div>
+              <div class="col-md-2"><div class="form-check"><input class="form-check-input" type="checkbox" id="f_FlagCobCE"><label class="form-check-label small">Cob. cargo extra</label></div></div>
+              <div class="col-md-2"><div class="form-check"><input class="form-check-input" type="checkbox" id="f_FlagIVA"><label class="form-check-label small">IVA</label></div></div>
+              <div class="col-md-2"><div class="form-check"><input class="form-check-input" type="checkbox" id="f_FlagRet"><label class="form-check-label small">Retención</label></div></div>
+
+              <div class="col-12"><h6 class="text-primary fw-bold border-bottom pb-1 mb-2 mt-2">Totales MXN</h6></div>
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">% IVA</label><input type="number" id="f_PorIVAMX" class="form-control form-control-sm" value="16"></div>
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">SubTotal MX</label><input type="number" id="f_SubTotalMX" class="form-control form-control-sm bg-light" readonly></div>
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">IVA MX</label><input type="number" id="f_IVAMX" class="form-control form-control-sm bg-light" readonly></div>
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Retención MX</label><input type="number" id="f_RetenMX" class="form-control form-control-sm bg-light" readonly></div>
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1 text-primary">TOTAL MX</label><input type="number" id="f_TOTALMX" class="form-control form-control-sm fw-bold" readonly></div>
+              <div class="col-md-2 d-flex align-items-end">
+                <button class="btn btn-sm btn-outline-primary w-100" onclick="recalcular()"><i class="bi bi-calculator"></i> Recalcular</button>
+              </div>
+
+              <div class="col-12"><h6 class="text-primary fw-bold border-bottom pb-1 mb-2 mt-2">Costos operativos</h6></div>
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Préstamo</label><input type="number" id="f_CostoPrestamo" class="form-control form-control-sm" step="0.01"></div>
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Talacha</label><input type="number" id="f_CostoTalacha" class="form-control form-control-sm" step="0.01"></div>
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Comp. llantas</label><input type="number" id="f_CostoCompllanta" class="form-control form-control-sm" step="0.01"></div>
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Diesel op.</label><input type="number" id="f_CostoDiesel" class="form-control form-control-sm" step="0.01"></div>
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Casetas</label><input type="number" id="f_CostoCasetas" class="form-control form-control-sm" step="0.01"></div>
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Comidas</label><input type="number" id="f_CostoComidas" class="form-control form-control-sm" step="0.01"></div>
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Maniobras ext.</label><input type="number" id="f_CostoManiobrasExt" class="form-control form-control-sm" step="0.01"></div>
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Báscula</label><input type="number" id="f_CostoBascula" class="form-control form-control-sm" step="0.01"></div>
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Pensión</label><input type="number" id="f_CostoPension" class="form-control form-control-sm" step="0.01"></div>
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Refacciones</label><input type="number" id="f_CostoRefacciones" class="form-control form-control-sm" step="0.01"></div>
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Otros op.</label><input type="number" id="f_CostoOtros" class="form-control form-control-sm" step="0.01"></div>
+            </div>
+          </div><!-- /tabCostos -->
+
+        </div><!-- /tab-content -->
+      </div><!-- /modal-body -->
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal"><i class="bi bi-x-lg"></i> Cerrar</button>
+        <button class="btn btn-primary" id="btnGuardar" onclick="guardar()"><i class="bi bi-floppy"></i> Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ MODAL MERCANCÍA ══════════════════════════════════════ -->
+<div class="modal fade" id="mercModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header"><h6 class="modal-title" id="mercTitle">Mercancía</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div id="mercError" class="alert alert-danger d-none py-2 small"></div>
+        <div class="row g-2">
+          <div class="col-md-3"><label class="form-label fw-semibold small mb-1">SKU</label><input type="text" id="m_SKU" class="form-control form-control-sm" maxlength="25"></div>
+          <div class="col-md-3"><label class="form-label fw-semibold small mb-1">Bienes transp.</label><input type="text" id="m_BienesTransp" class="form-control form-control-sm" maxlength="20"></div>
+          <div class="col-md-6"><label class="form-label fw-semibold small mb-1">Descripción</label><input type="text" id="m_Descripcion" class="form-control form-control-sm" maxlength="199"></div>
+          <div class="col-md-6"><label class="form-label fw-semibold small mb-1">Descripción manual</label><input type="text" id="m_DesManual" class="form-control form-control-sm" maxlength="200"></div>
+          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Cantidad</label><input type="number" id="m_Cantidad" class="form-control form-control-sm" step="0.000001"></div>
+          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Clave unidad</label><input type="text" id="m_ClaveUnidad" class="form-control form-control-sm" maxlength="20"></div>
+          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Unidad</label><input type="text" id="m_Unidad" class="form-control form-control-sm" maxlength="20"></div>
+          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Peso/unidad</label><input type="number" id="m_PesoUnidad" class="form-control form-control-sm" step="0.01"></div>
+          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Mat. peligroso</label>
+            <select id="m_MaterialPeligroso" class="form-select form-select-sm"><option value="No">No</option><option value="Si">Si</option></select>
+          </div>
+          <div class="col-md-3"><label class="form-label fw-semibold small mb-1">Cve. mat. peligroso</label><input type="text" id="m_CveMaterialPeligroso" class="form-control form-control-sm" maxlength="20"></div>
+          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Cve. embalaje</label><input type="text" id="m_cve_Embalaje" class="form-control form-control-sm" maxlength="10"></div>
+          <div class="col-md-5"><label class="form-label fw-semibold small mb-1">Desc. embalaje</label><input type="text" id="m_DescripEmbalaje" class="form-control form-control-sm" maxlength="100"></div>
+          <div class="col-md-3"><label class="form-label fw-semibold small mb-1">Peso en kg</label><input type="number" id="m_PesoEnKg" class="form-control form-control-sm" step="0.001"></div>
+          <div class="col-md-3"><label class="form-label fw-semibold small mb-1">Valor mercancía</label><input type="number" id="m_ValorMercancia" class="form-control form-control-sm" step="0.000001"></div>
+          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Moneda</label><input type="text" id="m_Moneda" class="form-control form-control-sm" maxlength="4"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-primary btn-sm" onclick="guardarMerc()"><i class="bi bi-floppy"></i> Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ MODAL DEPÓSITO ═══════════════════════════════════════ -->
+<div class="modal fade" id="depoModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header"><h6 class="modal-title" id="depoTitle">Depósito</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div id="depoError" class="alert alert-danger d-none py-2 small"></div>
+        <div class="row g-2">
+          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Fecha</label><input type="date" id="d_Fecha" class="form-control form-control-sm"></div>
+          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Turno</label><input type="text" id="d_Turno" class="form-control form-control-sm" maxlength="20"></div>
+          <div class="col-md-4"><label class="form-label fw-semibold small mb-1">Operador</label><input type="text" id="d_OPERADOR" class="form-control form-control-sm" maxlength="45"></div>
+          <div class="col-md-4"><label class="form-label fw-semibold small mb-1">ID Operador</label><input type="number" id="d_ID_OPERADOR" class="form-control form-control-sm"></div>
+          <div class="col-md-3"><label class="form-label fw-semibold small mb-1">Origen</label><input type="text" id="d_Origen" class="form-control form-control-sm" maxlength="50"></div>
+          <div class="col-md-3"><label class="form-label fw-semibold small mb-1">Destino</label><input type="text" id="d_Destino" class="form-control form-control-sm" maxlength="50"></div>
+          <div class="col-md-3"><label class="form-label fw-semibold small mb-1">Folio</label><input type="text" id="d_Folio" class="form-control form-control-sm" maxlength="20"></div>
+          <div class="col-md-3"><label class="form-label fw-semibold small mb-1">Monto</label><input type="number" id="d_Monto" class="form-control form-control-sm" step="0.01"></div>
+          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Préstamo</label><input type="number" id="d_Prestamo" class="form-control form-control-sm" step="0.01"></div>
+          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Talachas</label><input type="number" id="d_Talachas" class="form-control form-control-sm" step="0.01"></div>
+          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Llantas</label><input type="number" id="d_Llantas" class="form-control form-control-sm" step="0.01"></div>
+          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Diesel</label><input type="number" id="d_Diesel" class="form-control form-control-sm" step="0.01"></div>
+          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Casetas</label><input type="number" id="d_Casetas" class="form-control form-control-sm" step="0.01"></div>
+          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Comidas</label><input type="number" id="d_Comidas" class="form-control form-control-sm" step="0.01"></div>
+          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Maniobra</label><input type="number" id="d_Maniobra" class="form-control form-control-sm" step="0.01"></div>
+          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Báscula</label><input type="number" id="d_Bascula" class="form-control form-control-sm" step="0.01"></div>
+          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Pensión</label><input type="number" id="d_Pension" class="form-control form-control-sm" step="0.1"></div>
+          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Refacciones</label><input type="number" id="d_Refacciones" class="form-control form-control-sm" step="0.01"></div>
+          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Otros</label><input type="number" id="d_Otros" class="form-control form-control-sm" step="0.01"></div>
+          <div class="col-md-6"><label class="form-label fw-semibold small mb-1">Desc. otros</label><input type="text" id="d_DesOtros" class="form-control form-control-sm" maxlength="255"></div>
+          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Autorizado</label><input type="number" id="d_Autorizado" class="form-control form-control-sm"></div>
+          <div class="col-12"><label class="form-label fw-semibold small mb-1">Observaciones</label><textarea id="d_Observaciones" class="form-control form-control-sm" rows="2" maxlength="499"></textarea></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-primary btn-sm" onclick="guardarDepo()"><i class="bi bi-floppy"></i> Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ MODAL LOOKUP GENÉRICO ════════════════════════════════ -->
+<div class="modal fade modal-lookup" id="lkModal" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title" id="lkTitle">Búsqueda</h6>
+        <button class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-2">
+        <input type="text" id="lkSearch" class="form-control form-control-sm mb-2" placeholder="Buscar...">
+        <div class="table-responsive">
+          <table class="table table-hover table-sm mb-0">
+            <thead class="thead-tlc" id="lkThead"><tr></tr></thead>
+            <tbody id="lkBody"></tbody>
+          </table>
+        </div>
+        <div class="d-flex justify-content-between align-items-center mt-2">
+          <span class="page-info small" id="lkInfo"></span>
+          <div>
+            <button class="btn btn-sm btn-outline-secondary" id="lkPrev"><i class="bi bi-chevron-left"></i></button>
+            <button class="btn btn-sm btn-outline-secondary" id="lkNext"><i class="bi bi-chevron-right"></i></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<%- include('partials/footer') %>
+<script>
+// ── ESTADO ────────────────────────────────────────────────────────────────────
+let _mode = 'add';
+let _readOnly = false;
+let _currentSerie = '';
+let _currentCP = '';
+let _currentIdCliente = '';
+let _mercMode = 'add';
+let _mercEditId = null;
+let _depoMode = 'add';
+let _depoEditId = null;
+const today = new Date().toISOString().slice(0, 10);
+
+const modal     = new bootstrap.Modal(document.getElementById('frmModal'));
+const mercModal = new bootstrap.Modal(document.getElementById('mercModal'));
+const depoModal = new bootstrap.Modal(document.getElementById('depoModal'));
+const lkModal   = new bootstrap.Modal(document.getElementById('lkModal'));
+
+// ── BROWSE ────────────────────────────────────────────────────────────────────
+const browse = initBrowse({
+  searchInput:  document.getElementById('searchInput'),
+  searchColumn: document.getElementById('searchCol'),
+  tableBody:    document.getElementById('tableBody'),
+  paginationEl: document.getElementById('pagination'),
+  infoEl:       document.getElementById('pageInfo'),
+  fetchUrl:     '/cartaporte/data'
+});
+
+// ── OPEN MODAL ────────────────────────────────────────────────────────────────
+function openAdd() {
+  _mode = 'add'; _readOnly = false;
+  document.getElementById('frmTitle').textContent = 'Nueva Carta Porte';
+  document.getElementById('btnGuardar').style.display = '';
+  clearForm();
+  document.getElementById('f_FechaPedido').value = today;
+  modal.show();
+}
+
+function openEdit() {
+  if (!window._selectedRow) return;
+  _mode = 'edit'; _readOnly = false;
+  document.getElementById('frmTitle').textContent = 'Editar Carta Porte';
+  document.getElementById('btnGuardar').style.display = '';
+  loadForm(window._selectedRow.CartaPorte, window._selectedRow.Serie, false);
+  modal.show();
+}
+
+function openVisualizar() {
+  if (!window._selectedRow) return;
+  _mode = 'view'; _readOnly = true;
+  document.getElementById('frmTitle').textContent = 'Visualizar Carta Porte';
+  document.getElementById('btnGuardar').style.display = 'none';
+  loadForm(window._selectedRow.CartaPorte, window._selectedRow.Serie, true);
+  modal.show();
+}
+
+function loadForm(cp, serie, ro) {
+  _currentCP = cp; _currentSerie = serie;
+  fetch(`/cartaporte/get?serie=${encodeURIComponent(serie)}&cartaporte=${encodeURIComponent(cp)}`)
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) { alert(d.error); return; }
+      populateForm(d);
+      setReadOnly(ro);
+      _currentIdCliente = String(d.Id_Cliente || '');
+      toggleSeccionCliente();
+    });
+}
+
+function populateForm(d) {
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val ?? ''; };
+  const chk = (id, val) => { const el = document.getElementById(id); if (el) el.checked = !!parseInt(val); };
+  set('f_Serie', d.Serie); set('f_CartaPorte', d.CartaPorte);
+  set('f_FechaPedido', d.FechaPedido); set('f_FehcaCarga', d.FehcaCarga);
+  set('f_HoraCarga', d.HoraCarga); set('f_FechaDesCarta', d.FechaDesCarta);
+  set('f_HorarioDesCarta', d.HorarioDesCarta);
+  document.getElementById('f_Id_Cliente').value = d.Id_Cliente;
+  set('f_NombreComunCli', d.NombreComunCli);
+  document.getElementById('f_Id_ClienteEnt').value = d.Id_ClienteEnt;
+  set('f_ClienteEnt', d.ClienteEnt);
+  document.getElementById('f_Id_ClienteCarga').value = d.Id_ClienteCarga;
+  set('f_ClienteCarga', d.ClienteCarga);
+  set('f_Booking', d.Booking); set('f_NoRainde', d.NoRainde);
+  set('f_Contenedor', d.Contenedor);
+  document.getElementById('f_Id_Tarifa').value = d.Id_Tarifa;
+  set('f_DesFlete', d.DesFlete);
+  document.getElementById('f_Id_Camion').value = d.Id_Camion;
+  set('f_NoCamion', d.NoCamion); set('f_NoPlacas', d.NoPlacas);
+  set('f_NoCaja', d.NoCaja); set('f_NoCaja2', d.NoCaja2);
+  document.getElementById('f_Id_Operador').value = d.Id_Operador;
+  set('f_Operador', d.Operador);
+  document.getElementById('f_Id_DomCarga').value = d.Id_DomCarga;
+  set('f_DomCarga', d.DomCarga);
+  document.getElementById('f_Id_DomDescarga1').value = d.Id_DomDescarga1;
+  set('f_DomDescarga', d.DomDescarga);
+  set('f_Status', d.Status); set('f_RealizoPedido', d.RealizoPedido);
+  set('f_Observaciones', d.Observaciones);
+  // costos
+  ['CostoFlete','CostoManiobras','CostoDemoras','CostoAutopistas','CostoDobOpe','CostoDisel',
+   'NoParadas','CostoParada','CostosOtros','CargoExtraTrans','Kilometros','KilometrosTar',
+   'RetenKilo','c_Moneda','TipoCambio','DesOtrosCostos',
+   'PorIVAMX','SubTotalMX','IVAMX','RetenMX','TOTALMX',
+   'CostoPrestamo','CostoTalacha','CostoCompllanta','CostoDiesel','CostoCasetas',
+   'CostoComidas','CostoManiobrasExt','CostoBascula','CostoPension','CostoRefacciones','CostoOtros'
+  ].forEach(k => set('f_' + k, d[k]));
+  ['FlagCobMan','FlagCobDem','FlagCobAuto','FlagCobDO','FlagConDis','FlagCobParada',
+   'FlagCobOtros','FlagCobCE','FlagIVA','FlagRet'
+  ].forEach(k => chk('f_' + k, d[k]));
+}
+
+function clearForm() {
+  document.querySelectorAll('#frmModal input:not([readonly]), #frmModal textarea, #frmModal select').forEach(el => {
+    if (el.type === 'checkbox') el.checked = false;
+    else el.value = '';
+  });
+  document.getElementById('f_PorIVAMX').value = 16;
+  _currentIdCliente = '';
+  _currentCP = '';
+  _currentSerie = '';
+  toggleSeccionCliente();
+}
+
+function setReadOnly(ro) {
+  document.querySelectorAll('#frmModal input, #frmModal textarea, #frmModal select').forEach(el => {
+    if (el.type !== 'hidden') { el.disabled = ro; el.readOnly = ro && el.tagName !== 'SELECT'; }
+  });
+  document.querySelectorAll('#frmModal button:not([data-bs-dismiss])').forEach(b => b.disabled = ro);
+}
+
+function toggleSeccionCliente() {
+  document.getElementById('seccionDependienteCliente').style.display = _currentIdCliente ? '' : 'none';
+}
+
+function clearCliente() {
+  document.getElementById('f_Id_Cliente').value = '';
+  document.getElementById('f_NombreComunCli').value = '';
+  ['f_Id_DomCarga','f_DomCarga','f_Id_DomDescarga1','f_DomDescarga'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  _currentIdCliente = '';
+  toggleSeccionCliente();
+}
+
+// ── GUARDAR ───────────────────────────────────────────────────────────────────
+function guardar() {
+  const errEl = document.getElementById('frmError');
+  const req = f => document.getElementById(f)?.value?.trim() || '';
+  const miss = [];
+  if (!req('f_FehcaCarga'))    miss.push('Fecha Carga');
+  if (!req('f_FechaDesCarta')) miss.push('Fecha Descarga');
+  if (!req('f_Id_Cliente'))    miss.push('Cliente');
+  if (!req('f_Id_Tarifa'))     miss.push('Tarifa');
+  if (!req('f_Id_Camion'))     miss.push('Camión');
+  if (!req('f_NoCaja'))        miss.push('Caja 1');
+  if (!req('f_Id_Operador'))   miss.push('Operador');
+  if (!req('f_Id_DomCarga'))   miss.push('Dom. Carga');
+  if (!req('f_Id_DomDescarga1')) miss.push('Dom. Descarga');
+  if (miss.length) { errEl.textContent = 'Campos requeridos: ' + miss.join(', '); errEl.classList.remove('d-none'); return; }
+  errEl.classList.add('d-none');
+
+  const v = id => document.getElementById(id)?.value ?? '';
+  const chk = id => document.getElementById(id)?.checked ? 1 : 0;
+  const payload = {
+    _mode,
+    Serie: v('f_Serie'), CartaPorte: v('f_CartaPorte'),
+    FechaPedido: v('f_FechaPedido'),
+    FehcaCarga: v('f_FehcaCarga'), HoraCarga: v('f_HoraCarga'),
+    FechaDesCarta: v('f_FechaDesCarta'), HorarioDesCarta: v('f_HorarioDesCarta'),
+    Id_Cliente: v('f_Id_Cliente'), NombreComunCli: v('f_NombreComunCli'),
+    Id_ClienteEnt: v('f_Id_ClienteEnt'), ClienteEnt: v('f_ClienteEnt'),
+    Id_ClienteCarga: v('f_Id_ClienteCarga'), ClienteCarga: v('f_ClienteCarga'),
+    Booking: v('f_Booking'), NoRainde: v('f_NoRainde'), Contenedor: v('f_Contenedor'),
+    Id_Tarifa: v('f_Id_Tarifa'), DesFlete: v('f_DesFlete'),
+    Id_Camion: v('f_Id_Camion'), NoCamion: v('f_NoCamion'), NoPlacas: v('f_NoPlacas'),
+    NoCaja: v('f_NoCaja'), NoCaja2: v('f_NoCaja2'),
+    Id_Operador: v('f_Id_Operador'), Operador: v('f_Operador'),
+    Id_DomCarga: v('f_Id_DomCarga'), DomCarga: v('f_DomCarga'),
+    Id_DomDescarga1: v('f_Id_DomDescarga1'), DomDescarga: v('f_DomDescarga'),
+    CostoFlete: v('f_CostoFlete'), CostoManiobras: v('f_CostoManiobras'),
+    CostoDemoras: v('f_CostoDemoras'), CostoAutopistas: v('f_CostoAutopistas'),
+    CostoDobOpe: v('f_CostoDobOpe'), CostoDisel: v('f_CostoDisel'),
+    NoParadas: v('f_NoParadas'), CostoParada: v('f_CostoParada'),
+    CostosOtros: v('f_CostosOtros'), DesOtrosCostos: v('f_DesOtrosCostos'),
+    CargoExtraTrans: v('f_CargoExtraTrans'), Kilometros: v('f_Kilometros'),
+    KilometrosTar: v('f_KilometrosTar'), RetenKilo: v('f_RetenKilo'),
+    c_Moneda: v('f_c_Moneda'), TipoCambio: v('f_TipoCambio'),
+    FlagCobMan: chk('f_FlagCobMan'), FlagCobDem: chk('f_FlagCobDem'),
+    FlagCobAuto: chk('f_FlagCobAuto'), FlagCobDO: chk('f_FlagCobDO'),
+    FlagConDis: chk('f_FlagConDis'), FlagCobParada: chk('f_FlagCobParada'),
+    FlagCobOtros: chk('f_FlagCobOtros'), FlagCobCE: chk('f_FlagCobCE'),
+    FlagIVA: chk('f_FlagIVA'), FlagRet: chk('f_FlagRet'),
+    SubTotalMX: v('f_SubTotalMX'), PorIVAMX: v('f_PorIVAMX'),
+    IVAMX: v('f_IVAMX'), RetenMX: v('f_RetenMX'), TOTALMX: v('f_TOTALMX'),
+    SubTotalUSD: 0, PorIVAUSD: 16, IVAUSD: 0, RetenUSD: 0, TOTALUSD: 0,
+    CostoPrestamo: v('f_CostoPrestamo'), CostoTalacha: v('f_CostoTalacha'),
+    CostoCompllanta: v('f_CostoCompllanta'), CostoDiesel: v('f_CostoDiesel'),
+    CostoCasetas: v('f_CostoCasetas'), CostoComidas: v('f_CostoComidas'),
+    CostoManiobrasExt: v('f_CostoManiobrasExt'), CostoBascula: v('f_CostoBascula'),
+    CostoPension: v('f_CostoPension'), CostoRefacciones: v('f_CostoRefacciones'),
+    CostoOtros: v('f_CostoOtros'),
+    Status: v('f_Status'), Observaciones: v('f_Observaciones'), Booking: v('f_Booking')
+  };
+
+  fetch('/cartaporte/guardar', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).then(r => r.json()).then(d => {
+    if (d.error) { errEl.textContent = d.error; errEl.classList.remove('d-none'); return; }
+    modal.hide(); browse.load();
+  });
+}
+
+function confirmDelete() {
+  if (!window._selectedRow) return;
+  if (!confirm(`¿Eliminar la carta porte "${window._selectedRow.CartaPorte}"?`)) return;
+  fetch('/cartaporte/eliminar', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ Serie: window._selectedRow.Serie, CartaPorte: window._selectedRow.CartaPorte })
+  }).then(r => r.json()).then(d => { if (!d.error) browse.load(); });
+}
+
+// ── RECALCULAR ────────────────────────────────────────────────────────────────
+function recalcular() {
+  const n = id => parseFloat(document.getElementById(id)?.value) || 0;
+  const chk = id => document.getElementById(id)?.checked ? 1 : 0;
+  const sub = n('f_CostoFlete') + n('f_CostoManiobras') + n('f_CostoDemoras') +
+              n('f_CostoAutopistas') + n('f_CostoDobOpe') + n('f_CostoDisel') +
+              n('f_CostoParada') * n('f_NoParadas') + n('f_CostosOtros') +
+              n('f_CargoExtraTrans') - n('f_RetenKilo');
+  const porIVA = n('f_PorIVAMX') || 16;
+  const iva    = chk('f_FlagIVA') ? sub * (porIVA / 100) : 0;
+  const reten  = chk('f_FlagRet') ? sub * 0.04 : 0;
+  const tot    = sub + iva - reten;
+  document.getElementById('f_SubTotalMX').value = sub.toFixed(2);
+  document.getElementById('f_IVAMX').value      = iva.toFixed(2);
+  document.getElementById('f_RetenMX').value     = reten.toFixed(2);
+  document.getElementById('f_TOTALMX').value     = tot.toFixed(2);
+}
+
+// ── CARGA AUTOMÁTICA TABS ─────────────────────────────────────────────────────
+document.getElementById('tabMercLink').addEventListener('click', () => {
+  if (_currentCP) loadMercancias(_currentSerie, _currentCP);
+});
+document.getElementById('tabDepoLink').addEventListener('click', () => {
+  if (_currentCP) loadDepositos(_currentSerie, _currentCP);
+});
+
+// ── MERCANCIAS ────────────────────────────────────────────────────────────────
+function loadMercancias(serie, cp) {
+  fetch(`/cartaporte/mercancias?serie=${encodeURIComponent(serie)}&cartaporte=${encodeURIComponent(cp)}`)
+    .then(r => r.json())
+    .then(rows => {
+      const body = document.getElementById('mercBody');
+      body.innerHTML = rows.map(r =>
+        `<tr>
+          <td>${r.Id_Mercancia}</td>
+          <td>${r.SKU||''}</td>
+          <td>${r.Descripcion||''}</td>
+          <td>${r.Cantidad||''}</td>
+          <td>${r.ClaveUnidad||''}</td>
+          <td>${r.PesoEnKg||''}</td>
+          <td>${r.ValorMercancia||''}</td>
+          <td class="text-center">
+            <button class="btn btn-xs btn-sm btn-outline-primary py-0 px-1" onclick="editMerc(${r.Id_Mercancia})"><i class="bi bi-pencil"></i></button>
+            <button class="btn btn-xs btn-sm btn-outline-danger py-0 px-1" onclick="delMerc(${r.Id_Mercancia})"><i class="bi bi-trash"></i></button>
+          </td>
+        </tr>`
+      ).join('') || '<tr><td colspan="8" class="text-center text-muted small">Sin registros</td></tr>';
+    });
+}
+
+function openAddMerc() {
+  _mercMode = 'add'; _mercEditId = null;
+  document.getElementById('mercTitle').textContent = 'Nueva Mercancía';
+  document.querySelectorAll('#mercModal input, #mercModal select').forEach(el => { if (el.type === 'checkbox') el.checked = false; else el.value = ''; });
+  document.getElementById('m_MaterialPeligroso').value = 'No';
+  mercModal.show();
+}
+
+function editMerc(id) {
+  _mercMode = 'edit'; _mercEditId = id;
+  fetch(`/cartaporte/mercancias?serie=${encodeURIComponent(_currentSerie)}&cartaporte=${encodeURIComponent(_currentCP)}`)
+    .then(r => r.json()).then(rows => {
+      const r = rows.find(x => x.Id_Mercancia == id);
+      if (!r) return;
+      document.getElementById('mercTitle').textContent = 'Editar Mercancía';
+      ['SKU','BienesTransp','Descripcion','DesManual','Cantidad','ClaveUnidad','Unidad',
+       'PesoUnidad','MaterialPeligroso','CveMaterialPeligroso','cve_Embalaje',
+       'DescripEmbalaje','PesoEnKg','ValorMercancia','Moneda'
+      ].forEach(k => { const el = document.getElementById('m_'+k); if (el) el.value = r[k]??''; });
+      mercModal.show();
+    });
+}
+
+function delMerc(id) {
+  if (!confirm('¿Eliminar mercancía?')) return;
+  fetch('/cartaporte/mercancias/eliminar', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ Serie: _currentSerie, CartaPorte: _currentCP, Id_Mercancia: id })
+  }).then(r => r.json()).then(() => loadMercancias(_currentSerie, _currentCP));
+}
+
+function guardarMerc() {
+  const v = id => document.getElementById(id)?.value ?? '';
+  const payload = {
+    _mode: _mercMode, Serie: _currentSerie, CartaPorte: _currentCP,
+    Id_Mercancia: _mercEditId,
+    SKU: v('m_SKU'), BienesTransp: v('m_BienesTransp'), Descripcion: v('m_Descripcion'),
+    DesManual: v('m_DesManual'), Cantidad: v('m_Cantidad'), ClaveUnidad: v('m_ClaveUnidad'),
+    Unidad: v('m_Unidad'), PesoUnidad: v('m_PesoUnidad'),
+    MaterialPeligroso: v('m_MaterialPeligroso'), CveMaterialPeligroso: v('m_CveMaterialPeligroso'),
+    cve_Embalaje: v('m_cve_Embalaje'), DescripEmbalaje: v('m_DescripEmbalaje'),
+    PesoEnKg: v('m_PesoEnKg'), ValorMercancia: v('m_ValorMercancia'), Moneda: v('m_Moneda')
+  };
+  fetch('/cartaporte/mercancias/guardar', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).then(r => r.json()).then(d => {
+    if (d.error) { document.getElementById('mercError').textContent = d.error; document.getElementById('mercError').classList.remove('d-none'); return; }
+    mercModal.hide();
+    loadMercancias(_currentSerie, _currentCP);
+  });
+}
+
+// ── DEPOSITOS ─────────────────────────────────────────────────────────────────
+function loadDepositos(serie, cp) {
+  fetch(`/cartaporte/depositos?serie=${encodeURIComponent(serie)}&cartaporte=${encodeURIComponent(cp)}`)
+    .then(r => r.json())
+    .then(rows => {
+      const body = document.getElementById('depoBody');
+      const fmt = v => v ? v.toString().slice(0,10) : '';
+      body.innerHTML = rows.map(r =>
+        `<tr>
+          <td>${r.Id_DepoSol}</td>
+          <td>${fmt(r.Fecha)}</td>
+          <td>${r.OPERADOR||''}</td>
+          <td>${r.Origen||''}</td>
+          <td>${r.Destino||''}</td>
+          <td>${r.Monto||''}</td>
+          <td>${r.Autorizado||''}</td>
+          <td class="text-center">
+            <button class="btn btn-sm btn-outline-primary py-0 px-1" onclick="editDepo(${r.Id_DepoSol})"><i class="bi bi-pencil"></i></button>
+            <button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="delDepo(${r.Id_DepoSol})"><i class="bi bi-trash"></i></button>
+          </td>
+        </tr>`
+      ).join('') || '<tr><td colspan="8" class="text-center text-muted small">Sin registros</td></tr>';
+    });
+}
+
+function openAddDepo() {
+  _depoMode = 'add'; _depoEditId = null;
+  document.getElementById('depoTitle').textContent = 'Nuevo Depósito';
+  document.querySelectorAll('#depoModal input, #depoModal textarea').forEach(el => el.value = '');
+  document.getElementById('d_Fecha').value = today;
+  depoModal.show();
+}
+
+function editDepo(id) {
+  _depoMode = 'edit'; _depoEditId = id;
+  fetch(`/cartaporte/depositos?serie=${encodeURIComponent(_currentSerie)}&cartaporte=${encodeURIComponent(_currentCP)}`)
+    .then(r => r.json()).then(rows => {
+      const r = rows.find(x => x.Id_DepoSol == id);
+      if (!r) return;
+      document.getElementById('depoTitle').textContent = 'Editar Depósito';
+      const fmt = v => v ? v.toString().slice(0,10) : '';
+      document.getElementById('d_Fecha').value = fmt(r.Fecha);
+      ['Turno','OPERADOR','ID_OPERADOR','Origen','Destino','Folio','Prestamo',
+       'Talachas','Llantas','Diesel','Casetas','Comidas','Maniobra','Bascula',
+       'Pension','Refacciones','Otros','DesOtros','Monto','Observaciones','Autorizado'
+      ].forEach(k => { const el = document.getElementById('d_'+k); if (el) el.value = r[k]??''; });
+      depoModal.show();
+    });
+}
+
+function delDepo(id) {
+  if (!confirm('¿Eliminar depósito?')) return;
+  fetch('/cartaporte/depositos/eliminar', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ Id_DepoSol: id })
+  }).then(r => r.json()).then(() => loadDepositos(_currentSerie, _currentCP));
+}
+
+function guardarDepo() {
+  const v = id => document.getElementById(id)?.value ?? '';
+  const payload = {
+    _mode: _depoMode, Id_DepoSol: _depoEditId,
+    Serie: _currentSerie, CartaPorte: _currentCP,
+    WhoCaptura: null,
+    Fecha: v('d_Fecha'), Turno: v('d_Turno'),
+    ID_OPERADOR: v('d_ID_OPERADOR'), OPERADOR: v('d_OPERADOR'),
+    Origen: v('d_Origen'), Destino: v('d_Destino'), Folio: v('d_Folio'),
+    Prestamo: v('d_Prestamo'), Talachas: v('d_Talachas'), Llantas: v('d_Llantas'),
+    Diesel: v('d_Diesel'), Casetas: v('d_Casetas'), Comidas: v('d_Comidas'),
+    Maniobra: v('d_Maniobra'), Bascula: v('d_Bascula'), Pension: v('d_Pension'),
+    Refacciones: v('d_Refacciones'), Otros: v('d_Otros'), DesOtros: v('d_DesOtros'),
+    Monto: v('d_Monto'), Observaciones: v('d_Observaciones'), Autorizado: v('d_Autorizado')
+  };
+  fetch('/cartaporte/depositos/guardar', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).then(r => r.json()).then(d => {
+    if (d.error) { document.getElementById('depoError').textContent = d.error; document.getElementById('depoError').classList.remove('d-none'); return; }
+    depoModal.hide();
+    loadDepositos(_currentSerie, _currentCP);
+  });
+}
+
+// ── LOOKUP GENÉRICO ───────────────────────────────────────────────────────────
+let _lkUrl = '', _lkPage = 1, _lkOnSelect = null, _lkDebounce = null;
+let _lkExtraParams = {};
+
+function openGenericLookup(title, headers, url, extraParams, onSelect) {
+  _lkUrl = url; _lkPage = 1; _lkOnSelect = onSelect; _lkExtraParams = extraParams || {};
+  document.getElementById('lkTitle').textContent = title;
+  document.getElementById('lkSearch').value = '';
+  const thead = document.getElementById('lkThead').querySelector('tr');
+  thead.innerHTML = headers.map(h => `<th>${h}</th>`).join('');
+  lkLoadPage();
+  lkModal.show();
+}
+
+function lkLoadPage() {
+  const q = document.getElementById('lkSearch').value;
+  const extra = Object.entries(_lkExtraParams).map(([k,v]) => `&${k}=${encodeURIComponent(v)}`).join('');
+  fetch(`${_lkUrl}?q=${encodeURIComponent(q)}&page=${_lkPage}${extra}`)
+    .then(r => r.json())
+    .then(d => {
+      document.getElementById('lkBody').innerHTML = (d.rows || []).map(r =>
+        `<tr style="cursor:pointer" onclick="lkSelect(this)" data-row='${JSON.stringify(r)}'>
+          ${Object.values(r).map(v => `<td>${v??''}</td>`).join('')}
+        </tr>`
+      ).join('') || '<tr><td colspan="10" class="text-center text-muted small">Sin resultados</td></tr>';
+      document.getElementById('lkInfo').textContent = `Pág ${d.page} de ${d.totalPages} — ${d.total} reg.`;
+      document.getElementById('lkPrev').disabled = d.page <= 1;
+      document.getElementById('lkNext').disabled = d.page >= d.totalPages;
+    });
+}
+
+document.getElementById('lkSearch').addEventListener('input', () => {
+  clearTimeout(_lkDebounce);
+  _lkDebounce = setTimeout(() => { _lkPage = 1; lkLoadPage(); }, 300);
+});
+document.getElementById('lkPrev').addEventListener('click', () => { if (_lkPage > 1) { _lkPage--; lkLoadPage(); } });
+document.getElementById('lkNext').addEventListener('click', () => { _lkPage++; lkLoadPage(); });
+
+function lkSelect(tr) {
+  const row = JSON.parse(tr.dataset.row);
+  lkModal.hide();
+  if (_lkOnSelect) _lkOnSelect(row);
+}
+
+// ── LOOKUPS ESPECÍFICOS ───────────────────────────────────────────────────────
+function openLkCliente(target) {
+  openGenericLookup('Buscar cliente', ['ID','Nombre','RFC'],
+    '/cartaporte/lookup/clientes', {}, row => {
+      if (target === 'principal') {
+        document.getElementById('f_Id_Cliente').value = row.ID_CLIENTE;
+        document.getElementById('f_NombreComunCli').value = (row.NOMBRECOMUN||'').trim();
+        _currentIdCliente = String(row.ID_CLIENTE);
+        // limpiar domicilios al cambiar cliente
+        ['f_Id_DomCarga','f_DomCarga','f_Id_DomDescarga1','f_DomDescarga'].forEach(id => {
+          const el = document.getElementById(id); if (el) el.value = '';
+        });
+        toggleSeccionCliente();
+      } else if (target === 'ent') {
+        document.getElementById('f_Id_ClienteEnt').value = row.ID_CLIENTE;
+        document.getElementById('f_ClienteEnt').value = (row.NOMBRECOMUN||'').trim();
+      } else {
+        document.getElementById('f_Id_ClienteCarga').value = row.ID_CLIENTE;
+        document.getElementById('f_ClienteCarga').value = (row.NOMBRECOMUN||'').trim();
+      }
+    });
+}
+
+function openLkTarifa() {
+  openGenericLookup('Buscar tarifa', ['ID','Descripción','Tipo','Venta'],
+    '/cartaporte/lookup/tarifas', { idCliente: _currentIdCliente }, row => {
+      const flete = (row.FLETE||'').trim().toLowerCase();
+      const renta = parseFloat(row.RENTA) || 0;
+      const cKm   = parseFloat(row.COSTOKILOMTS) || 0;
+      const cAuto = parseFloat(row.COSTOAUTOPISTAS) || 0;
+      const km    = parseFloat(row.KILOMETROS) || 0;
+
+      let cFlete = 0, cDem = 0, kmTar = 0, kmVal = 0, autoVal = 0;
+      let valid = false;
+
+      if (flete === 'flete' && renta !== 0) {
+        cFlete = renta; kmTar = km; kmVal = cKm; autoVal = cAuto; valid = true;
+      } else if ((flete === 'renta' && renta !== 0) || cKm !== 0 || cAuto !== 0) {
+        cDem = renta; kmTar = km; kmVal = cKm; autoVal = cAuto; valid = true;
+      }
+
+      if (!valid) { alert('La tarifa seleccionada no cuenta con costos configurados'); return; }
+
+      document.getElementById('f_Id_Tarifa').value = row.ID_TARIFA;
+      document.getElementById('f_DesFlete').value  = (row.DESFLETE||'').trim();
+      document.getElementById('f_CostoFlete').value     = cFlete.toFixed(2);
+      document.getElementById('f_CostoDemoras').value   = cDem.toFixed(2);
+      document.getElementById('f_KilometrosTar').value  = kmTar;
+      document.getElementById('f_Kilometros').value     = kmVal.toFixed(2);
+      document.getElementById('f_CostoAutopistas').value= autoVal.toFixed(2);
+      const retenK = (kmVal * 0.04).toFixed(2);
+      document.getElementById('f_RetenKilo').value      = retenK;
+      document.getElementById('f_c_Moneda').value       = (row.MONVENTA||'').trim();
+      document.getElementById('f_TipoCambio').value     = row.TIPOCAMBIO||0;
+      document.getElementById('f_FlagIVA').checked      = parseInt(row.FLAGIVA) === 1;
+      document.getElementById('f_FlagRet').checked      = parseInt(row.FLAGRET) === 1;
+      recalcular();
+    });
+}
+
+function openLkCamion() {
+  openGenericLookup('Buscar camión', ['ID Camión','Descripción','Placas'],
+    '/cartaporte/lookup/camiones', {}, row => {
+      document.getElementById('f_Id_Camion').value = row.ID_CAMION;
+      document.getElementById('f_NoCamion').value  = (row.DESCRIPCION||'').trim();
+      document.getElementById('f_NoPlacas').value  = (row.PLACA||'').trim();
+      if (row.ID_OPERADOR) {
+        document.getElementById('f_Id_Operador').value = row.ID_OPERADOR;
+        document.getElementById('f_Operador').value    = (row.OPERADOR||'').trim();
+      }
+    });
+}
+
+function openLkRemolque(target) {
+  openGenericLookup('Buscar remolque', ['ID Camión','Descripción'],
+    '/cartaporte/lookup/remolques', {}, row => {
+      if (target === 'caja1') document.getElementById('f_NoCaja').value  = row.ID_CAMION;
+      else                    document.getElementById('f_NoCaja2').value = row.ID_CAMION;
+    });
+}
+
+function openLkOperador() {
+  openGenericLookup('Buscar operador', ['ID','Operador','RFC','Licencia','Status'],
+    '/cartaporte/lookup/operadores', {}, row => {
+      const rfc    = (row.RFC||'').trim();
+      const lic    = (row.NOLICENCIA||'').trim();
+      const status = (row.STATUS||'').trim().toLowerCase();
+      if (!rfc)              { alert('El operador no tiene RFC registrado'); return; }
+      if (!lic)              { alert('El operador no tiene No. de licencia'); return; }
+      if (status === 'baja') { alert('El operador tiene status de Baja'); return; }
+      document.getElementById('f_Id_Operador').value = row.ID_OPERADOR;
+      document.getElementById('f_Operador').value    = (row.OPERADOR||'').trim();
+    });
+}
+
+function openLkDom(tipo) {
+  const titulo = tipo === 'carga' ? 'Domicilio de carga' : 'Domicilio de descarga';
+  const tipoVal = tipo === 'carga' ? 'Carga' : 'Descarga';
+  openGenericLookup(titulo, ['ID','Descripción','Ciudad'],
+    '/cartaporte/lookup/domcarga', { idCliente: _currentIdCliente, tipo: tipoVal }, row => {
+      if (tipo === 'carga') {
+        document.getElementById('f_Id_DomCarga').value = row.ID_DOMICILIO;
+        document.getElementById('f_DomCarga').value    = (row.DESCRIPCION||'').trim();
+      } else {
+        document.getElementById('f_Id_DomDescarga1').value = row.ID_DOMICILIO;
+        document.getElementById('f_DomDescarga').value     = (row.DESCRIPCION||'').trim();
+      }
+    });
+}
+</script>
