@@ -20,14 +20,15 @@ app.use(session({
 }));
 
 app.use((req, res, next) => {
-  res.locals.anio  = req.session.anio  || null;
-  res.locals.serie = req.session.usuario ? req.session.usuario.serie : null;
+  res.locals.anio     = req.session.anio     || null;
+  res.locals.central  = req.session.central  || null;
+  res.locals.serie    = req.session.usuario ? req.session.usuario.serie : null;
   next();
 });
 
 function requireAuth(req, res, next) {
   if (!req.session.usuario) return res.redirect('/login');
-  if (!req.session.anio)    return res.redirect('/seleccionar-anio');
+  if (!req.session.anio || !req.session.central) return res.redirect('/seleccionar-anio');
   next();
 }
 

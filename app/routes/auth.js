@@ -21,7 +21,7 @@ router.post('/login', async (req, res) => {
       .input('nombre', sql.Char(80), nombre)
       .query(`SELECT * FROM dbo.UsuariosWeb WHERE LTRIM(RTRIM(NOMBRE)) = LTRIM(RTRIM(@nombre))`);
     const user = result.recordset[0];
-    if (!user || user.PASSWORD.trim() !== password) {
+    if (!user || user.PASSWORD.trim().toUpperCase() !== password.toUpperCase()) {
       return res.render('login', { error: 'Usuario o contraseña incorrectos' });
     }
     req.session.usuario = {
@@ -38,20 +38,29 @@ router.post('/login', async (req, res) => {
 });
 
 // Year selection page
-router.get('/seleccionar-anio', (req, res) => {
+router.get('/seleccionar-anio', async (req, res) => {
   if (!req.session.usuario) return res.redirect('/login');
-  if (req.session.anio)     return res.redirect('/dashboard');
-  res.render('seleccionar-anio', { usuario: req.session.usuario });
+  if (req.session.anio && req.session.central) return res.redirect('/dashboard');
+  try {
+    const pool = await getPool();
+    const r = await pool.request().query(`SELECT Central, Descripcion FROM Empresa2.Centrales ORDER BY Descripcion`);
+    res.render('seleccionar-anio', { usuario: req.session.usuario, centrales: r.recordset });
+  } catch (err) {
+    console.error(err);
+    res.render('seleccionar-anio', { usuario: req.session.usuario, centrales: [] });
+  }
 });
 
 // Process year selection
 router.post('/seleccionar-anio', (req, res) => {
   if (!req.session.usuario) return res.redirect('/login');
   const anio = parseInt(req.body.anio);
-  if (isNaN(anio) || anio < 2000 || anio > 2099) {
+  const central = (req.body.central || '').trim().toUpperCase();
+  if (isNaN(anio) || anio < 2000 || anio > 2099 || !central) {
     return res.redirect('/seleccionar-anio');
   }
   req.session.anio = anio;
+  req.session.central = central;
   res.redirect('/dashboard');
 });
 

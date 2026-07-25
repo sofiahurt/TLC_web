@@ -109,28 +109,31 @@
             </div>
             <!-- Fila 2 -->
             <div class="row g-2 mb-2">
-              <div class="col-md-2">
+              <div class="col-md-3">
                 <label class="form-label fw-semibold small mb-1">F. Carga <span class="text-danger">*</span></label>
                 <input type="date" id="f_FehcaCarga" class="form-control form-control-sm">
               </div>
-              <div class="col-md-2">
+              <div class="col-md-3">
                 <label class="form-label fw-semibold small mb-1">Hora carga</label>
                 <input type="time" id="f_HoraCarga" class="form-control form-control-sm">
               </div>
-              <div class="col-md-2">
+              <div class="col-md-3">
                 <label class="form-label fw-semibold small mb-1">F. Descarga <span class="text-danger">*</span></label>
                 <input type="date" id="f_FechaDesCarta" class="form-control form-control-sm">
               </div>
-              <div class="col-md-2">
+              <div class="col-md-3">
                 <label class="form-label fw-semibold small mb-1">Hora descarga</label>
                 <input type="time" id="f_HorarioDesCarta" class="form-control form-control-sm">
               </div>
-              <div class="col-md-2">
+            </div>
+            <!-- Fila 2b -->
+            <div class="row g-2 mb-2">
+              <div class="col-md-4">
                 <label class="form-label fw-semibold small mb-1">Booking</label>
                 <input type="text" id="f_Booking" class="form-control form-control-sm" maxlength="20">
               </div>
-              <div class="col-md-2">
-                <label class="form-label fw-semibold small mb-1">No. Rainde</label>
+              <div class="col-md-4">
+                <label class="form-label fw-semibold small mb-1">Doc. Relacionado</label>
                 <input type="text" id="f_NoRainde" class="form-control form-control-sm" maxlength="20">
               </div>
             </div>
@@ -295,59 +298,93 @@
 
           <!-- ── TAB 4: COSTOS ──────────────────────────────────────────── -->
           <div class="tab-pane fade" id="tabCostos">
-            <div class="row g-2">
-              <div class="col-12"><h6 class="text-primary fw-bold border-bottom pb-1 mb-2">Costos de venta</h6></div>
-              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Flete</label><input type="number" id="f_CostoFlete" class="form-control form-control-sm" step="0.01"></div>
-              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Maniobras</label><input type="number" id="f_CostoManiobras" class="form-control form-control-sm" step="0.01"></div>
-              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Demoras</label><input type="number" id="f_CostoDemoras" class="form-control form-control-sm" step="0.01"></div>
-              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Autopistas</label><input type="number" id="f_CostoAutopistas" class="form-control form-control-sm" step="0.01"></div>
-              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Dob. operador</label><input type="number" id="f_CostoDobOpe" class="form-control form-control-sm" step="0.01"></div>
-              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Diesel venta</label><input type="number" id="f_CostoDisel" class="form-control form-control-sm" step="0.01"></div>
-              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">No. paradas</label><input type="number" id="f_NoParadas" class="form-control form-control-sm"></div>
-              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Costo parada</label><input type="number" id="f_CostoParada" class="form-control form-control-sm" step="0.01"></div>
-              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Otros costos</label><input type="number" id="f_CostosOtros" class="form-control form-control-sm" step="0.01"></div>
-              <div class="col-md-4"><label class="form-label fw-semibold small mb-1">Desc. otros costos</label><input type="text" id="f_DesOtrosCostos" class="form-control form-control-sm" maxlength="255"></div>
-              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Cargo extra trans</label><input type="number" id="f_CargoExtraTrans" class="form-control form-control-sm" step="0.01"></div>
-              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Kilómetros</label><input type="number" id="f_Kilometros" class="form-control form-control-sm" step="0.01"></div>
-              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Km tarifa</label><input type="number" id="f_KilometrosTar" class="form-control form-control-sm"></div>
-              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Retención/km</label><input type="number" id="f_RetenKilo" class="form-control form-control-sm" step="0.01"></div>
-              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Moneda</label><input type="text" id="f_c_Moneda" class="form-control form-control-sm" maxlength="10"></div>
-              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Tipo cambio</label><input type="number" id="f_TipoCambio" class="form-control form-control-sm" step="0.01"></div>
+            <div class="row g-3">
 
-              <div class="col-12"><h6 class="text-primary fw-bold border-bottom pb-1 mb-2 mt-2">Flags de cobro</h6></div>
-              <div class="col-md-2"><div class="form-check"><input class="form-check-input" type="checkbox" id="f_FlagCobMan"><label class="form-check-label small">Cob. maniobras</label></div></div>
-              <div class="col-md-2"><div class="form-check"><input class="form-check-input" type="checkbox" id="f_FlagCobDem"><label class="form-check-label small">Cob. demoras</label></div></div>
-              <div class="col-md-2"><div class="form-check"><input class="form-check-input" type="checkbox" id="f_FlagCobAuto"><label class="form-check-label small">Cob. autopistas</label></div></div>
-              <div class="col-md-2"><div class="form-check"><input class="form-check-input" type="checkbox" id="f_FlagCobDO"><label class="form-check-label small">Cob. dob. oper.</label></div></div>
-              <div class="col-md-2"><div class="form-check"><input class="form-check-input" type="checkbox" id="f_FlagConDis"><label class="form-check-label small">Con diesel</label></div></div>
-              <div class="col-md-2"><div class="form-check"><input class="form-check-input" type="checkbox" id="f_FlagCobParada"><label class="form-check-label small">Cob. parada</label></div></div>
-              <div class="col-md-2"><div class="form-check"><input class="form-check-input" type="checkbox" id="f_FlagCobOtros"><label class="form-check-label small">Cob. otros</label></div></div>
-              <div class="col-md-2"><div class="form-check"><input class="form-check-input" type="checkbox" id="f_FlagCobCE"><label class="form-check-label small">Cob. cargo extra</label></div></div>
-              <div class="col-md-2"><div class="form-check"><input class="form-check-input" type="checkbox" id="f_FlagIVA"><label class="form-check-label small">IVA</label></div></div>
-              <div class="col-md-2"><div class="form-check"><input class="form-check-input" type="checkbox" id="f_FlagRet"><label class="form-check-label small">Retención</label></div></div>
+              <div class="col-12"><h6 class="text-primary fw-bold border-bottom pb-1 mb-1">Costos de venta</h6></div>
 
-              <div class="col-12"><h6 class="text-primary fw-bold border-bottom pb-1 mb-2 mt-2">Totales MXN</h6></div>
-              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">% IVA</label><input type="number" id="f_PorIVAMX" class="form-control form-control-sm" value="16"></div>
-              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">SubTotal MX</label><input type="number" id="f_SubTotalMX" class="form-control form-control-sm bg-light" readonly></div>
-              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">IVA MX</label><input type="number" id="f_IVAMX" class="form-control form-control-sm bg-light" readonly></div>
-              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Retención MX</label><input type="number" id="f_RetenMX" class="form-control form-control-sm bg-light" readonly></div>
-              <div class="col-md-2"><label class="form-label fw-semibold small mb-1 text-primary">TOTAL MX</label><input type="number" id="f_TOTALMX" class="form-control form-control-sm fw-bold" readonly></div>
-              <div class="col-md-2 d-flex align-items-end">
-                <button class="btn btn-sm btn-outline-primary w-100" onclick="recalcular()"><i class="bi bi-calculator"></i> Recalcular</button>
+              <div class="col-6">
+                <label class="form-label fw-semibold small mb-1">Flete</label>
+                <input type="number" id="f_CostoFlete" class="form-control form-control-sm bg-light" step="0.01" readonly>
+              </div>
+              <div class="col-6">
+                <label class="form-label fw-semibold small mb-1">Renta</label>
+                <input type="number" id="f_CostoDemoras" class="form-control form-control-sm bg-light" step="0.01" readonly>
+              </div>
+              <div class="col-6">
+                <label class="form-label fw-semibold small mb-1">Costo kilómetros</label>
+                <input type="number" id="f_Kilometros" class="form-control form-control-sm bg-light" step="0.01" readonly>
+              </div>
+              <div class="col-6">
+                <label class="form-label fw-semibold small mb-1">Km tarifa</label>
+                <input type="number" id="f_KilometrosTar" class="form-control form-control-sm bg-light" readonly>
+              </div>
+              <div class="col-6">
+                <label class="form-label fw-semibold small mb-1">Retención/km</label>
+                <input type="number" id="f_RetenKilo" class="form-control form-control-sm bg-light" step="0.01" readonly>
+              </div>
+              <div class="col-6">
+                <label class="form-label fw-semibold small mb-1">Moneda</label>
+                <input type="text" id="f_c_Moneda" class="form-control form-control-sm bg-light" maxlength="10" readonly>
+              </div>
+              <div class="col-6">
+                <label class="form-label fw-semibold small mb-1">Tipo cambio</label>
+                <input type="number" id="f_TipoCambio" class="form-control form-control-sm bg-light" step="0.01" readonly>
               </div>
 
-              <div class="col-12"><h6 class="text-primary fw-bold border-bottom pb-1 mb-2 mt-2">Costos operativos</h6></div>
-              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Préstamo</label><input type="number" id="f_CostoPrestamo" class="form-control form-control-sm" step="0.01"></div>
-              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Talacha</label><input type="number" id="f_CostoTalacha" class="form-control form-control-sm" step="0.01"></div>
-              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Comp. llantas</label><input type="number" id="f_CostoCompllanta" class="form-control form-control-sm" step="0.01"></div>
-              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Diesel op.</label><input type="number" id="f_CostoDiesel" class="form-control form-control-sm" step="0.01"></div>
-              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Casetas</label><input type="number" id="f_CostoCasetas" class="form-control form-control-sm" step="0.01"></div>
-              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Comidas</label><input type="number" id="f_CostoComidas" class="form-control form-control-sm" step="0.01"></div>
-              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Maniobras ext.</label><input type="number" id="f_CostoManiobrasExt" class="form-control form-control-sm" step="0.01"></div>
-              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Báscula</label><input type="number" id="f_CostoBascula" class="form-control form-control-sm" step="0.01"></div>
-              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Pensión</label><input type="number" id="f_CostoPension" class="form-control form-control-sm" step="0.01"></div>
-              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Refacciones</label><input type="number" id="f_CostoRefacciones" class="form-control form-control-sm" step="0.01"></div>
-              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Otros op.</label><input type="number" id="f_CostoOtros" class="form-control form-control-sm" step="0.01"></div>
+              <div class="col-12"><h6 class="text-primary fw-bold border-bottom pb-1 mb-1 mt-1">Totales MXN</h6></div>
+
+              <div class="col-6">
+                <label class="form-label fw-semibold small mb-1">SubTotal MX</label>
+                <input type="number" id="f_SubTotalMX" class="form-control form-control-sm bg-light" readonly>
+              </div>
+              <div class="col-6">
+                <label class="form-label fw-semibold small mb-1">IVA MX (16%)</label>
+                <input type="number" id="f_IVAMX" class="form-control form-control-sm bg-light" readonly>
+              </div>
+              <div class="col-6">
+                <label class="form-label fw-semibold small mb-1">Retención MX (4%)</label>
+                <input type="number" id="f_RetenMX" class="form-control form-control-sm bg-light" readonly>
+              </div>
+              <div class="col-6">
+                <label class="form-label fw-semibold small mb-1 text-primary fw-bold">TOTAL MX</label>
+                <input type="number" id="f_TOTALMX" class="form-control form-control-sm bg-primary bg-opacity-10 fw-bold" readonly>
+              </div>
+
+            </div>
+
+            <!-- Campos ocultos para compatibilidad con BD -->
+            <div style="display:none">
+              <input type="number" id="f_PorIVAMX" value="16">
+              <input type="number" id="f_CostoManiobras">
+              <input type="number" id="f_CostoAutopistas">
+              <input type="number" id="f_CostoDobOpe">
+              <input type="number" id="f_CostoDisel">
+              <input type="number" id="f_NoParadas">
+              <input type="number" id="f_CostoParada">
+              <input type="number" id="f_CostosOtros">
+              <input type="text"   id="f_DesOtrosCostos">
+              <input type="number" id="f_CargoExtraTrans">
+              <input type="checkbox" id="f_FlagCobMan">
+              <input type="checkbox" id="f_FlagCobDem">
+              <input type="checkbox" id="f_FlagCobAuto">
+              <input type="checkbox" id="f_FlagCobDO">
+              <input type="checkbox" id="f_FlagConDis">
+              <input type="checkbox" id="f_FlagCobParada">
+              <input type="checkbox" id="f_FlagCobOtros">
+              <input type="checkbox" id="f_FlagCobCE">
+              <input type="checkbox" id="f_FlagIVA">
+              <input type="checkbox" id="f_FlagRet">
+              <input type="number" id="f_CostoPrestamo">
+              <input type="number" id="f_CostoTalacha">
+              <input type="number" id="f_CostoCompllanta">
+              <input type="number" id="f_CostoDiesel">
+              <input type="number" id="f_CostoCasetas">
+              <input type="number" id="f_CostoComidas">
+              <input type="number" id="f_CostoManiobrasExt">
+              <input type="number" id="f_CostoBascula">
+              <input type="number" id="f_CostoPension">
+              <input type="number" id="f_CostoRefacciones">
+              <input type="number" id="f_CostoOtros">
             </div>
           </div><!-- /tabCostos -->
 
@@ -473,6 +510,7 @@ let _readOnly = false;
 let _currentSerie = '';
 let _currentCP = '';
 let _currentIdCliente = '';
+let _tarifaTipo = 'flete';
 let _mercMode = 'add';
 let _mercEditId = null;
 let _depoMode = 'add';
@@ -600,6 +638,13 @@ function populateForm(d) {
   ['FlagCobMan','FlagCobDem','FlagCobAuto','FlagCobDO','FlagConDis','FlagCobParada',
    'FlagCobOtros','FlagCobCE','FlagIVA','FlagRet'
   ].forEach(k => chk('f_' + k, d[k]));
+  // Inferir tipo de tarifa para recalcular correctamente
+  const dem = parseFloat(d.CostoDemoras) || 0;
+  const fl  = parseFloat(d.CostoFlete)   || 0;
+  const km  = parseFloat(d.Kilometros)   || 0;
+  if (dem > 0 && fl === 0 && km === 0)       _tarifaTipo = 'renta';
+  else if (km > 0 && fl === 0 && dem === 0)  _tarifaTipo = 'km';
+  else                                        _tarifaTipo = 'flete';
 }
 
 function clearForm() {
@@ -611,6 +656,7 @@ function clearForm() {
   _currentIdCliente = '';
   _currentCP = '';
   _currentSerie = '';
+  _tarifaTipo = 'flete';
   toggleSeccionCliente();
 }
 
@@ -624,6 +670,15 @@ function setReadOnly(ro) {
     const el = document.getElementById(id);
     if (el) { el.readOnly = true; el.disabled = false; }
   });
+  // Status no editable en modo edición (solo en alta)
+  if (_mode === 'edit') {
+    const elSt = document.getElementById('f_Status');
+    if (elSt) { elSt.readOnly = true; elSt.disabled = false; }
+  }
+  // Tab Costos siempre de solo lectura
+  document.querySelectorAll('#tabCostos input').forEach(el => {
+    if (el.type !== 'hidden' && el.type !== 'checkbox') { el.readOnly = true; el.disabled = false; }
+  });
 }
 
 function toggleSeccionCliente() {
@@ -633,9 +688,41 @@ function toggleSeccionCliente() {
 function clearCliente() {
   document.getElementById('f_Id_Cliente').value = '';
   document.getElementById('f_NombreComunCli').value = '';
+  // Tarifa
+  document.getElementById('f_Id_Tarifa').value = '';
+  document.getElementById('f_DesFlete').value = '';
+  // Camión, placas, cajas
+  document.getElementById('f_Id_Camion').value = '';
+  document.getElementById('f_NoCamion').value = '';
+  document.getElementById('f_NoPlacas').value = '';
+  document.getElementById('f_NoCaja').value = '';
+  document.getElementById('f_NoCaja2').value = '';
+  // Operador
+  document.getElementById('f_Id_Operador').value = '';
+  document.getElementById('f_Operador').value = '';
+  // Domicilios
   ['f_Id_DomCarga','f_DomCarga','f_Id_DomDescarga1','f_DomDescarga'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
   });
+  // Costos de venta
+  ['f_CostoFlete','f_CostoManiobras','f_CostoDemoras','f_CostoAutopistas',
+   'f_CostoDobOpe','f_CostoDisel','f_NoParadas','f_CostoParada','f_CostosOtros',
+   'f_DesOtrosCostos','f_CargoExtraTrans','f_Kilometros','f_KilometrosTar',
+   'f_RetenKilo','f_c_Moneda','f_TipoCambio',
+   'f_SubTotalMX','f_IVAMX','f_RetenMX','f_TOTALMX'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  // Flags IVA/Ret
+  ['f_FlagIVA','f_FlagRet'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.checked = false;
+  });
+  // Costos operativos
+  ['f_CostoPrestamo','f_CostoTalacha','f_CostoCompllanta','f_CostoDiesel',
+   'f_CostoCasetas','f_CostoComidas','f_CostoManiobrasExt','f_CostoBascula',
+   'f_CostoPension','f_CostoRefacciones','f_CostoOtros'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  _tarifaTipo = 'flete';
   _currentIdCliente = '';
   toggleSeccionCliente();
 }
@@ -720,20 +807,26 @@ function confirmDelete() {
 
 // ── RECALCULAR ────────────────────────────────────────────────────────────────
 function recalcular() {
-  const n = id => parseFloat(document.getElementById(id)?.value) || 0;
-  const chk = id => document.getElementById(id)?.checked ? 1 : 0;
+  const n   = id => parseFloat(document.getElementById(id)?.value) || 0;
+  const chk = id => !!document.getElementById(id)?.checked;
   const sub = n('f_CostoFlete') + n('f_CostoManiobras') + n('f_CostoDemoras') +
               n('f_CostoAutopistas') + n('f_CostoDobOpe') + n('f_CostoDisel') +
               n('f_CostoParada') * n('f_NoParadas') + n('f_CostosOtros') +
-              n('f_CargoExtraTrans') - n('f_RetenKilo');
+              n('f_CargoExtraTrans') + n('f_Kilometros') - n('f_RetenKilo');
+  // Base para IVA y retención según tipo de tarifa
+  let base;
+  if (_tarifaTipo === 'renta')    base = n('f_CostoDemoras');
+  else if (_tarifaTipo === 'km')  base = n('f_Kilometros');
+  else                            base = n('f_CostoFlete');
   const porIVA = n('f_PorIVAMX') || 16;
-  const iva    = chk('f_FlagIVA') ? sub * (porIVA / 100) : 0;
-  const reten  = chk('f_FlagRet') ? sub * 0.04 : 0;
-  const tot    = sub + iva - reten;
+  // FlagIVA=1 → exento de IVA; FlagRet=1 → exento de retención
+  const iva   = chk('f_FlagIVA') ? 0 : base * (porIVA / 100);
+  const reten = chk('f_FlagRet') ? 0 : base * 0.04;
+  const tot   = sub + iva - reten;
   document.getElementById('f_SubTotalMX').value = sub.toFixed(2);
   document.getElementById('f_IVAMX').value      = iva.toFixed(2);
-  document.getElementById('f_RetenMX').value     = reten.toFixed(2);
-  document.getElementById('f_TOTALMX').value     = tot.toFixed(2);
+  document.getElementById('f_RetenMX').value    = reten.toFixed(2);
+  document.getElementById('f_TOTALMX').value    = tot.toFixed(2);
 }
 
 // ── CARGA AUTOMÁTICA TABS ─────────────────────────────────────────────────────
@@ -976,6 +1069,7 @@ function openLkTarifa() {
     '/cartaporte/lookup/tarifas', { idCliente: _currentIdCliente }, row => {
       const flete = (row.FLETE||'').trim().toLowerCase();
       const renta = parseFloat(row.RENTA) || 0;
+      const venta = parseFloat(row.VENTA) || 0;
       const cKm   = parseFloat(row.COSTOKILOMTS) || 0;
       const cAuto = parseFloat(row.COSTOAUTOPISTAS) || 0;
       const km    = parseFloat(row.KILOMETROS) || 0;
@@ -983,10 +1077,14 @@ function openLkTarifa() {
       let cFlete = 0, cDem = 0, kmTar = 0, kmVal = 0, autoVal = 0;
       let valid = false;
 
-      if (flete === 'flete' && renta !== 0) {
-        cFlete = renta; kmTar = km; kmVal = cKm; autoVal = cAuto; valid = true;
-      } else if ((flete === 'renta' && renta !== 0) || cKm !== 0 || cAuto !== 0) {
-        cDem = renta; kmTar = km; kmVal = cKm; autoVal = cAuto; valid = true;
+      if ((flete === 'flete' || flete === 'caseta') && renta !== 0) {
+        cFlete = renta; _tarifaTipo = 'flete'; kmTar = km; kmVal = cKm; autoVal = cAuto; valid = true;
+      } else if (flete === 'renta' && renta !== 0) {
+        cDem = renta; _tarifaTipo = 'renta'; kmTar = km; kmVal = cKm; autoVal = cAuto; valid = true;
+      } else if (cKm !== 0 || cAuto !== 0) {
+        _tarifaTipo = 'km'; kmTar = km; kmVal = cKm; autoVal = cAuto; valid = true;
+      } else if (venta !== 0) {
+        cFlete = venta; _tarifaTipo = 'flete'; kmTar = km; kmVal = cKm; autoVal = cAuto; valid = true;
       }
 
       if (!valid) { alert('La tarifa seleccionada no cuenta con costos configurados'); return; }
