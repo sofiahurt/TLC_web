@@ -4,7 +4,7 @@
   <div class="d-flex align-items-center mb-3">
     <button class="btn btn-sm btn-outline-secondary me-3 d-md-none" id="sidebarToggle"><i class="bi bi-list fs-5"></i></button>
     <h4 class="mb-0 fw-bold flex-grow-1">Carta Porte</h4>
-    <span class="badge bg-secondary ms-2">Serie: <strong><%= usuario.serie || '—' %></strong></span>
+    <span class="badge bg-success ms-2">Central: <strong><%= central || '—' %></strong></span>
     <span class="badge bg-warning text-dark ms-1">Año: <strong><%= anio %></strong></span>
   </div>
 
@@ -803,13 +803,15 @@ function guardar() {
     Status: v('f_Status'), Observaciones: v('f_Observaciones'), Booking: v('f_Booking')
   };
 
+  const btnG = document.getElementById('btnGuardar');
+  if (btnG) btnG.disabled = true;
   fetch('/cartaporte/guardar', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   }).then(r => r.json()).then(d => {
-    if (d.error) { errEl.textContent = d.error; errEl.classList.remove('d-none'); return; }
+    if (d.error) { errEl.textContent = d.error; errEl.classList.remove('d-none'); if (btnG) btnG.disabled = false; return; }
     modal.hide(); browse.load();
-  });
+  }).catch(() => { if (btnG) btnG.disabled = false; });
 }
 
 function confirmDelete() {
