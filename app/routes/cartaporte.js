@@ -19,7 +19,7 @@ router.get('/data', async (req, res) => {
     const serie  = req.session.central;
     const anio   = req.session.anio;
 
-    let where = 'WHERE Serie = @serie AND YEAR(FechaPedido) = @anio';
+    let where = 'WHERE Serie = @serie AND (YEAR(FechaPedido) = @anio OR FechaPedido IS NULL)';
     const r = pool.request().input('serie', sql.VarChar(3), serie).input('anio', sql.Int, parseInt(anio));
     if (q && SEARCH_COLS.has(col)) {
       where += ` AND ${col} LIKE @q COLLATE Modern_Spanish_CI_AS`;
