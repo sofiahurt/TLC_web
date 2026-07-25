@@ -144,8 +144,8 @@
                 <div class="input-group input-group-sm">
                   <input type="hidden" id="f_Id_Cliente">
                   <input type="text" id="f_NombreComunCli" class="form-control form-control-sm" readonly placeholder="Seleccionar...">
-                  <button class="btn btn-outline-secondary" type="button" onclick="openLkCliente('principal')"><i class="bi bi-search"></i></button>
-                  <button class="btn btn-outline-danger btn-sm" type="button" onclick="clearCliente()" title="Limpiar"><i class="bi bi-x"></i></button>
+                  <button class="btn btn-outline-secondary" type="button" id="btnLkCliente" onclick="openLkCliente('principal')"><i class="bi bi-search"></i></button>
+                  <button class="btn btn-outline-danger btn-sm" type="button" id="btnClearCliente" onclick="clearCliente()" title="Limpiar"><i class="bi bi-x"></i></button>
                 </div>
               </div>
               <div class="col-md-4">
@@ -153,7 +153,7 @@
                 <div class="input-group input-group-sm">
                   <input type="hidden" id="f_Id_ClienteEnt">
                   <input type="text" id="f_ClienteEnt" class="form-control form-control-sm" readonly placeholder="Seleccionar...">
-                  <button class="btn btn-outline-secondary" type="button" onclick="openLkCliente('ent')"><i class="bi bi-search"></i></button>
+                  <button class="btn btn-outline-secondary" type="button" id="btnLkClienteEnt" onclick="openLkCliente('ent')"><i class="bi bi-search"></i></button>
                 </div>
               </div>
               <div class="col-md-4">
@@ -161,7 +161,7 @@
                 <div class="input-group input-group-sm">
                   <input type="hidden" id="f_Id_ClienteCarga">
                   <input type="text" id="f_ClienteCarga" class="form-control form-control-sm" readonly placeholder="Seleccionar...">
-                  <button class="btn btn-outline-secondary" type="button" onclick="openLkCliente('carga')"><i class="bi bi-search"></i></button>
+                  <button class="btn btn-outline-secondary" type="button" id="btnLkClienteCarga" onclick="openLkCliente('carga')"><i class="bi bi-search"></i></button>
                 </div>
               </div>
             </div>
@@ -174,7 +174,7 @@
                   <div class="input-group input-group-sm">
                     <input type="hidden" id="f_Id_Tarifa">
                     <input type="text" id="f_DesFlete" class="form-control form-control-sm" readonly placeholder="Seleccionar tarifa...">
-                    <button class="btn btn-outline-secondary" type="button" onclick="openLkTarifa()"><i class="bi bi-search"></i></button>
+                    <button class="btn btn-outline-secondary" type="button" id="btnLkTarifa" onclick="openLkTarifa()"><i class="bi bi-search"></i></button>
                   </div>
                 </div>
               </div>
@@ -225,7 +225,7 @@
                   <div class="input-group input-group-sm">
                     <input type="hidden" id="f_Id_DomCarga">
                     <input type="text" id="f_DomCarga" class="form-control form-control-sm" readonly placeholder="Seleccionar...">
-                    <button class="btn btn-outline-secondary" type="button" onclick="openLkDom('carga')"><i class="bi bi-search"></i></button>
+                    <button class="btn btn-outline-secondary" type="button" id="btnLkDomCarga" onclick="openLkDom('carga')"><i class="bi bi-search"></i></button>
                   </div>
                 </div>
                 <div class="col-md-6">
@@ -233,7 +233,7 @@
                   <div class="input-group input-group-sm">
                     <input type="hidden" id="f_Id_DomDescarga1">
                     <input type="text" id="f_DomDescarga" class="form-control form-control-sm" readonly placeholder="Seleccionar...">
-                    <button class="btn btn-outline-secondary" type="button" onclick="openLkDom('descarga')"><i class="bi bi-search"></i></button>
+                    <button class="btn btn-outline-secondary" type="button" id="btnLkDomDescarga" onclick="openLkDom('descarga')"><i class="bi bi-search"></i></button>
                   </div>
                 </div>
               </div>
@@ -582,6 +582,9 @@ function loadForm(cp, serie, ro) {
       applyRequiredHighlight(!ro);
       _currentIdCliente = String(d.Id_Cliente || '');
       toggleSeccionCliente();
+      if (_mode === 'edit' && (d.Status || '').trim().toUpperCase() === 'EMITIDO') {
+        lockEmitidoFields();
+      }
     });
 }
 
@@ -683,6 +686,20 @@ function setReadOnly(ro) {
 
 function toggleSeccionCliente() {
   document.getElementById('seccionDependienteCliente').style.display = _currentIdCliente ? '' : 'none';
+}
+
+function lockEmitidoFields() {
+  // Inputs de fecha/hora bloqueados
+  ['f_FehcaCarga','f_HoraCarga','f_FechaDesCarta','f_HorarioDesCarta'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.readOnly = true; el.style.backgroundColor = '#f0f0f0'; }
+  });
+  // Botones de lookup y limpiar bloqueados
+  ['btnLkCliente','btnClearCliente','btnLkClienteEnt','btnLkClienteCarga',
+   'btnLkTarifa','btnLkDomCarga','btnLkDomDescarga'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = true;
+  });
 }
 
 function clearCliente() {
@@ -1143,9 +1160,8 @@ function openLkOperador() {
 
 function openLkDom(tipo) {
   const titulo = tipo === 'carga' ? 'Domicilio de carga' : 'Domicilio de descarga';
-  const tipoVal = tipo === 'carga' ? 'Carga' : 'Descarga';
   openGenericLookup(titulo, ['ID','Descripción','Ciudad'],
-    '/cartaporte/lookup/domcarga', { idCliente: _currentIdCliente, tipo: tipoVal }, row => {
+    '/cartaporte/lookup/domcarga', { idCliente: _currentIdCliente }, row => {
       if (tipo === 'carga') {
         document.getElementById('f_Id_DomCarga').value = row.ID_DOMICILIO;
         document.getElementById('f_DomCarga').value    = (row.DESCRIPCION||'').trim();

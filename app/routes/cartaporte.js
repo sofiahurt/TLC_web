@@ -223,21 +223,17 @@ router.get('/lookup/domcarga', async (req, res) => {
   try {
     const q = (req.query.q || '').trim();
     const idCliente = parseInt(req.query.idCliente) || 0;
-    const tipo = (req.query.tipo || '').trim();
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const pool = await getPool();
     let where = `WHERE ID_CLIENTE = @idCli`;
-    if (tipo) where += ` AND TIPO = @tipo`;
-    if (q)    where += ` AND (DESCRIPCION LIKE @q OR CIUDAD LIKE @q)`;
+    if (q) where += ` AND (DESCRIPCION LIKE @q OR CIUDAD LIKE @q)`;
     const cr = pool.request().input('idCli', sql.Decimal(7), idCliente);
-    if (tipo) cr.input('tipo', sql.Char(10), tipo);
-    if (q)    cr.input('q', `%${q}%`);
+    if (q) cr.input('q', `%${q}%`);
     const cnt = await cr.query(`SELECT COUNT(*) AS total FROM Empresa2.DomCarDes ${where}`);
     const total = cnt.recordset[0].total;
     const offset = (page - 1) * 10;
     const dr = pool.request().input('idCli', sql.Decimal(7), idCliente);
-    if (tipo) dr.input('tipo', sql.Char(10), tipo);
-    if (q)    dr.input('q', `%${q}%`);
+    if (q) dr.input('q', `%${q}%`);
     const data = await dr.query(
       `SELECT ID_DOMICILIO,DESCRIPCION,CIUDAD FROM Empresa2.DomCarDes ${where}
        ORDER BY DESCRIPCION OFFSET ${offset} ROWS FETCH NEXT 10 ROWS ONLY`
