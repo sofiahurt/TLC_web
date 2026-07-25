@@ -23,9 +23,6 @@
         <p class="text-muted small mb-2">Selecciona el año y la central de trabajo</p>
         <div class="d-flex align-items-center justify-content-center gap-2">
           <span class="text-secondary small"><i class="bi bi-person-circle me-1"></i><%= usuario.nombre.trim() %></span>
-          <% if (usuario.serie) { %>
-            <span class="badge bg-primary">Serie: <%= usuario.serie.trim() %></span>
-          <% } %>
         </div>
       </div>
 
@@ -46,7 +43,7 @@
           <select name="central" class="form-select" required>
             <option value="">— Selecciona una central —</option>
             <% centrales.forEach(c => { %>
-              <option value="<%= c.Central.trim() %>"><%= c.Central.trim() %> — <%= c.Descripcion.trim() %></option>
+              <option value="<%= c.Central.trim() %>" <%= usuario.serie && c.Central.trim() === usuario.serie.trim() ? 'selected' : '' %>><%= c.Central.trim() %> — <%= c.Descripcion.trim() %></option>
             <% }) %>
           </select>
         </div>

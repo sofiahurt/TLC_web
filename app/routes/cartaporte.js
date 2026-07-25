@@ -16,7 +16,7 @@ router.get('/data', async (req, res) => {
     const col    = req.query.col || '';
     const sort   = SORT_COLS.has(req.query.sort) ? req.query.sort : 'FechaPedido';
     const dir    = req.query.dir === 'asc' ? 'ASC' : 'DESC';
-    const serie  = req.session.usuario.serie;
+    const serie  = req.session.central;
     const anio   = req.session.anio;
 
     let where = 'WHERE Serie = @serie';
@@ -426,7 +426,7 @@ router.post('/guardar', async (req, res) => {
   const flag = v => (v === true || v === 'true' || v === 1 || v === '1') ? 1 : 0;
   try {
     const pool = await getPool();
-    const serie = req.session.usuario.serie;
+    const serie = req.session.central;
 
     if (f._mode === 'add') {
       const maxRes = await pool.request()
