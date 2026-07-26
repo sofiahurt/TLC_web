@@ -14,8 +14,9 @@ router.get('/data', async (req, res) => {
     const page   = Math.max(1, parseInt(req.query.page) || 1);
     const q      = (req.query.q || '').trim();
     const col    = req.query.col || '';
-    const sort   = SORT_COLS.has(req.query.sort) ? req.query.sort : 'FechaPedido';
-    const dir    = req.query.dir === 'asc' ? 'ASC' : 'DESC';
+    const sort    = SORT_COLS.has(req.query.sort) ? req.query.sort : 'CartaPorte';
+    const dir     = req.query.dir === 'asc' ? 'ASC' : 'DESC';
+    const orderBy = `${sort} ${dir}`;
     const serie  = req.session.central;
     const anio   = req.session.anio;
 
@@ -39,14 +40,14 @@ router.get('/data', async (req, res) => {
     const dataRes = await dr.query(
       `SELECT Serie,CartaPorte,Id_Pedido,FechaPedido,FehcaCarga,NombreComunCli,DesFlete,Status,RealizoPedido
        FROM Empresa2.CartaPorte ${where}
-       ORDER BY ${sort} ${dir}
+       ORDER BY ${orderBy}
        OFFSET ${offset} ROWS FETCH NEXT 20 ROWS ONLY`
     );
 
     const fmt = v => v ? (v instanceof Date ? v.toISOString().slice(0,10) : String(v).trim()) : '';
     const fmtDate = v => { if (!v) return ''; const iso = v instanceof Date ? v.toISOString().slice(0,10) : String(v).trim().slice(0,10); return iso.length >= 10 ? `${iso.slice(8,10)}/${iso.slice(5,7)}/${iso.slice(0,4)}` : iso; };
     const rows = dataRes.recordset.map(r =>
-      `<tr data-id="${r.CartaPorte}">
+      `<tr data-id="${fmt(r.CartaPorte)}">
         <td data-field="Serie"         data-value="${fmt(r.Serie)}">${fmt(r.Serie)}</td>
         <td data-field="CartaPorte"    data-value="${fmt(r.CartaPorte)}">${fmt(r.CartaPorte)}</td>
         <td data-field="FechaPedido"   data-value="${fmt(r.FechaPedido)}">${fmtDate(r.FechaPedido)}</td>
@@ -59,6 +60,57 @@ router.get('/data', async (req, res) => {
       </tr>`
     ).join('');
     res.json({ rows, page: safePage, totalPages, total });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── SCROLL TARGET al cargar la pantalla ───────────────────────────────────────
+router.get('/scroll-target', async (req, res) => {
+  try {
+    const pool  = await getPool();
+    const serie = req.session.central;
+    const anio  = req.session.anio;
+
+    // Primer registro lleno (mayor folio con Status no vacío)
+    const refRes = await pool.request()
+      .input('serie', sql.VarChar(3), serie)
+      .input('anio',  sql.Int, parseInt(anio))
+      .query(`SELECT TOP 1 LTRIM(RTRIM(CartaPorte)) AS CartaPorte
+              FROM Empresa2.CartaPorte
+              WHERE Serie = @serie AND (YEAR(FechaPedido) = @anio OR FechaPedido IS NULL)
+                AND Status IS NOT NULL AND LTRIM(RTRIM(Status)) <> ''
+              ORDER BY CartaPorte DESC`);
+
+    if (!refRes.recordset[0]) return res.json({ found: false });
+    const refCP = refRes.recordset[0].CartaPorte;
+
+    // Registro inmediatamente arriba (folio mayor siguiente = primer vacío sobre el lleno)
+    const aboveRes = await pool.request()
+      .input('serie', sql.VarChar(3), serie)
+      .input('anio',  sql.Int, parseInt(anio))
+      .input('refCP', sql.VarChar(30), refCP)
+      .query(`SELECT TOP 1 LTRIM(RTRIM(CartaPorte)) AS CartaPorte
+              FROM Empresa2.CartaPorte
+              WHERE Serie = @serie AND (YEAR(FechaPedido) = @anio OR FechaPedido IS NULL)
+                AND LTRIM(RTRIM(CartaPorte)) > @refCP
+              ORDER BY CartaPorte ASC`);
+
+    const targetCP = aboveRes.recordset[0]
+      ? aboveRes.recordset[0].CartaPorte
+      : refCP;
+
+    // Página donde cae el destino en sort CartaPorte DESC
+    const cntRes = await pool.request()
+      .input('serie',    sql.VarChar(3), serie)
+      .input('anio',     sql.Int, parseInt(anio))
+      .input('targetCP', sql.VarChar(30), targetCP)
+      .query(`SELECT COUNT(*) AS cnt FROM Empresa2.CartaPorte
+              WHERE Serie = @serie AND (YEAR(FechaPedido) = @anio OR FechaPedido IS NULL)
+                AND LTRIM(RTRIM(CartaPorte)) > @targetCP`);
+
+    const position = cntRes.recordset[0].cnt + 1;
+    const page = Math.ceil(position / 20);
+
+    res.json({ found: true, CartaPorte: targetCP, page });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

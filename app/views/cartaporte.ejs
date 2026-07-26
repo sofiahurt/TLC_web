@@ -522,14 +522,40 @@ const depoModal = new bootstrap.Modal(document.getElementById('depoModal'));
 const lkModal   = new bootstrap.Modal(document.getElementById('lkModal'));
 
 // ── BROWSE ────────────────────────────────────────────────────────────────────
+let _targetCP = null;
+
 const browse = initBrowse({
   searchInput:  document.getElementById('searchInput'),
   searchColumn: document.getElementById('searchCol'),
   tableBody:    document.getElementById('tableBody'),
   paginationEl: document.getElementById('pagination'),
   infoEl:       document.getElementById('pageInfo'),
-  fetchUrl:     '/cartaporte/data'
+  fetchUrl:     '/cartaporte/data',
+  defaultSort:  'CartaPorte',
+  defaultDir:   'desc',
+  onLoad: (tbody) => {
+    if (!_targetCP) return;
+    const row = tbody.querySelector(`tr[data-id="${_targetCP}"]`);
+    if (!row) return;
+    _targetCP = null;
+    row.classList.add('selected');
+    window._selectedId = row.dataset.id;
+    window._selectedRow = {};
+    row.querySelectorAll('td[data-field]').forEach(td => {
+      window._selectedRow[td.dataset.field] = td.dataset.value ?? td.textContent.trim();
+    });
+    document.querySelectorAll('[data-requires-selection]').forEach(b => b.disabled = false);
+    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
 });
+
+fetch('/cartaporte/scroll-target')
+  .then(r => r.json())
+  .then(d => {
+    if (!d.found) return;
+    _targetCP = d.CartaPorte;
+    browse.goToPage(d.page);
+  });
 
 // Bloquear Editar/Eliminar si status = facturado
 document.addEventListener('click', function(e) {

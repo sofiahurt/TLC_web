@@ -66,10 +66,10 @@ function debounce(fn, ms) {
 
 // Generic browse search
 function initBrowse(options) {
-  const { searchInput, searchColumn, tableBody, paginationEl, infoEl, pageSize = 20, fetchUrl } = options;
+  const { searchInput, searchColumn, tableBody, paginationEl, infoEl, pageSize = 20, fetchUrl, onLoad, defaultSort = '', defaultDir = 'asc' } = options;
   let currentPage = 1;
-  let currentSort = '';
-  let currentDir = 'asc';
+  let currentSort = defaultSort;
+  let currentDir = defaultDir;
 
   function load() {
     const q = searchInput ? searchInput.value : '';
@@ -98,8 +98,11 @@ function initBrowse(options) {
           window._selectedId = null;
           document.querySelectorAll('[data-requires-selection]').forEach(b => b.disabled = true);
         }
+        if (onLoad) onLoad(tableBody);
       });
   }
+
+  function goToPage(n) { currentPage = n; load(); }
 
   if (searchInput) searchInput.addEventListener('input', debounce(() => { currentPage = 1; load(); }, 300));
 
@@ -121,7 +124,7 @@ function initBrowse(options) {
   });
 
   load();
-  return { load };
+  return { load, goToPage };
 }
 
 // Lookup helper
