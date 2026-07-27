@@ -15,7 +15,7 @@
         <div class="col-auto">
           <select id="searchCol" class="form-select form-select-sm">
             <option value="NombreComunCli">Cliente</option>
-            <option value="CartaPorte">Carta Porte</option>
+            <option value="CartaPorte" selected>Carta Porte</option>
             <option value="DesFlete">Descripción flete</option>
             <option value="Status">Status</option>
             <option value="RealizoPedido">Realizó</option>
@@ -506,6 +506,7 @@
 let _mode = 'add';
 const _usuarioNombre = '<%= usuario.nombre.trim() %><%= usuario.apellido ? " " + usuario.apellido.trim() : "" %>';
 let _readOnly = false;
+let _statusLocked = false;
 let _currentSerie = '';
 let _currentCP = '';
 let _currentIdCliente = '';
@@ -603,13 +604,14 @@ function loadForm(cp, serie, ro) {
         if (!document.getElementById('f_Status').value)      document.getElementById('f_Status').value = 'EMITIDO';
         document.getElementById('f_RealizoPedido').value = _usuarioNombre;
       }
+      _statusLocked = false;
       setReadOnly(ro);
       applyRequiredHighlight(!ro);
       _currentIdCliente = String(d.Id_Cliente || '');
       toggleSeccionCliente();
-      if (_mode === 'edit' && (d.Status || '').trim().toUpperCase() === 'EMITIDO') {
-        lockEmitidoFields();
-      }
+      const st = (d.Status || '').trim().toUpperCase();
+      if (_mode === 'edit' && st === 'EMITIDO') lockEmitidoFields();
+      if (st === 'FACTURADO' || st === 'TRASLADO') lockStatusFields();
     });
 }
 
@@ -714,17 +716,33 @@ function toggleSeccionCliente() {
 }
 
 function lockEmitidoFields() {
-  // Inputs de fecha/hora bloqueados
-  ['f_FehcaCarga','f_HoraCarga','f_FechaDesCarta','f_HorarioDesCarta'].forEach(id => {
+  ['f_FehcaCarga','f_HoraCarga','f_FechaDesCarta','f_HorarioDesCarta',
+   'f_NombreComunCli','f_ClienteEnt','f_ClienteCarga','f_DesFlete'].forEach(id => {
     const el = document.getElementById(id);
     if (el) { el.readOnly = true; el.style.backgroundColor = '#f0f0f0'; }
   });
-  // Botones de lookup y limpiar bloqueados
   ['btnLkCliente','btnClearCliente','btnLkClienteEnt','btnLkClienteCarga',
    'btnLkTarifa','btnLkDomCarga','btnLkDomDescarga'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.disabled = true;
   });
+}
+
+function lockStatusFields() {
+  _statusLocked = true;
+  // Bloquear toda la tab Carta Porte
+  document.querySelectorAll('#tabCP input, #tabCP select, #tabCP textarea, #tabCP button').forEach(el => {
+    if (el.type !== 'hidden') el.disabled = true;
+  });
+  // Ocultar botón Agregar en Mercancías
+  const mercBtn = document.querySelector('#tabMerc > div > button');
+  if (mercBtn) mercBtn.style.display = 'none';
+  // Ocultar botón Guardar principal
+  const btnG = document.getElementById('btnGuardar');
+  if (btnG) btnG.style.display = 'none';
+  // Siempre habilitar botón Agregar en Depósitos
+  const depoBtn = document.querySelector('#tabDepo > div > button');
+  if (depoBtn) { depoBtn.disabled = false; depoBtn.style.display = ''; }
 }
 
 function clearCliente() {
@@ -896,10 +914,10 @@ function loadMercancias(serie, cp) {
           <td>${r.ClaveUnidad||''}</td>
           <td>${r.PesoEnKg||''}</td>
           <td>${r.ValorMercancia||''}</td>
-          <td class="text-center">
-            <button class="btn btn-xs btn-sm btn-outline-primary py-0 px-1" onclick="editMerc(${r.Id_Mercancia})"><i class="bi bi-pencil"></i></button>
-            <button class="btn btn-xs btn-sm btn-outline-danger py-0 px-1" onclick="delMerc(${r.Id_Mercancia})"><i class="bi bi-trash"></i></button>
-          </td>
+          <td class="text-center">${_statusLocked ? '' :
+            `<button class="btn btn-xs btn-sm btn-outline-primary py-0 px-1" onclick="editMerc(${r.Id_Mercancia})"><i class="bi bi-pencil"></i></button>
+             <button class="btn btn-xs btn-sm btn-outline-danger py-0 px-1" onclick="delMerc(${r.Id_Mercancia})"><i class="bi bi-trash"></i></button>`
+          }</td>
         </tr>`
       ).join('') || '<tr><td colspan="8" class="text-center text-muted small">Sin registros</td></tr>';
     });
@@ -1042,11 +1060,10 @@ function guardarDepo() {
 }
 
 // ── LOOKUP GENÉRICO ───────────────────────────────────────────────────────────
-let _lkUrl = '', _lkPage = 1, _lkOnSelect = null, _lkDebounce = null;
-let _lkExtraParams = {};
+let _lkUrl = '', _lkPage = 1, _lkOnSelect = null, _lkDebounce = null, _lkHeaders = [], _lkExtraParams = {};
 
 function openGenericLookup(title, headers, url, extraParams, onSelect) {
-  _lkUrl = url; _lkPage = 1; _lkOnSelect = onSelect; _lkExtraParams = extraParams || {};
+  _lkUrl = url; _lkPage = 1; _lkOnSelect = onSelect; _lkExtraParams = extraParams || {}; _lkHeaders = headers;
   document.getElementById('lkTitle').textContent = title;
   document.getElementById('lkSearch').value = '';
   const thead = document.getElementById('lkThead').querySelector('tr');
@@ -1063,7 +1080,7 @@ function lkLoadPage() {
     .then(d => {
       document.getElementById('lkBody').innerHTML = (d.rows || []).map(r =>
         `<tr style="cursor:pointer" onclick="lkSelect(this)" data-row='${JSON.stringify(r)}'>
-          ${Object.values(r).map(v => `<td>${v??''}</td>`).join('')}
+          ${Object.values(r).slice(0, _lkHeaders.length).map(v => `<td>${v??''}</td>`).join('')}
         </tr>`
       ).join('') || '<tr><td colspan="10" class="text-center text-muted small">Sin resultados</td></tr>';
       document.getElementById('lkInfo').textContent = `Pág ${d.page} de ${d.totalPages} — ${d.total} reg.`;
