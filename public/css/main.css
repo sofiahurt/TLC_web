@@ -168,6 +168,14 @@ body { background: #E8EFF5; }
   box-shadow: 0 0 0 .2rem rgba(77,127,172,.25);
 }
 
+/* ─── STICKY FILTER BAR ───────────────────────────── */
+.barra-filtros {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background-color: #fff;
+}
+
 /* ─── PAGINATION ──────────────────────────────────── */
 .page-info { font-size: .85rem; color: #6c757d; }
 

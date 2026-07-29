@@ -9,7 +9,7 @@
   </div>
 
   <!-- Search + Buttons -->
-  <div class="card border-0 shadow-sm mb-3">
+  <div class="card border-0 shadow-sm mb-3 barra-filtros">
     <div class="card-body py-2">
       <div class="row align-items-center g-2">
         <div class="col-auto">
@@ -27,6 +27,7 @@
         <div class="col-auto ms-auto btn-action-group">
           <button class="btn btn-sm btn-primary" id="btnEditar" data-requires-selection disabled onclick="openEdit()"><i class="bi bi-pencil"></i> Editar</button>
           <button class="btn btn-sm btn-outline-primary" data-requires-selection disabled onclick="openVisualizar()"><i class="bi bi-eye"></i> Visualizar</button>
+          <button class="btn btn-sm btn-warning" id="btnTimbrar" disabled onclick="openTimbrar()"><i class="bi bi-file-earmark-check"></i> Timbrar</button>
         </div>
       </div>
     </div>
@@ -500,6 +501,27 @@
   </div>
 </div>
 
+<!-- ═══════════════════ MODAL TIMBRAR ════════════════════════════════════════ -->
+<div class="modal fade" id="timbraModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title"><i class="bi bi-file-earmark-check me-2 text-warning"></i>Timbrar Carta Porte</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="timbraBody">
+        <p class="text-muted mb-0">Validando datos...</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-warning btn-sm" id="btnConfirmTimbrar" style="display:none" onclick="ejecutarTimbrado()">
+          <i class="bi bi-file-earmark-check me-1"></i>Confirmar timbrado
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <%- include('partials/footer') %>
 <script>
 // ── ESTADO ────────────────────────────────────────────────────────────────────
@@ -517,10 +539,11 @@ let _depoMode = 'add';
 let _depoEditId = null;
 const today = new Date().toISOString().slice(0, 10);
 
-const modal     = new bootstrap.Modal(document.getElementById('frmModal'));
-const mercModal = new bootstrap.Modal(document.getElementById('mercModal'));
-const depoModal = new bootstrap.Modal(document.getElementById('depoModal'));
-const lkModal   = new bootstrap.Modal(document.getElementById('lkModal'));
+const modal       = new bootstrap.Modal(document.getElementById('frmModal'));
+const mercModal   = new bootstrap.Modal(document.getElementById('mercModal'));
+const depoModal   = new bootstrap.Modal(document.getElementById('depoModal'));
+const lkModal     = new bootstrap.Modal(document.getElementById('lkModal'));
+const timbraModal = new bootstrap.Modal(document.getElementById('timbraModal'));
 
 // ── BROWSE ────────────────────────────────────────────────────────────────────
 let _targetCP = null;
@@ -558,7 +581,7 @@ fetch('/cartaporte/scroll-target')
     browse.goToPage(d.page);
   });
 
-// Bloquear Editar/Eliminar si status = facturado
+// Actualizar estado de botones de acción según el status del registro seleccionado
 document.addEventListener('click', function(e) {
   const row = e.target.closest('tr[data-id]');
   if (!row || e.target.closest('.modal-lookup')) return;
@@ -566,8 +589,11 @@ document.addEventListener('click', function(e) {
   const isFact = status === 'facturado';
   const btnEd = document.getElementById('btnEditar');
   const btnEl = document.getElementById('btnEliminar');
+  const btnTi = document.getElementById('btnTimbrar');
   if (btnEd) btnEd.disabled = isFact;
   if (btnEl) btnEl.disabled = isFact;
+  // Timbrar: solo habilitado cuando Status = EMITIDO
+  if (btnTi) btnTi.disabled = (status !== 'emitido');
 });
 
 // ── OPEN MODAL ────────────────────────────────────────────────────────────────
@@ -590,6 +616,72 @@ function openVisualizar() {
   document.getElementById('btnGuardar').style.display = 'none';
   loadForm(window._selectedRow.CartaPorte, window._selectedRow.Serie, true);
   modal.show();
+}
+
+function openTimbrar() {
+  if (!window._selectedRow) return;
+  const { CartaPorte, Serie } = window._selectedRow;
+
+  // Resetear modal y mostrarlo mientras se valida
+  document.getElementById('timbraBody').innerHTML = '<p class="text-muted mb-0"><span class="spinner-border spinner-border-sm me-2"></span>Validando datos...</p>';
+  document.getElementById('btnConfirmTimbrar').style.display = 'none';
+  document.getElementById('btnConfirmTimbrar').disabled = false;
+  document.getElementById('btnConfirmTimbrar').innerHTML = '<i class="bi bi-file-earmark-check me-1"></i>Confirmar timbrado';
+  timbraModal.show();
+
+  fetch(`/cfdi/validar?serie=${encodeURIComponent(Serie)}&cartaporte=${encodeURIComponent(CartaPorte)}`)
+    .then(r => r.json())
+    .then(d => {
+      if (!d.ok) {
+        document.getElementById('timbraBody').innerHTML =
+          `<div class="alert alert-danger mb-0">
+            <strong><i class="bi bi-exclamation-triangle me-1"></i>No se puede timbrar. Datos faltantes:</strong>
+            <ul class="mt-2 mb-0 ps-3">${d.errores.map(e => `<li>${e}</li>`).join('')}</ul>
+          </div>`;
+      } else {
+        document.getElementById('timbraBody').innerHTML =
+          `<p class="mb-2">¿Confirmar timbrado de la Carta Porte <strong>${CartaPorte}</strong>?</p>
+           <p class="text-muted small mb-0"><i class="bi bi-exclamation-triangle-fill me-1 text-warning"></i>Esta acción sellará digitalmente el XML. El envío al PAC está pendiente de configuración.</p>`;
+        document.getElementById('btnConfirmTimbrar').style.display = '';
+      }
+    })
+    .catch(() => {
+      document.getElementById('timbraBody').innerHTML = '<div class="alert alert-danger mb-0">Error al validar datos. Intente de nuevo.</div>';
+    });
+}
+
+function ejecutarTimbrado() {
+  if (!window._selectedRow) return;
+  const { CartaPorte, Serie } = window._selectedRow;
+  const btn = document.getElementById('btnConfirmTimbrar');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Procesando...';
+
+  fetch('/cfdi/timbrar', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ serie: Serie, cartaporte: CartaPorte })
+  })
+  .then(r => r.json())
+  .then(d => {
+    btn.style.display = 'none';
+    if (d.ok) {
+      document.getElementById('timbraBody').innerHTML =
+        `<div class="alert alert-success mb-0">
+          <i class="bi bi-check-circle-fill me-2"></i><strong>${d.mensaje}</strong>
+        </div>`;
+    } else {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-file-earmark-check me-1"></i>Confirmar timbrado';
+      document.getElementById('timbraBody').innerHTML =
+        `<div class="alert alert-danger mb-0"><i class="bi bi-x-circle me-2"></i>${d.error || 'Error desconocido'}</div>`;
+    }
+  })
+  .catch(() => {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-file-earmark-check me-1"></i>Confirmar timbrado';
+    document.getElementById('timbraBody').innerHTML = '<div class="alert alert-danger mb-0">Error de comunicación con el servidor.</div>';
+  });
 }
 
 function loadForm(cp, serie, ro) {

@@ -57,6 +57,11 @@ app.use('/camiones',    require('./app/routes/camiones'));
 app.use('/tarifas',     require('./app/routes/tarifas'));
 app.use('/tarkilomts',  require('./app/routes/tarkilomts'));
 app.use('/dieselpre',   require('./app/routes/dieselpre'));
+app.use('/cfdi',        require('./app/routes/cfdi'));
 
+const { RUTA_XML } = require('./app/config/storage');
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`TLC Web corriendo en http://localhost:${PORT}`));
+app.listen(PORT, () => {
+  console.log(`TLC Web corriendo en http://localhost:${PORT}`);
+  console.log(`Almacenamiento XML:  ${RUTA_XML}`);
+});
