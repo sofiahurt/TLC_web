@@ -642,6 +642,9 @@ router.post('/guardar', async (req, res) => {
         .input('obs',      sql.VarChar(255), f.Observaciones||null)
         .input('booking2', sql.VarChar(20),  f.Booking||null)
         .input('cont',     sql.VarChar(20),  f.Contenedor||null)
+        .input('totMerc',  sql.Decimal(5,0), num(f.TotalMercancias))
+        .input('pesoBruto',sql.Decimal(12,3),num(f.PesoBrutoTotal))
+        .input('unidPeso', sql.VarChar(10),  f.UnidadPeso||null)
         .query(`INSERT INTO Empresa2.CartaPorte(
           Serie,Id_Pedido,CartaPorte,FechaPedido,FechaCaptura,RealizoPedido,AnioFactura,
           FehcaCarga,HoraCarga,FechaDesCarta,HorarioDesCarta,
@@ -657,7 +660,7 @@ router.post('/guardar', async (req, res) => {
           SubTotalUSD,PorIVAUSD,IVAUSD,RetenUSD,TOTALUSD,
           CostoPrestamo,CostoTalacha,CostoCompllanta,CostoDiesel,CostoCasetas,CostoComidas,
           CostoManiobrasExt,CostoBascula,CostoPension,CostoRefacciones,CostoOtros,
-          Status,Observaciones,Booking,Contenedor
+          Status,Observaciones,Booking,Contenedor,TotalMercancias,PesoBrutoTotal,UnidadPeso
         ) VALUES(
           @serie,@idPed,@cp,@fechaPed,@fechaCap,@realizo,@anio,
           @fehcaCar,@horaCar,@fechaDes,@horaDes,
@@ -672,7 +675,7 @@ router.post('/guardar', async (req, res) => {
           @fIVA,@fRet,@subMX,@porIVA,@ivaMX,@retenMX,@totMX,
           @subUSD,@porIVAU,@ivaUSD,@retenUSD,@totUSD,
           @cPrest,@cTal,@cLla,@cDiesel,@cCas,@cCom,@cManExt,@cBas,@cPen,@cRef,@cOtrosOp,
-          @status,@obs,@booking2,@cont
+          @status,@obs,@booking2,@cont,@totMerc,@pesoBruto,@unidPeso
         )`);
       res.json({ ok: true, CartaPorte: cartaPorte, Serie: serie });
     } else {
@@ -756,6 +759,9 @@ router.post('/guardar', async (req, res) => {
         .input('obs',      sql.VarChar(255), f.Observaciones||null)
         .input('booking2', sql.VarChar(20),  f.Booking||null)
         .input('cont',     sql.VarChar(20),  f.Contenedor||null)
+        .input('totMerc',  sql.Decimal(5,0), num(f.TotalMercancias))
+        .input('pesoBruto',sql.Decimal(12,3),num(f.PesoBrutoTotal))
+        .input('unidPeso', sql.VarChar(10),  f.UnidadPeso||null)
         .input('whoMod',   sql.VarChar(60),  [req.session.usuario.nombre, req.session.usuario.apellido].filter(Boolean).join(' '))
         .input('realizo',  sql.VarChar(60),  [req.session.usuario.nombre, req.session.usuario.apellido].filter(Boolean).join(' '))
         .query(`UPDATE Empresa2.CartaPorte SET
@@ -779,7 +785,9 @@ router.post('/guardar', async (req, res) => {
           CostoPrestamo=@cPrest,CostoTalacha=@cTal,CostoCompllanta=@cLla,CostoDiesel=@cDiesel,
           CostoCasetas=@cCas,CostoComidas=@cCom,CostoManiobrasExt=@cManExt,CostoBascula=@cBas,
           CostoPension=@cPen,CostoRefacciones=@cRef,CostoOtros=@cOtrosOp,
-          Status=@status,Observaciones=@obs,Booking=@booking2,Contenedor=@cont,WhoModifica=@whoMod
+          Status=@status,Observaciones=@obs,Booking=@booking2,Contenedor=@cont,
+          TotalMercancias=@totMerc,PesoBrutoTotal=@pesoBruto,UnidadPeso=@unidPeso,
+          WhoModifica=@whoMod
           WHERE Serie=@serie AND CartaPorte=@cp`);
       res.json({ ok: true });
     }

@@ -270,6 +270,20 @@
                 <tbody id="mercBody"></tbody>
               </table>
             </div>
+            <div class="row g-3 align-items-end mt-2 pt-2 border-top">
+              <div class="col-auto">
+                <label class="form-label fw-semibold small mb-1">Total mercancías</label>
+                <input type="text" id="f_TotalMercancias" class="form-control form-control-sm bg-light" style="width:100px" readonly tabindex="-1">
+              </div>
+              <div class="col-auto">
+                <label class="form-label fw-semibold small mb-1">Peso bruto total (kg)</label>
+                <input type="text" id="f_PesoBrutoTotal" class="form-control form-control-sm bg-light" style="width:150px" readonly tabindex="-1">
+              </div>
+              <div class="col-auto">
+                <label class="form-label fw-semibold small mb-1">Unidad peso</label>
+                <input type="text" id="f_UnidadPeso" class="form-control form-control-sm" style="width:90px" maxlength="10">
+              </div>
+            </div>
           </div><!-- /tabMerc -->
 
           <!-- ── TAB 3: DEPÓSITOS ───────────────────────────────────────── -->
@@ -730,6 +744,8 @@ function loadForm(cp, serie, ro) {
       const st = (d.Status || '').trim().toUpperCase();
       if (_mode === 'edit' && st === 'EMITIDO') lockEmitidoFields();
       if (st === 'FACTURADO' || st === 'TRASLADO') lockStatusFields();
+      loadMercancias(serie, cp);
+      loadDepositos(serie, cp);
     });
 }
 
@@ -786,6 +802,7 @@ function populateForm(d) {
   ['FlagCobMan','FlagCobDem','FlagCobAuto','FlagCobDO','FlagConDis','FlagCobParada',
    'FlagCobOtros','FlagCobCE','FlagIVA','FlagRet'
   ].forEach(k => chk('f_' + k, d[k]));
+  set('f_UnidadPeso', d.UnidadPeso || 'KGM');
   // Inferir tipo de tarifa para recalcular correctamente
   const dem = parseFloat(d.CostoDemoras) || 0;
   const fl  = parseFloat(d.CostoFlete)   || 0;
@@ -801,6 +818,7 @@ function clearForm() {
     else el.value = '';
   });
   document.getElementById('f_PorIVAMX').value = 16;
+  document.getElementById('f_UnidadPeso').value = 'KGM';
   _currentIdCliente = '';
   _currentCP = '';
   _currentSerie = '';
@@ -814,7 +832,8 @@ function setReadOnly(ro) {
   });
   document.querySelectorAll('#frmModal button:not([data-bs-dismiss])').forEach(b => b.disabled = ro);
   // Serie y CartaPorte siempre readonly
-  ['f_Serie','f_CartaPorte','f_FechaPedido','f_RealizoPedido'].forEach(id => {
+  ['f_Serie','f_CartaPorte','f_FechaPedido','f_RealizoPedido',
+   'f_TotalMercancias','f_PesoBrutoTotal'].forEach(id => {
     const el = document.getElementById(id);
     if (el) { el.readOnly = true; el.disabled = false; }
   });
@@ -962,7 +981,9 @@ function guardar() {
     CostoManiobrasExt: v('f_CostoManiobrasExt'), CostoBascula: v('f_CostoBascula'),
     CostoPension: v('f_CostoPension'), CostoRefacciones: v('f_CostoRefacciones'),
     CostoOtros: v('f_CostoOtros'),
-    Status: v('f_Status'), Observaciones: v('f_Observaciones'), Booking: v('f_Booking')
+    Status: v('f_Status'), Observaciones: v('f_Observaciones'), Booking: v('f_Booking'),
+    TotalMercancias: v('f_TotalMercancias'), PesoBrutoTotal: v('f_PesoBrutoTotal'),
+    UnidadPeso: v('f_UnidadPeso')
   };
 
   const btnG = document.getElementById('btnGuardar');
@@ -1038,7 +1059,14 @@ function loadMercancias(serie, cp) {
           }</td>
         </tr>`
       ).join('') || '<tr><td colspan="8" class="text-center text-muted small">Sin registros</td></tr>';
+      recalcTotalesMerc(rows);
     });
+}
+
+function recalcTotalesMerc(rows) {
+  document.getElementById('f_TotalMercancias').value = rows.length || '';
+  const pesoBruto = rows.reduce((s, r) => s + (parseFloat(r.PesoEnKg) || 0), 0);
+  document.getElementById('f_PesoBrutoTotal').value = pesoBruto ? pesoBruto.toFixed(3) : '';
 }
 
 function calcPesoKg() {
