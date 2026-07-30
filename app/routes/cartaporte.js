@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { getPool, sql } = require('../config/db');
+const { getSatDb } = require('../config/sat-db');
 
 const SEARCH_COLS = new Set(['CartaPorte','NombreComunCli','Status','DesFlete','RealizoPedido']);
 const SORT_COLS   = new Set(['CartaPorte','FechaPedido','FehcaCarga','NombreComunCli','DesFlete','Status','RealizoPedido']);
@@ -291,6 +292,76 @@ router.get('/lookup/domcarga', async (req, res) => {
        ORDER BY DESCRIPCION OFFSET ${offset} ROWS FETCH NEXT 10 ROWS ONLY`
     );
     res.json({ rows: data.recordset, total, totalPages: Math.ceil(total/10)||1, page });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.get('/lookup/prodserv', (req, res) => {
+  try {
+    const q = (req.query.q || '').trim();
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const db = getSatDb();
+    const like = q ? `%${q}%` : '%';
+    const where = 'WHERE c_claveprodserv LIKE :like OR descripcion LIKE :like';
+    const total = db.prepare(`SELECT COUNT(*) AS total FROM sat_ProdServ ${where}`).get({ like }).total;
+    const offset = (page - 1) * 10;
+    const rows = db.prepare(
+      `SELECT c_claveprodserv AS c_ProdServ, descripcion AS Descripcion_SAT
+       FROM sat_ProdServ ${where} ORDER BY c_claveprodserv LIMIT 10 OFFSET :offset`
+    ).all({ like, offset });
+    res.json({ rows, total, totalPages: Math.ceil(total / 10) || 1, page });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.get('/lookup/claveunidad', (req, res) => {
+  try {
+    const q = (req.query.q || '').trim();
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const db = getSatDb();
+    const like = q ? `%${q}%` : '%';
+    const where = 'WHERE c_claveunidad LIKE :like OR nombre LIKE :like';
+    const total = db.prepare(`SELECT COUNT(*) AS total FROM sat_Unidad ${where}`).get({ like }).total;
+    const offset = (page - 1) * 10;
+    const rows = db.prepare(
+      `SELECT c_claveunidad AS c_Unidad, nombre AS Unidad
+       FROM sat_Unidad ${where} ORDER BY c_claveunidad LIMIT 10 OFFSET :offset`
+    ).all({ like, offset });
+    res.json({ rows, total, totalPages: Math.ceil(total / 10) || 1, page });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.get('/lookup/matpeligroso', (req, res) => {
+  try {
+    const q = (req.query.q || '').trim();
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const db = getSatDb();
+    const like = q ? `%${q}%` : '%';
+    const where = `WHERE "clave material peligroso" LIKE :like OR descripcion LIKE :like`;
+    const total = db.prepare(`SELECT COUNT(*) AS total FROM sat_materialpeligroso ${where}`).get({ like }).total;
+    const offset = (page - 1) * 10;
+    const rows = db.prepare(
+      `SELECT "clave material peligroso" AS clave, descripcion, "clase o div" AS clasediv
+       FROM sat_materialpeligroso ${where}
+       ORDER BY "clave material peligroso" LIMIT 10 OFFSET :offset`
+    ).all({ like, offset });
+    res.json({ rows, total, totalPages: Math.ceil(total / 10) || 1, page });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.get('/lookup/embalaje', (req, res) => {
+  try {
+    const q = (req.query.q || '').trim();
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const db = getSatDb();
+    const like = q ? `%${q}%` : '%';
+    const where = `WHERE "clave de designacion" LIKE :like OR descripcion LIKE :like`;
+    const total = db.prepare(`SELECT COUNT(*) AS total FROM sat_tiipoembalaje ${where}`).get({ like }).total;
+    const offset = (page - 1) * 10;
+    const rows = db.prepare(
+      `SELECT "clave de designacion" AS clave, descripcion
+       FROM sat_tiipoembalaje ${where}
+       ORDER BY "clave de designacion" LIMIT 10 OFFSET :offset`
+    ).all({ like, offset });
+    res.json({ rows, total, totalPages: Math.ceil(total / 10) || 1, page });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

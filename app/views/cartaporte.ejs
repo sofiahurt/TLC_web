@@ -407,20 +407,46 @@
         <div id="mercError" class="alert alert-danger d-none py-2 small"></div>
         <div class="row g-2">
           <div class="col-md-3"><label class="form-label fw-semibold small mb-1">SKU</label><input type="text" id="m_SKU" class="form-control form-control-sm" maxlength="25"></div>
-          <div class="col-md-3"><label class="form-label fw-semibold small mb-1">Bienes transp.</label><input type="text" id="m_BienesTransp" class="form-control form-control-sm" maxlength="20"></div>
-          <div class="col-md-6"><label class="form-label fw-semibold small mb-1">Descripción</label><input type="text" id="m_Descripcion" class="form-control form-control-sm" maxlength="199"></div>
-          <div class="col-md-6"><label class="form-label fw-semibold small mb-1">Descripción manual</label><input type="text" id="m_DesManual" class="form-control form-control-sm" maxlength="200"></div>
-          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Cantidad</label><input type="number" id="m_Cantidad" class="form-control form-control-sm" step="0.000001"></div>
-          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Clave unidad</label><input type="text" id="m_ClaveUnidad" class="form-control form-control-sm" maxlength="20"></div>
-          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Unidad</label><input type="text" id="m_Unidad" class="form-control form-control-sm" maxlength="20"></div>
-          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Peso/unidad</label><input type="number" id="m_PesoUnidad" class="form-control form-control-sm" step="0.01"></div>
-          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Mat. peligroso</label>
-            <select id="m_MaterialPeligroso" class="form-select form-select-sm"><option value="No">No</option><option value="Si">Si</option></select>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold small mb-1">Bienes transp.</label>
+            <div class="input-group input-group-sm">
+              <input type="text" id="m_BienesTransp" class="form-control form-control-sm" maxlength="20">
+              <button class="btn btn-outline-secondary" type="button" onclick="openLkProdServ()"><i class="bi bi-search"></i></button>
+            </div>
           </div>
-          <div class="col-md-3"><label class="form-label fw-semibold small mb-1">Cve. mat. peligroso</label><input type="text" id="m_CveMaterialPeligroso" class="form-control form-control-sm" maxlength="20"></div>
-          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Cve. embalaje</label><input type="text" id="m_cve_Embalaje" class="form-control form-control-sm" maxlength="10"></div>
-          <div class="col-md-5"><label class="form-label fw-semibold small mb-1">Desc. embalaje</label><input type="text" id="m_DescripEmbalaje" class="form-control form-control-sm" maxlength="100"></div>
-          <div class="col-md-3"><label class="form-label fw-semibold small mb-1">Peso en kg</label><input type="number" id="m_PesoEnKg" class="form-control form-control-sm" step="0.001"></div>
+          <div class="col-md-6"><label class="form-label fw-semibold small mb-1">Descripción</label><input type="text" id="m_Descripcion" class="form-control form-control-sm bg-light" maxlength="199" readonly tabindex="-1"></div>
+          <div class="col-md-6"><label class="form-label fw-semibold small mb-1">Descripción manual</label><input type="text" id="m_DesManual" class="form-control form-control-sm" maxlength="200"></div>
+          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Cantidad <span class="text-danger">*</span></label><input type="number" id="m_Cantidad" class="form-control form-control-sm" step="0.000001" oninput="calcPesoKg()"></div>
+          <div class="col-md-2">
+            <label class="form-label fw-semibold small mb-1">Clave unidad</label>
+            <div class="input-group input-group-sm">
+              <input type="text" id="m_ClaveUnidad" class="form-control form-control-sm" maxlength="20">
+              <button class="btn btn-outline-secondary" type="button" onclick="openLkClaveUnidad()"><i class="bi bi-search"></i></button>
+            </div>
+          </div>
+          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Unidad</label><input type="text" id="m_Unidad" class="form-control form-control-sm bg-light" maxlength="20" readonly tabindex="-1"></div>
+          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Peso/unidad</label><input type="number" id="m_PesoUnidad" class="form-control form-control-sm" step="0.01" oninput="calcPesoKg()"></div>
+          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Mat. peligroso</label>
+            <select id="m_MaterialPeligroso" class="form-select form-select-sm" onchange="toggleMatPel()"><option value="No">No</option><option value="Si">Si</option></select>
+          </div>
+          <div id="seccionMatPel" class="col-12 d-none">
+            <div class="row g-2">
+              <div class="col-md-4"><label class="form-label fw-semibold small mb-1">Cve. mat. peligroso</label>
+                <div class="input-group input-group-sm">
+                  <input type="text" id="m_CveMaterialPeligroso" class="form-control form-control-sm" maxlength="20">
+                  <button class="btn btn-outline-secondary" type="button" onclick="openLkMatPeligroso()"><i class="bi bi-search"></i></button>
+                </div>
+              </div>
+              <div class="col-md-3"><label class="form-label fw-semibold small mb-1">Cve. embalaje</label>
+                <div class="input-group input-group-sm">
+                  <input type="text" id="m_cve_Embalaje" class="form-control form-control-sm" maxlength="10">
+                  <button class="btn btn-outline-secondary" type="button" onclick="openLkEmbalaje()"><i class="bi bi-search"></i></button>
+                </div>
+              </div>
+              <div class="col-md-5"><label class="form-label fw-semibold small mb-1">Desc. embalaje</label><input type="text" id="m_DescripEmbalaje" class="form-control form-control-sm bg-light" maxlength="100" readonly tabindex="-1"></div>
+            </div>
+          </div>
+          <div class="col-md-3"><label class="form-label fw-semibold small mb-1">Peso en kg</label><input type="number" id="m_PesoEnKg" class="form-control form-control-sm bg-light" step="0.001" readonly tabindex="-1"></div>
           <div class="col-md-3"><label class="form-label fw-semibold small mb-1">Valor mercancía</label><input type="number" id="m_ValorMercancia" class="form-control form-control-sm" step="0.000001"></div>
           <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Moneda</label><input type="text" id="m_Moneda" class="form-control form-control-sm" maxlength="4"></div>
         </div>
@@ -1015,11 +1041,29 @@ function loadMercancias(serie, cp) {
     });
 }
 
+function calcPesoKg() {
+  const cant = parseFloat(document.getElementById('m_Cantidad').value) || 0;
+  const peso = parseFloat(document.getElementById('m_PesoUnidad').value) || 0;
+  document.getElementById('m_PesoEnKg').value = cant && peso ? (cant * peso).toFixed(3) : '';
+}
+
+function toggleMatPel() {
+  const show = document.getElementById('m_MaterialPeligroso').value === 'Si';
+  document.getElementById('seccionMatPel').classList.toggle('d-none', !show);
+  if (!show) {
+    document.getElementById('m_CveMaterialPeligroso').value = '';
+    document.getElementById('m_cve_Embalaje').value = '';
+    document.getElementById('m_DescripEmbalaje').value = '';
+  }
+}
+
 function openAddMerc() {
   _mercMode = 'add'; _mercEditId = null;
   document.getElementById('mercTitle').textContent = 'Nueva Mercancía';
   document.querySelectorAll('#mercModal input, #mercModal select').forEach(el => { if (el.type === 'checkbox') el.checked = false; else el.value = ''; });
   document.getElementById('m_MaterialPeligroso').value = 'No';
+  document.getElementById('m_Moneda').value = 'MXN';
+  toggleMatPel();
   mercModal.show();
 }
 
@@ -1034,6 +1078,7 @@ function editMerc(id) {
        'PesoUnidad','MaterialPeligroso','CveMaterialPeligroso','cve_Embalaje',
        'DescripEmbalaje','PesoEnKg','ValorMercancia','Moneda'
       ].forEach(k => { const el = document.getElementById('m_'+k); if (el) el.value = r[k]??''; });
+      toggleMatPel();
       mercModal.show();
     });
 }
@@ -1048,6 +1093,11 @@ function delMerc(id) {
 
 function guardarMerc() {
   const v = id => document.getElementById(id)?.value ?? '';
+  const errEl = document.getElementById('mercError');
+  errEl.classList.add('d-none');
+  const missing = [['m_BienesTransp','Bienes transportados'],['m_ClaveUnidad','Clave unidad'],['m_Cantidad','Cantidad']]
+    .filter(([id]) => !v(id).trim()).map(([,lbl]) => lbl);
+  if (missing.length) { errEl.textContent = `Campos obligatorios: ${missing.join(', ')}`; errEl.classList.remove('d-none'); return; }
   const payload = {
     _mode: _mercMode, Serie: _currentSerie, CartaPorte: _currentCP,
     Id_Mercancia: _mercEditId,
@@ -1305,6 +1355,37 @@ function openLkDom(tipo) {
         document.getElementById('f_Id_DomDescarga1').value = row.ID_DOMICILIO;
         document.getElementById('f_DomDescarga').value     = (row.DESCRIPCION||'').trim();
       }
+    });
+}
+
+function openLkProdServ() {
+  openGenericLookup('Bienes transportados (c_ClaveProdServ)', ['Clave SAT', 'Descripción'],
+    '/cartaporte/lookup/prodserv', {}, row => {
+      document.getElementById('m_BienesTransp').value = (row.c_ProdServ||'').trim();
+      document.getElementById('m_Descripcion').value  = (row.Descripcion_SAT||'').trim();
+    });
+}
+
+function openLkClaveUnidad() {
+  openGenericLookup('Clave de unidad (c_ClaveUnidad)', ['Clave', 'Unidad'],
+    '/cartaporte/lookup/claveunidad', {}, row => {
+      document.getElementById('m_ClaveUnidad').value = (row.c_Unidad||'').trim();
+      document.getElementById('m_Unidad').value      = (row.Unidad||'').trim();
+    });
+}
+
+function openLkMatPeligroso() {
+  openGenericLookup('Material peligroso (c_CveMaterialPeligroso)', ['Clave', 'Descripción', 'Clase/Div'],
+    '/cartaporte/lookup/matpeligroso', {}, row => {
+      document.getElementById('m_CveMaterialPeligroso').value = (row.clave||'').trim();
+    });
+}
+
+function openLkEmbalaje() {
+  openGenericLookup('Tipo de embalaje (c_TipoEmbalaje)', ['Clave', 'Descripción'],
+    '/cartaporte/lookup/embalaje', {}, row => {
+      document.getElementById('m_cve_Embalaje').value    = (row.clave||'').trim();
+      document.getElementById('m_DescripEmbalaje').value = (row.descripcion||'').trim();
     });
 }
 </script>
