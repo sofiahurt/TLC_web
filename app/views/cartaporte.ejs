@@ -295,14 +295,22 @@
               <table class="table table-hover table-sm mb-0">
                 <thead class="thead-tlc">
                   <tr>
-                    <th style="width:70px">ID</th>
-                    <th style="width:100px">Fecha</th>
-                    <th>Operador</th>
-                    <th>Origen</th>
-                    <th>Destino</th>
-                    <th style="width:90px">Monto</th>
-                    <th style="width:80px">Autorizado</th>
-                    <th style="width:60px"></th>
+                    <th style="min-width:110px">Fecha</th>
+                    <th style="min-width:110px">Pensión</th>
+                    <th style="min-width:110px">Casetas</th>
+                    <th style="min-width:110px">Maniobra</th>
+                    <th style="min-width:110px">Estadías</th>
+                    <th style="min-width:110px">Otros</th>
+                    <th style="min-width:120px">Monto</th>
+                    <th style="min-width:110px">Préstamo</th>
+                    <th style="min-width:110px">Talachas</th>
+                    <th style="min-width:110px">Llantas</th>
+                    <th style="min-width:110px">Diesel</th>
+                    <th style="min-width:110px">Comidas</th>
+                    <th style="min-width:110px">Báscula</th>
+                    <th style="min-width:110px">Refacciones</th>
+                    <th style="min-width:160px">Realizó</th>
+                    <th style="min-width:70px"></th>
                   </tr>
                 </thead>
                 <tbody id="depoBody"></tbody>
@@ -475,34 +483,90 @@
 
 <!-- ═══════════════════ MODAL DEPÓSITO ═══════════════════════════════════════ -->
 <div class="modal fade" id="depoModal" tabindex="-1">
-  <div class="modal-dialog modal-lg modal-dialog-centered">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
     <div class="modal-content">
-      <div class="modal-header"><h6 class="modal-title" id="depoTitle">Depósito</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-header"><h6 class="modal-title" id="depoTitle">Solicitud de Depósito por Viaje</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
         <div id="depoError" class="alert alert-danger d-none py-2 small"></div>
+
+        <h6 class="text-primary fw-bold border-bottom pb-1 mb-2">Datos del viaje</h6>
+        <div class="row g-2 mb-3">
+          <input type="hidden" id="d_Id_Operador">
+          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Fecha</label><input type="date" id="d_Fecha" class="form-control form-control-sm bg-light" readonly tabindex="-1"></div>
+          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Hora</label><input type="time" id="d_Hora" class="form-control form-control-sm bg-light" readonly tabindex="-1"></div>
+          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Serie</label><input type="text" id="d_Serie" class="form-control form-control-sm bg-light" readonly tabindex="-1"></div>
+          <div class="col-md-3"><label class="form-label fw-semibold small mb-1">Carta Porte</label><input type="text" id="d_CartaPorte" class="form-control form-control-sm bg-light" readonly tabindex="-1"></div>
+          <div class="col-md-3"><label class="form-label fw-semibold small mb-1">Operador</label><input type="text" id="d_OPERADOR" class="form-control form-control-sm bg-light" readonly tabindex="-1"></div>
+          <div class="col-md-4"><label class="form-label fw-semibold small mb-1">Camión</label><input type="text" id="d_TC" class="form-control form-control-sm bg-light" readonly tabindex="-1"></div>
+          <div class="col-md-4"><label class="form-label fw-semibold small mb-1">Origen</label><input type="text" id="d_Origen" class="form-control form-control-sm bg-light" readonly tabindex="-1"></div>
+          <div class="col-md-4"><label class="form-label fw-semibold small mb-1">Destino</label><input type="text" id="d_Destino" class="form-control form-control-sm bg-light" readonly tabindex="-1"></div>
+        </div>
+
+        <h6 class="text-primary fw-bold border-bottom pb-1 mb-2">Conceptos y montos</h6>
+        <div class="row g-2 mb-2">
+          <div class="col-md-3">
+            <label class="form-label fw-semibold small mb-1">Turno</label>
+            <select id="d_Turno" class="form-select form-select-sm">
+              <option value="Mañana">Mañana</option>
+              <option value="Tarde">Tarde</option>
+            </select>
+          </div>
+          <div class="col-md-3"><label class="form-label fw-semibold small mb-1">Grupo</label><input type="text" id="d_Grupo" class="form-control form-control-sm" maxlength="20"></div>
+        </div>
+        <div class="row g-3">
+          <div class="col-md-8">
+            <div class="row g-3">
+              <div class="col-md-4"><label class="form-label fw-semibold small mb-1">Préstamo</label><input type="number" id="d_Prestamo" class="form-control form-control-sm" step="0.01" min="0" oninput="recalcularMontoDepo()"></div>
+              <div class="col-md-4"><label class="form-label fw-semibold small mb-1">Talachas</label><input type="number" id="d_Talachas" class="form-control form-control-sm" step="0.01" min="0" oninput="recalcularMontoDepo()"></div>
+              <div class="col-md-4"><label class="form-label fw-semibold small mb-1">Llantas</label><input type="number" id="d_Llantas" class="form-control form-control-sm" step="0.01" min="0" oninput="recalcularMontoDepo()"></div>
+              <div class="col-md-4"><label class="form-label fw-semibold small mb-1">Diesel</label><input type="number" id="d_Diesel" class="form-control form-control-sm" step="0.01" min="0" oninput="recalcularMontoDepo()"></div>
+              <div class="col-md-4"><label class="form-label fw-semibold small mb-1">Comidas</label><input type="number" id="d_Comidas" class="form-control form-control-sm" step="0.01" min="0" oninput="recalcularMontoDepo()"></div>
+              <div class="col-md-4"><label class="form-label fw-semibold small mb-1">Báscula</label><input type="number" id="d_Bascula" class="form-control form-control-sm" step="0.01" min="0" oninput="recalcularMontoDepo()"></div>
+              <div class="col-md-4"><label class="form-label fw-semibold small mb-1">Refacciones</label><input type="number" id="d_Refacciones" class="form-control form-control-sm" step="0.01" min="0" oninput="recalcularMontoDepo()"></div>
+              <div class="col-md-8"><label class="form-label fw-semibold small mb-1">Descripción de "Otros"</label><input type="text" id="d_DesOtros" class="form-control form-control-sm" maxlength="255"></div>
+            </div>
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label fw-semibold small mb-1 text-muted">Conceptos con cobro al cliente</label>
+            <div class="d-flex flex-column gap-2">
+              <div class="d-flex align-items-center gap-2 p-2 rounded" style="background:#fff; box-shadow:0 2px 6px rgba(0,0,0,.18); border:1px solid #eee;">
+                <span class="small flex-grow-1">Pensión</span>
+                <input type="number" id="d_Pension" class="form-control form-control-sm" style="width:95px" step="0.01" min="0" oninput="recalcularMontoDepo()">
+                <input type="checkbox" id="d_FlagCobPen" class="form-check-input flex-shrink-0" style="transform:scale(1.4)" title="¿Se cobra al cliente?">
+              </div>
+              <div class="d-flex align-items-center gap-2 p-2 rounded" style="background:#fff; box-shadow:0 2px 6px rgba(0,0,0,.18); border:1px solid #eee;">
+                <span class="small flex-grow-1">Casetas</span>
+                <input type="number" id="d_Casetas" class="form-control form-control-sm" style="width:95px" step="0.01" min="0" oninput="recalcularMontoDepo()">
+                <input type="checkbox" id="d_FlagCobCaseta" class="form-check-input flex-shrink-0" style="transform:scale(1.4)" title="¿Se cobra al cliente?">
+              </div>
+              <div class="d-flex align-items-center gap-2 p-2 rounded" style="background:#fff; box-shadow:0 2px 6px rgba(0,0,0,.18); border:1px solid #eee;">
+                <span class="small flex-grow-1">Maniobra</span>
+                <input type="number" id="d_Maniobra" class="form-control form-control-sm" style="width:95px" step="0.01" min="0" oninput="recalcularMontoDepo()">
+                <input type="checkbox" id="d_FlagCobMan" class="form-check-input flex-shrink-0" style="transform:scale(1.4)" title="¿Se cobra al cliente?">
+              </div>
+              <div class="d-flex align-items-center gap-2 p-2 rounded" style="background:#fff; box-shadow:0 2px 6px rgba(0,0,0,.18); border:1px solid #eee;">
+                <span class="small flex-grow-1">Estadías</span>
+                <input type="number" id="d_Estadias" class="form-control form-control-sm" style="width:95px" step="0.01" min="0" oninput="recalcularMontoDepo()">
+                <input type="checkbox" id="d_FlagCobEsta" class="form-check-input flex-shrink-0" style="transform:scale(1.4)" title="¿Se cobra al cliente?">
+              </div>
+              <div class="d-flex align-items-center gap-2 p-2 rounded" style="background:#fff; box-shadow:0 2px 6px rgba(0,0,0,.18); border:1px solid #eee;">
+                <span class="small flex-grow-1">Otros</span>
+                <input type="number" id="d_Otros" class="form-control form-control-sm" style="width:95px" step="0.01" min="0" oninput="recalcularMontoDepo()">
+                <input type="checkbox" id="d_FlagCobOtros" class="form-check-input flex-shrink-0" style="transform:scale(1.4)" title="¿Se cobra al cliente?">
+              </div>
+            </div>
+          </div>
+
+          <div class="col-12 text-end">
+            <label class="form-label fw-semibold small mb-1 d-block">Monto</label>
+            <input type="number" id="d_Monto" class="form-control form-control-sm bg-light fw-bold text-end ms-auto" style="max-width:220px" readonly tabindex="-1">
+          </div>
+        </div>
+
+        <h6 class="text-primary fw-bold border-bottom pb-1 mb-2 mt-3">Observaciones</h6>
         <div class="row g-2">
-          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Fecha</label><input type="date" id="d_Fecha" class="form-control form-control-sm"></div>
-          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Turno</label><input type="text" id="d_Turno" class="form-control form-control-sm" maxlength="20"></div>
-          <div class="col-md-4"><label class="form-label fw-semibold small mb-1">Operador</label><input type="text" id="d_OPERADOR" class="form-control form-control-sm" maxlength="45"></div>
-          <div class="col-md-4"><label class="form-label fw-semibold small mb-1">ID Operador</label><input type="number" id="d_ID_OPERADOR" class="form-control form-control-sm"></div>
-          <div class="col-md-3"><label class="form-label fw-semibold small mb-1">Origen</label><input type="text" id="d_Origen" class="form-control form-control-sm" maxlength="50"></div>
-          <div class="col-md-3"><label class="form-label fw-semibold small mb-1">Destino</label><input type="text" id="d_Destino" class="form-control form-control-sm" maxlength="50"></div>
-          <div class="col-md-3"><label class="form-label fw-semibold small mb-1">Folio</label><input type="text" id="d_Folio" class="form-control form-control-sm" maxlength="20"></div>
-          <div class="col-md-3"><label class="form-label fw-semibold small mb-1">Monto</label><input type="number" id="d_Monto" class="form-control form-control-sm" step="0.01"></div>
-          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Préstamo</label><input type="number" id="d_Prestamo" class="form-control form-control-sm" step="0.01"></div>
-          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Talachas</label><input type="number" id="d_Talachas" class="form-control form-control-sm" step="0.01"></div>
-          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Llantas</label><input type="number" id="d_Llantas" class="form-control form-control-sm" step="0.01"></div>
-          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Diesel</label><input type="number" id="d_Diesel" class="form-control form-control-sm" step="0.01"></div>
-          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Casetas</label><input type="number" id="d_Casetas" class="form-control form-control-sm" step="0.01"></div>
-          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Comidas</label><input type="number" id="d_Comidas" class="form-control form-control-sm" step="0.01"></div>
-          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Maniobra</label><input type="number" id="d_Maniobra" class="form-control form-control-sm" step="0.01"></div>
-          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Báscula</label><input type="number" id="d_Bascula" class="form-control form-control-sm" step="0.01"></div>
-          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Pensión</label><input type="number" id="d_Pension" class="form-control form-control-sm" step="0.1"></div>
-          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Refacciones</label><input type="number" id="d_Refacciones" class="form-control form-control-sm" step="0.01"></div>
-          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Otros</label><input type="number" id="d_Otros" class="form-control form-control-sm" step="0.01"></div>
-          <div class="col-md-6"><label class="form-label fw-semibold small mb-1">Desc. otros</label><input type="text" id="d_DesOtros" class="form-control form-control-sm" maxlength="255"></div>
-          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Autorizado</label><input type="number" id="d_Autorizado" class="form-control form-control-sm"></div>
-          <div class="col-12"><label class="form-label fw-semibold small mb-1">Observaciones</label><textarea id="d_Observaciones" class="form-control form-control-sm" rows="2" maxlength="499"></textarea></div>
+          <div class="col-12"><textarea id="d_Observaciones" class="form-control form-control-sm" rows="2" maxlength="499"></textarea></div>
         </div>
       </div>
       <div class="modal-footer">
@@ -584,6 +648,23 @@ const mercModal   = new bootstrap.Modal(document.getElementById('mercModal'));
 const depoModal   = new bootstrap.Modal(document.getElementById('depoModal'));
 const lkModal     = new bootstrap.Modal(document.getElementById('lkModal'));
 const timbraModal = new bootstrap.Modal(document.getElementById('timbraModal'));
+
+// Con modales apilados (ej. depoModal sobre frmModal), el focus-trap de Bootstrap
+// hace que ESC cierre el modal de abajo en vez del que está encima. Todos los
+// modales comparten el mismo z-index (1055), así que el que se ve arriba es el
+// que aparece MÁS ABAJO en el HTML (frmModal < mercModal < depoModal < lkModal
+// < timbraModal). Si hay más de uno abierto, cerramos solo el último del DOM.
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Escape') return;
+  const shown = document.querySelectorAll('.modal.show');
+  if (shown.length <= 1) return;
+  const top = bootstrap.Modal.getInstance(shown[shown.length - 1]);
+  if (top) {
+    e.preventDefault();
+    e.stopPropagation();
+    top.hide();
+  }
+}, true);
 
 // ── BROWSE ────────────────────────────────────────────────────────────────────
 let _targetCP = null;
@@ -1045,7 +1126,7 @@ function loadMercancias(serie, cp) {
     .then(rows => {
       const body = document.getElementById('mercBody');
       body.innerHTML = rows.map(r =>
-        `<tr>
+        `<tr ${_statusLocked ? '' : `ondblclick="editMerc(${r.Id_Mercancia})"`}>
           <td>${r.Id_Mercancia}</td>
           <td>${r.SKU||''}</td>
           <td>${r.Descripcion||''}</td>
@@ -1146,36 +1227,67 @@ function guardarMerc() {
   });
 }
 
-// ── DEPOSITOS ─────────────────────────────────────────────────────────────────
+// ── DEPOSITOS (Solicitud de Depósito por Viaje) ────────────────────────────────
+const DEPO_IMPORTE_IDS = ['d_Prestamo','d_Talachas','d_Llantas','d_Diesel','d_Comidas','d_Pension','d_Bascula','d_Casetas','d_Refacciones','d_Maniobra','d_Otros','d_Estadias'];
+
+function recalcularMontoDepo() {
+  const total = DEPO_IMPORTE_IDS.reduce((acc, id) => acc + (parseFloat(document.getElementById(id).value) || 0), 0);
+  document.getElementById('d_Monto').value = total.toFixed(2);
+}
+
 function loadDepositos(serie, cp) {
   fetch(`/cartaporte/depositos?serie=${encodeURIComponent(serie)}&cartaporte=${encodeURIComponent(cp)}`)
     .then(r => r.json())
     .then(rows => {
       const body = document.getElementById('depoBody');
-      const fmt = v => v ? v.toString().slice(0,10) : '';
+      const fmt  = v => v ? v.toString().slice(0,10) : '';
+      const imp  = v => v ? parseFloat(v).toFixed(2) : '';
       body.innerHTML = rows.map(r =>
-        `<tr>
-          <td>${r.Id_DepoSol}</td>
+        `<tr ondblclick="editDepo(${r.Id_DepoSol})">
           <td>${fmt(r.Fecha)}</td>
-          <td>${r.OPERADOR||''}</td>
-          <td>${r.Origen||''}</td>
-          <td>${r.Destino||''}</td>
-          <td>${r.Monto||''}</td>
-          <td>${r.Autorizado||''}</td>
+          <td>${imp(r.Pension)}</td>
+          <td>${imp(r.Casetas)}</td>
+          <td>${imp(r.Maniobra)}</td>
+          <td>${imp(r.Estadias)}</td>
+          <td>${imp(r.Otros)}</td>
+          <td class="fw-bold">${imp(r.Monto)}</td>
+          <td>${imp(r.Prestamo)}</td>
+          <td>${imp(r.Talachas)}</td>
+          <td>${imp(r.Llantas)}</td>
+          <td>${imp(r.Diesel)}</td>
+          <td>${imp(r.Comidas)}</td>
+          <td>${imp(r.Bascula)}</td>
+          <td>${imp(r.Refacciones)}</td>
+          <td>${r.WhoCaptura||''}</td>
           <td class="text-center">
             <button class="btn btn-sm btn-outline-primary py-0 px-1" onclick="editDepo(${r.Id_DepoSol})"><i class="bi bi-pencil"></i></button>
             <button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="delDepo(${r.Id_DepoSol})"><i class="bi bi-trash"></i></button>
           </td>
         </tr>`
-      ).join('') || '<tr><td colspan="8" class="text-center text-muted small">Sin registros</td></tr>';
+      ).join('') || '<tr><td colspan="16" class="text-center text-muted small">Sin registros</td></tr>';
     });
 }
 
 function openAddDepo() {
+  if (!_currentCP) { alert('Debe guardar primero el Pedido/Viaje antes de capturar una solicitud de depósito.'); return; }
   _depoMode = 'add'; _depoEditId = null;
-  document.getElementById('depoTitle').textContent = 'Nuevo Depósito';
+  document.getElementById('depoTitle').textContent = 'Solicitud de Depósito por Viaje';
   document.querySelectorAll('#depoModal input, #depoModal textarea').forEach(el => el.value = '');
+  document.getElementById('depoError').classList.add('d-none');
+
+  // Precarga desde el Pedido/Viaje activo (todo solo lectura)
+  const now = new Date();
   document.getElementById('d_Fecha').value = today;
+  document.getElementById('d_Hora').value  = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  document.getElementById('d_Serie').value = _currentSerie;
+  document.getElementById('d_CartaPorte').value = _currentCP;
+  document.getElementById('d_Id_Operador').value = document.getElementById('f_Id_Operador').value;
+  document.getElementById('d_OPERADOR').value    = document.getElementById('f_Operador').value;
+  document.getElementById('d_TC').value          = document.getElementById('f_NoCamion').value;
+  document.getElementById('d_Origen').value      = document.getElementById('f_DomCarga').value;
+  document.getElementById('d_Destino').value     = document.getElementById('f_DomDescarga').value;
+  document.getElementById('d_Turno').value = 'Mañana';
+  recalcularMontoDepo();
   depoModal.show();
 }
 
@@ -1185,13 +1297,27 @@ function editDepo(id) {
     .then(r => r.json()).then(rows => {
       const r = rows.find(x => x.Id_DepoSol == id);
       if (!r) return;
-      document.getElementById('depoTitle').textContent = 'Editar Depósito';
-      const fmt = v => v ? v.toString().slice(0,10) : '';
+      document.getElementById('depoTitle').textContent = 'Solicitud de Depósito por Viaje';
+      document.getElementById('depoError').classList.add('d-none');
+      const fmt   = v => v ? v.toString().slice(0,10) : '';
+      const fmtHM = v => { if (!v) return ''; const d = new Date(v); return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; };
+      const chk   = (id, val) => { document.getElementById(id).checked = !!parseInt(val); };
       document.getElementById('d_Fecha').value = fmt(r.Fecha);
-      ['Turno','OPERADOR','ID_OPERADOR','Origen','Destino','Folio','Prestamo',
+      document.getElementById('d_Hora').value  = fmtHM(r.Hora);
+      document.getElementById('d_Serie').value = r.Serie||'';
+      document.getElementById('d_CartaPorte').value = r.CartaPorte||'';
+      document.getElementById('d_Id_Operador').value = r.ID_OPERADOR||'';
+      document.getElementById('d_TC').value = r.TC||'';
+      ['Turno','OPERADOR','Grupo','Origen','Destino','Prestamo',
        'Talachas','Llantas','Diesel','Casetas','Comidas','Maniobra','Bascula',
-       'Pension','Refacciones','Otros','DesOtros','Monto','Observaciones','Autorizado'
+       'Pension','Refacciones','Otros','Estadias','DesOtros','Observaciones'
       ].forEach(k => { const el = document.getElementById('d_'+k); if (el) el.value = r[k]??''; });
+      chk('d_FlagCobCaseta', r.FlagCobCaseta);
+      chk('d_FlagCobMan',    r.FlagCobMan);
+      chk('d_FlagCobPen',    r.FlagCobPen);
+      chk('d_FlagCobEsta',   r.FlagCobEsta);
+      chk('d_FlagCobOtros',  r.FlagCobOtros);
+      recalcularMontoDepo();
       depoModal.show();
     });
 }
@@ -1206,18 +1332,20 @@ function delDepo(id) {
 
 function guardarDepo() {
   const v = id => document.getElementById(id)?.value ?? '';
+  const c = id => document.getElementById(id)?.checked ? 1 : 0;
   const payload = {
     _mode: _depoMode, Id_DepoSol: _depoEditId,
-    Serie: _currentSerie, CartaPorte: _currentCP,
-    WhoCaptura: null,
-    Fecha: v('d_Fecha'), Turno: v('d_Turno'),
-    ID_OPERADOR: v('d_ID_OPERADOR'), OPERADOR: v('d_OPERADOR'),
-    Origen: v('d_Origen'), Destino: v('d_Destino'), Folio: v('d_Folio'),
+    Serie: v('d_Serie'), CartaPorte: v('d_CartaPorte'),
+    Fecha: v('d_Fecha'), Hora: v('d_Hora'), Turno: v('d_Turno'), Grupo: v('d_Grupo'),
+    ID_OPERADOR: v('d_Id_Operador'), OPERADOR: v('d_OPERADOR'), TC: v('d_TC'),
+    Origen: v('d_Origen'), Destino: v('d_Destino'),
     Prestamo: v('d_Prestamo'), Talachas: v('d_Talachas'), Llantas: v('d_Llantas'),
     Diesel: v('d_Diesel'), Casetas: v('d_Casetas'), Comidas: v('d_Comidas'),
     Maniobra: v('d_Maniobra'), Bascula: v('d_Bascula'), Pension: v('d_Pension'),
-    Refacciones: v('d_Refacciones'), Otros: v('d_Otros'), DesOtros: v('d_DesOtros'),
-    Monto: v('d_Monto'), Observaciones: v('d_Observaciones'), Autorizado: v('d_Autorizado')
+    Refacciones: v('d_Refacciones'), Otros: v('d_Otros'), Estadias: v('d_Estadias'),
+    DesOtros: v('d_DesOtros'), Observaciones: v('d_Observaciones'),
+    FlagCobCaseta: c('d_FlagCobCaseta'), FlagCobMan: c('d_FlagCobMan'),
+    FlagCobPen: c('d_FlagCobPen'), FlagCobEsta: c('d_FlagCobEsta'), FlagCobOtros: c('d_FlagCobOtros')
   };
   fetch('/cartaporte/depositos/guardar', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },

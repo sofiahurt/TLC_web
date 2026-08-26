@@ -447,7 +447,10 @@ router.post('/mercancias/eliminar', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ── DEPÓSITOS ─────────────────────────────────────────────────────────────────
+// ── DEPÓSITOS (Solicitud de Depósito por Viaje) ────────────────────────────────
+const DEPO_TURNOS = new Set(['Mañana', 'Tarde']);
+const DEPO_IMPORTES = ['Prestamo','Talachas','Llantas','Diesel','Comidas','Pension','Bascula','Casetas','Refacciones','Maniobra','Otros','Estadias'];
+
 router.get('/depositos', async (req, res) => {
   try {
     const pool = await getPool();
@@ -464,7 +467,26 @@ router.post('/depositos/guardar', async (req, res) => {
   try {
     const pool = await getPool();
     const hoy = new Date().toISOString().slice(0,10);
-    const num = v => (v === '' || v == null) ? null : parseFloat(v);
+    const num  = v => (v === '' || v == null) ? 0 : parseFloat(v);
+    const flag = v => (v === true || v === 'true' || v === 1 || v === '1') ? 1 : 0;
+
+    if (f._mode === 'add' && (!f.Serie || !f.CartaPorte)) {
+      return res.status(400).json({ error: 'La solicitud debe generarse desde un Pedido/Viaje seleccionado.' });
+    }
+    const turno = (f.Turno || '').trim();
+    if (!DEPO_TURNOS.has(turno)) {
+      return res.status(400).json({ error: 'Turno debe ser "Mañana" o "Tarde".' });
+    }
+    for (const k of DEPO_IMPORTES) {
+      const raw = f[k];
+      if (raw !== '' && raw != null && (isNaN(parseFloat(raw)) || parseFloat(raw) < 0)) {
+        return res.status(400).json({ error: `El importe "${k}" debe ser numérico y mayor o igual a 0.` });
+      }
+    }
+    const monto = DEPO_IMPORTES.reduce((acc, k) => acc + num(f[k]), 0);
+    const quien = [req.session.usuario.nombre, req.session.usuario.apellido].filter(Boolean).join(' ');
+    const horaDT = (() => { const d = f.Fecha || hoy; const h = f.Hora || null; return h ? new Date(`${d}T${h}`) : new Date(); })();
+
     if (f._mode === 'add') {
       const maxRes = await pool.request()
         .query(`SELECT ISNULL(MAX(Id_DepoSol),0)+1 AS next FROM Empresa2.DepoSolicitud`);
@@ -472,14 +494,16 @@ router.post('/depositos/guardar', async (req, res) => {
       await pool.request()
         .input('id',      sql.Decimal(9),   nextId)
         .input('fecha',   sql.Date,          f.Fecha||hoy)
-        .input('turno',   sql.VarChar(20),   f.Turno||null)
+        .input('hora',    sql.DateTime,      horaDT)
+        .input('turno',   sql.VarChar(20),   turno)
+        .input('tc',      sql.VarChar(20),   f.TC ? String(f.TC).slice(0,20) : null)
         .input('idOp',    sql.Decimal(7),    f.ID_OPERADOR||null)
         .input('operador',sql.VarChar(45),   f.OPERADOR||null)
         .input('serie',   sql.VarChar(3),    f.Serie)
         .input('cp',      sql.VarChar(30),   f.CartaPorte)
+        .input('grupo',   sql.VarChar(20),   f.Grupo ? String(f.Grupo).slice(0,20) : null)
         .input('origen',  sql.VarChar(50),   f.Origen||null)
         .input('destino', sql.VarChar(50),   f.Destino||null)
-        .input('folio',   sql.VarChar(20),   f.Folio||null)
         .input('prestamo',sql.Decimal(8,2),  num(f.Prestamo))
         .input('tal',     sql.Decimal(8,2),  num(f.Talachas))
         .input('lla',     sql.Decimal(8,2),  num(f.Llantas))
@@ -488,27 +512,46 @@ router.post('/depositos/guardar', async (req, res) => {
         .input('com',     sql.Decimal(8,2),  num(f.Comidas))
         .input('man',     sql.Decimal(8,2),  num(f.Maniobra))
         .input('bas',     sql.Decimal(8,2),  num(f.Bascula))
-        .input('pen',     sql.Decimal(8,1),  num(f.Pension))
+        .input('pen',     sql.Decimal(8,2),  num(f.Pension))
         .input('ref',     sql.Decimal(8,2),  num(f.Refacciones))
         .input('otros',   sql.Decimal(8,2),  num(f.Otros))
+        .input('esta',    sql.Decimal(8,2),  num(f.Estadias))
         .input('desOtros',sql.VarChar(255),  f.DesOtros||null)
-        .input('monto',   sql.Decimal(10,2), num(f.Monto))
+        .input('monto',   sql.Decimal(10,2), monto)
         .input('obs',     sql.VarChar(499),  f.Observaciones||null)
-        .input('who',     sql.VarChar(79),   f.WhoCaptura||null)
+        .input('who',     sql.VarChar(79),   quien)
         .input('fechaCap',sql.Date,          hoy)
-        .input('aut',     sql.Int,           num(f.Autorizado))
-        .query(`INSERT INTO Empresa2.DepoSolicitud(Id_DepoSol,Fecha,Turno,ID_OPERADOR,OPERADOR,Serie,CartaPorte,Origen,Destino,Folio,Prestamo,Talachas,Llantas,Diesel,Casetas,Comidas,Maniobra,Bascula,Pension,Refacciones,Otros,DesOtros,Monto,Observaciones,WhoCaptura,FechaCaptura,Autorizado)
-          VALUES(@id,@fecha,@turno,@idOp,@operador,@serie,@cp,@origen,@destino,@folio,@prestamo,@tal,@lla,@die,@cas,@com,@man,@bas,@pen,@ref,@otros,@desOtros,@monto,@obs,@who,@fechaCap,@aut)`);
+        .input('aut',     sql.Int,           0)
+        .input('fDep',    sql.Int,           0)
+        .input('fEnDep',  sql.Int,           0)
+        .input('fCobCas', sql.TinyInt,       flag(f.FlagCobCaseta))
+        .input('fCobMan', sql.TinyInt,       flag(f.FlagCobMan))
+        .input('fCobPen', sql.TinyInt,       flag(f.FlagCobPen))
+        .input('fCobEst', sql.TinyInt,       flag(f.FlagCobEsta))
+        .input('fCobOtr', sql.TinyInt,       flag(f.FlagCobOtros))
+        .query(`INSERT INTO Empresa2.DepoSolicitud(
+          Id_DepoSol,Fecha,Hora,Turno,TC,ID_OPERADOR,OPERADOR,Serie,CartaPorte,Grupo,Origen,Destino,
+          Prestamo,Talachas,Llantas,Diesel,Casetas,Comidas,Maniobra,Bascula,Pension,Refacciones,Otros,Estadias,
+          DesOtros,Monto,Observaciones,WhoCaptura,FechaCaptura,Autorizado,FlagDeposito,FlagEnDeposito,
+          FlagCobCaseta,FlagCobMan,FlagCobPen,FlagCobEsta,FlagCobOtros
+        ) VALUES(
+          @id,@fecha,@hora,@turno,@tc,@idOp,@operador,@serie,@cp,@grupo,@origen,@destino,
+          @prestamo,@tal,@lla,@die,@cas,@com,@man,@bas,@pen,@ref,@otros,@esta,
+          @desOtros,@monto,@obs,@who,@fechaCap,@aut,@fDep,@fEnDep,
+          @fCobCas,@fCobMan,@fCobPen,@fCobEst,@fCobOtr
+        )`);
     } else {
       await pool.request()
         .input('id',      sql.Decimal(9),   f.Id_DepoSol)
         .input('fecha',   sql.Date,          f.Fecha||hoy)
-        .input('turno',   sql.VarChar(20),   f.Turno||null)
+        .input('hora',    sql.DateTime,      horaDT)
+        .input('turno',   sql.VarChar(20),   turno)
+        .input('tc',      sql.VarChar(20),   f.TC ? String(f.TC).slice(0,20) : null)
         .input('idOp',    sql.Decimal(7),    f.ID_OPERADOR||null)
         .input('operador',sql.VarChar(45),   f.OPERADOR||null)
+        .input('grupo',   sql.VarChar(20),   f.Grupo ? String(f.Grupo).slice(0,20) : null)
         .input('origen',  sql.VarChar(50),   f.Origen||null)
         .input('destino', sql.VarChar(50),   f.Destino||null)
-        .input('folio',   sql.VarChar(20),   f.Folio||null)
         .input('prestamo',sql.Decimal(8,2),  num(f.Prestamo))
         .input('tal',     sql.Decimal(8,2),  num(f.Talachas))
         .input('lla',     sql.Decimal(8,2),  num(f.Llantas))
@@ -517,15 +560,28 @@ router.post('/depositos/guardar', async (req, res) => {
         .input('com',     sql.Decimal(8,2),  num(f.Comidas))
         .input('man',     sql.Decimal(8,2),  num(f.Maniobra))
         .input('bas',     sql.Decimal(8,2),  num(f.Bascula))
-        .input('pen',     sql.Decimal(8,1),  num(f.Pension))
+        .input('pen',     sql.Decimal(8,2),  num(f.Pension))
         .input('ref',     sql.Decimal(8,2),  num(f.Refacciones))
         .input('otros',   sql.Decimal(8,2),  num(f.Otros))
+        .input('esta',    sql.Decimal(8,2),  num(f.Estadias))
         .input('desOtros',sql.VarChar(255),  f.DesOtros||null)
-        .input('monto',   sql.Decimal(10,2), num(f.Monto))
+        .input('monto',   sql.Decimal(10,2), monto)
         .input('obs',     sql.VarChar(499),  f.Observaciones||null)
-        .input('whoMod',  sql.VarChar(79),   f.WhoModifica||null)
-        .input('aut',     sql.Int,           num(f.Autorizado))
-        .query(`UPDATE Empresa2.DepoSolicitud SET Fecha=@fecha,Turno=@turno,ID_OPERADOR=@idOp,OPERADOR=@operador,Origen=@origen,Destino=@destino,Folio=@folio,Prestamo=@prestamo,Talachas=@tal,Llantas=@lla,Diesel=@die,Casetas=@cas,Comidas=@com,Maniobra=@man,Bascula=@bas,Pension=@pen,Refacciones=@ref,Otros=@otros,DesOtros=@desOtros,Monto=@monto,Observaciones=@obs,WhoModifica=@whoMod,Autorizado=@aut WHERE Id_DepoSol=@id`);
+        .input('whoMod',  sql.VarChar(79),   quien)
+        .input('fechaMod',sql.Date,          hoy)
+        .input('fCobCas', sql.TinyInt,       flag(f.FlagCobCaseta))
+        .input('fCobMan', sql.TinyInt,       flag(f.FlagCobMan))
+        .input('fCobPen', sql.TinyInt,       flag(f.FlagCobPen))
+        .input('fCobEst', sql.TinyInt,       flag(f.FlagCobEsta))
+        .input('fCobOtr', sql.TinyInt,       flag(f.FlagCobOtros))
+        .query(`UPDATE Empresa2.DepoSolicitud SET
+          Fecha=@fecha,Hora=@hora,Turno=@turno,TC=@tc,ID_OPERADOR=@idOp,OPERADOR=@operador,
+          Grupo=@grupo,Origen=@origen,Destino=@destino,
+          Prestamo=@prestamo,Talachas=@tal,Llantas=@lla,Diesel=@die,Casetas=@cas,Comidas=@com,
+          Maniobra=@man,Bascula=@bas,Pension=@pen,Refacciones=@ref,Otros=@otros,Estadias=@esta,
+          DesOtros=@desOtros,Monto=@monto,Observaciones=@obs,WhoModifica=@whoMod,FechaUltMod=@fechaMod,
+          FlagCobCaseta=@fCobCas,FlagCobMan=@fCobMan,FlagCobPen=@fCobPen,FlagCobEsta=@fCobEst,FlagCobOtros=@fCobOtr
+          WHERE Id_DepoSol=@id`);
     }
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
