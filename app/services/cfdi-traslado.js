@@ -2,6 +2,7 @@
 
 const { create } = require('xmlbuilder2');
 const { sql }    = require('../config/db');
+const { getSatDb } = require('../config/sat-db');
 const crypto     = require('crypto');
 
 // ── helpers ─────────────────────────────────────────────────────────────────
@@ -33,14 +34,25 @@ function normPais(p) {
 
 function fmt(v) { return v ? String(v).trim() : ''; }
 
+// Catálogo SAT c_ClaveProdServCP: columna "Materia Peligroso" = "0" (nunca
+// peligroso), "1" (siempre peligroso) o "0,1" (a criterio del contribuyente).
+// El catálogo manda cuando es "0" o "1"; con "0,1" o clave no catalogada se
+// respeta lo que el usuario capturó en PedMercancias.
+function flagMaterialPeligrosoCatalogo(bienesTransp) {
+  const clave = fmt(bienesTransp);
+  if (!clave) return null;
+  const db = getSatDb();
+  const row = db.prepare('SELECT "Materia Peligroso" AS flag FROM sat_c_ClaveProdServCP WHERE c_ClaveProdServ = ?').get(clave);
+  return row ? fmt(row.flag) : null;
+}
+
 function domAttrs(dom) {
   if (!dom) return {};
   const attrs = {};
   if (fmt(dom.CALLE))   attrs.Calle   = fmt(dom.CALLE);
   if (fmt(dom.NOEXT))   attrs.NumeroExterior = fmt(dom.NOEXT);
   if (fmt(dom.NOINT))   attrs.NumeroInterior = fmt(dom.NOINT);
-  if (fmt(dom.COLONIA)) attrs.Colonia  = fmt(dom.COLONIA);
-  if (fmt(dom.CIUDAD))  attrs.Localidad = fmt(dom.CIUDAD);
+  // Colonia, Localidad y Municipio no se declaran (todos opcionales en el XSD)
   if (fmt(dom.ESTADO))  attrs.Estado   = fmt(dom.ESTADO);
   if (fmt(dom.CP))      attrs.CodigoPostal = fmt(dom.CP);
   attrs.Pais = normPais(dom.PAIS || 'MEX');
@@ -104,6 +116,19 @@ async function buildCFDITraslado(serie, cartaporte, pool) {
     .query(`SELECT * FROM Empresa2.Camiones WHERE LTRIM(RTRIM(ID_CAMION)) = LTRIM(RTRIM(@id))`);
   const cam = camRes.recordset[0] || null;
 
+  // 6b. Remolques (NoCaja/NoCaja2 en CartaPorte apuntan a Camiones con TIPO='Remolque';
+  // ahí es donde viven SubTipoRem (columna C_SUBTIPO, no SUBTIPOREM) y la Placa
+  // del remolque, no en el tracto/Id_Camion)
+  async function buscarRemolque(idCaja) {
+    if (!fmt(idCaja)) return null;
+    const r = await pool.request()
+      .input('id', sql.VarChar(10), fmt(idCaja))
+      .query(`SELECT PLACA, C_SUBTIPO FROM Empresa2.Camiones WHERE LTRIM(RTRIM(ID_CAMION)) = LTRIM(RTRIM(@id))`);
+    const row = r.recordset[0];
+    return (row && fmt(row.C_SUBTIPO) && fmt(row.PLACA)) ? row : null;
+  }
+  const remolques = (await Promise.all([buscarRemolque(cp.NoCaja), buscarRemolque(cp.NoCaja2)])).filter(Boolean);
+
   // 7. Operador
   const opRes = await pool.request()
     .input('id', sql.Int, cp.Id_Operador)
@@ -121,12 +146,15 @@ async function buildCFDITraslado(serie, cartaporte, pool) {
 
   // ── build XML ───────────────────────────────────────────────────────────────
 
-  const fechaEmision = isoFecha(cp.FehcaCarga || new Date());
+  const fechaEmision = isoFecha(cp.FechaPedido || new Date());
   const idCCP        = generarIdCCP();
 
   // Emisor y Receptor son la misma empresa (autotraslado)
   const emisorRFC    = fmt(emp.RFC);
-  const emisorNombre = fmt(emp.EMPRESA);
+  // El SAT valida que Nombre coincida con el registrado para ese RFC — EMPRESA
+  // trae la razón social completa (con "S.A. DE C.V.") pero lo que el SAT tiene
+  // registrado es NOMBRECORTO.
+  const emisorNombre = fmt(emp.NOMBRECORTO);
   const emisorRegFis = fmt(emp.C_REGIMENFISCAL);
   const lugarExp     = fmt(emp.LUGAREXPEDICION) || fmt(emp.CP);
 
@@ -188,14 +216,14 @@ async function buildCFDITraslado(serie, cartaporte, pool) {
   const complemento = doc.ele('cfdi:Complemento');
 
   // cartaporte31:CartaPorte
+  // PesoBrutoTotal/UnidadPeso/NumTotalMercancias NO son atributos de este nodo
+  // raíz según el XSD de Carta Porte 3.1 — solo existen en cartaporte31:Mercancias
+  // (ver más abajo). Ponerlos aquí causa "attribute is not declared" en el PAC.
   const cpNode = complemento.ele('cartaporte31:CartaPorte', {
     'Version':            '3.1',
     'IdCCP':              idCCP,
     'TranspInternac':     'No',
     'TotalDistRec':       fmtDec(cp.KilometrosTar, 2),
-    'PesoBrutoTotal':     fmtDec(cp.PesoBrutoTotal, 3),
-    'UnidadPeso':         fmt(cp.UnidadPeso) || 'KGM',
-    'NumTotalMercancias': String(parseInt(cp.TotalMercancias) || mercs.length),
   });
 
   // ── Ubicaciones ─────────────────────────────────────────────────────────────
@@ -248,8 +276,19 @@ async function buildCFDITraslado(serie, cartaporte, pool) {
 
   mercs.forEach((m, i) => {
     const desc = fmt(m.DesManual) || fmt(m.Descripcion) || 'MERCANCIA';
-    const matPel = fmt(m.MaterialPeligroso).toUpperCase() === 'SI' ||
-                   fmt(m.MaterialPeligroso) === '1' ? 'Sí' : 'No';
+
+    // Réplica de la regla del sistema legado (Clarion): el atributo
+    // MaterialPeligroso NO siempre se declara.
+    //   - Si se capturó "Si" -> se declara "Sí" SIEMPRE, con sus subatributos.
+    //   - Si se capturó "No" -> solo se declara "No" cuando el catálogo
+    //     c_ClaveProdServCP dice "0,1" (a criterio del contribuyente).
+    //   - En cualquier otro caso (catálogo "0" o "1" con "No", o clave no
+    //     catalogada con "No") el atributo se OMITE por completo.
+    const capturado = fmt(m.MaterialPeligroso);
+    const flagCatalogo = flagMaterialPeligrosoCatalogo(m.BienesTransp);
+    let matPel = null;
+    if (capturado === 'Si') matPel = 'Sí';
+    else if (flagCatalogo === '0,1' && capturado === 'No') matPel = 'No';
 
     const mercAttrs = {
       BienesTransp:       fmt(m.BienesTransp),
@@ -257,17 +296,20 @@ async function buildCFDITraslado(serie, cartaporte, pool) {
       Cantidad:           fmtDec(m.Cantidad, 4),
       ClaveUnidad:        fmt(m.ClaveUnidad),
       Unidad:             fmt(m.Unidad),
-      MaterialPeligroso:  matPel,
-      PesoEnKg:           fmtDec(m.PesoEnKg, 3),
-      ValorMercancia:     fmtDec(m.ValorMercancia, 2),
-      Moneda:             fmt(m.Moneda) || 'MXN',
     };
-    if (matPel === 'Sí') {
-      if (fmt(m.CveMaterialPeligroso)) mercAttrs.CveMaterialPeligroso = fmt(m.CveMaterialPeligroso);
-      if (fmt(m.cve_Embalaje))        mercAttrs.Embalaje              = fmt(m.cve_Embalaje);
-      if (fmt(m.DescripEmbalaje))     mercAttrs.DescripEmbalaje       = fmt(m.DescripEmbalaje);
+    if (matPel) {
+      mercAttrs.MaterialPeligroso = matPel;
+      if (matPel === 'Sí') {
+        if (fmt(m.CveMaterialPeligroso)) mercAttrs.CveMaterialPeligroso = fmt(m.CveMaterialPeligroso);
+        if (fmt(m.cve_Embalaje))        mercAttrs.Embalaje              = fmt(m.cve_Embalaje);
+        if (fmt(m.DescripEmbalaje))     mercAttrs.DescripEmbalaje       = fmt(m.DescripEmbalaje);
+      }
     }
-    if (fmt(m.PesoUnidad)) mercAttrs.PesoUnidad = fmt(m.PesoUnidad);
+    mercAttrs.PesoEnKg       = fmtDec(m.PesoEnKg, 3);
+    mercAttrs.ValorMercancia = fmtDec(m.ValorMercancia, 2);
+    mercAttrs.Moneda         = fmt(m.Moneda) || 'MXN';
+    // PesoUnidad NO es un atributo válido de cartaporte31:Mercancia (no existe
+    // en el XSD) — es solo un dato interno para calcular PesoEnKg = Cantidad×PesoUnidad.
 
     mercsNode.ele('cartaporte31:Mercancia', mercAttrs).up();
   });
@@ -290,8 +332,15 @@ async function buildCFDITraslado(serie, cartaporte, pool) {
     PolizaRespCivil:  fmt(cam ? cam.NUMPOLIZA : emp.NUMPOLIZA),
   }).up();
 
-  if (cam && fmt(cam.SUBTIPOREM)) {
-    autoTrans.ele('cartaporte31:Remolques').up();
+  if (remolques.length) {
+    const remolquesNode = autoTrans.ele('cartaporte31:Remolques');
+    remolques.forEach(r => {
+      remolquesNode.ele('cartaporte31:Remolque', {
+        SubTipoRem: fmt(r.C_SUBTIPO),
+        Placa:      fmt(r.PLACA),
+      }).up();
+    });
+    remolquesNode.up();
   }
 
   // TiposFigura – Operador
@@ -305,7 +354,7 @@ async function buildCFDITraslado(serie, cartaporte, pool) {
     }).up();
   }
 
-  return doc.end({ prettyPrint: true });
+  return { xml: doc.end({ prettyPrint: true }), idCCP };
 }
 
 module.exports = { buildCFDITraslado, generarIdCCP };

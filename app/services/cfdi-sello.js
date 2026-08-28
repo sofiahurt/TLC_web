@@ -49,35 +49,48 @@ async function sellarXML(xmlString, serie, cartaporte, pool) {
     throw new Error(`Error al cargar el CSD (revise archivos y contraseña): ${e.message}`);
   }
 
-  // 4. Cadena original via XSLT
+  // 4. Datos del certificado — se conocen de antemano (vienen del CSD, no de la
+  // firma) y DEBEN estar ya inyectados en el XML antes de calcular la cadena
+  // original, porque NoCertificado SÍ forma parte de la cadena firmada (a
+  // diferencia de Certificado y Sello, que el propio XSLT excluye). Firmar la
+  // cadena con NoCertificado="" y rellenarlo después produce un sello que jamás
+  // coincide con la cadena real que recalcula el SAT/PAC.
+  const noCertificado = csd.certificate().serialNumber().bytes();
+  const certificado   = csd.certificate().pemAsOneLine();
+  const xmlConCert = xmlString
+    .replace('NoCertificado=""', `NoCertificado="${noCertificado}"`)
+    .replace('Certificado=""',   `Certificado="${certificado}"`);
+
+  // 5. Cadena original via XSLT (ya con NoCertificado real)
   const parser  = new XmlParser();
   const xslt    = new Xslt();
-  const xmlDoc  = parser.xmlParse(xmlString);
+  const xmlDoc  = parser.xmlParse(xmlConCert);
   const xsltDoc = parser.xmlParse(xsltContent);
   const cadena  = await xslt.xsltProcess(xmlDoc, xsltDoc);
   if (!cadena || !cadena.startsWith('||')) {
     throw new Error(`La cadena original generada parece inválida: ${String(cadena).slice(0, 80)}`);
   }
 
-  // 5. Firma SHA256withRSA → Base64
-  const binarySig = csd.sign(cadena, 'sha256');
+  // 6. Firma SHA256withRSA → Base64
+  // @nodecfdi/credentials firma con node-forge SIN especificar 'utf8' al hacer
+  // md.update(); forge por default trata el string como binary/latin1 (1 char =
+  // 1 byte), así que cualquier cadena original con acentos (ó, í, á, é, ñ...) se
+  // firma sobre los bytes equivocados y el sello no cuadra con la digestión real
+  // que recalcula el SAT/PAC (siempre en UTF-8). Se pre-codifica la cadena a sus
+  // bytes UTF-8 reales (representados como string "binary") ANTES de firmar,
+  // para que ese update() sin encoding termine operando sobre los bytes correctos.
+  const cadenaUtf8Binaria = Buffer.from(cadena, 'utf8').toString('binary');
+  const binarySig = csd.sign(cadenaUtf8Binaria, 'sha256');
   const sello     = Buffer.from(binarySig, 'binary').toString('base64');
 
-  // 6. Datos del certificado
-  const noCertificado = csd.certificate().serialNumber().bytes();
-  const certificado   = csd.certificate().pemAsOneLine();
-
-  // 7. Inyectar en el XML
-  const signed = xmlString
-    .replace('NoCertificado=""', `NoCertificado="${noCertificado}"`)
-    .replace('Certificado=""',   `Certificado="${certificado}"`)
-    .replace('Sello=""',         `Sello="${sello}"`);
+  // 7. Inyectar el Sello (único dato que sí depende de la firma, va al final)
+  const signed = xmlConCert.replace('Sello=""', `Sello="${sello}"`);
 
   // 8. Guardar en disco: <unidad>:\TLC_Web\Empresa2\XML\CP_<cartaporte>_sellado.xml
   fs.mkdirSync(RUTA_XML, { recursive: true });
   fs.writeFileSync(path.join(RUTA_XML, `CP_${cartaporte}_sellado.xml`), signed, 'utf8');
 
-  // TODO: cuando se implemente la integración con el PAC (Facturalo), al guardar
+  // TODO: cuando se confirme el timbrado (ver app/services/cfdi-pac.js), al guardar
   // exitosamente CP_<CartaPorte>_timbrado.xml, eliminar el archivo
   // CP_<CartaPorte>_sellado.xml correspondiente, ya que el timbrado lo reemplaza
   // como versión oficial final.
@@ -85,16 +98,4 @@ async function sellarXML(xmlString, serie, cartaporte, pool) {
   return signed;
 }
 
-/**
- * Envía el XML sellado al PAC (Facturalo) para su timbrado fiscal.
- *
- * TODO: Implementar integración con PAC Facturalo.
- *   Pendiente: endpoint, credenciales de acceso, formato de request/response, manejo de UUID.
- *
- * STUB: devuelve resultado simulado sin llamada HTTP real.
- */
-async function enviarAPAC(xmlSellado) {
-  return { ok: true, uuid: null, mensaje: 'PAC no conectado — stub de prueba' };
-}
-
-module.exports = { sellarXML, enviarAPAC };
+module.exports = { sellarXML };

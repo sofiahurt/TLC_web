@@ -1,10 +1,43 @@
 'use strict';
 
+const fs   = require('fs');
+const path = require('path');
 const express  = require('express');
 const router   = express.Router();
 const { getPool, sql } = require('../config/db');
 const { buildCFDITraslado } = require('../services/cfdi-traslado');
-const { sellarXML, enviarAPAC } = require('../services/cfdi-sello');
+const { sellarXML } = require('../services/cfdi-sello');
+const { timbrarConPAC } = require('../services/cfdi-pac');
+const { RUTA_XML } = require('../config/storage');
+
+// El PAC (URL) es el mismo para todas las Empresas/series — solo cambia entre
+// prueba y producción, y eso sale de .env, no de dbo.Empresas.
+function urlPACGlobal(testFel) {
+  const url = ((testFel ? process.env.PAC_URL_PRUEBA : process.env.PAC_URL_PRODUCCION) || '').trim();
+  if (!url) throw new Error(`URL del PAC no configurada en .env (PAC_URL_${testFel ? 'PRUEBA' : 'PRODUCCION'})`);
+  return url.replace(/\?wsdl$/i, '');
+}
+
+// Resuelve credencial/URL del PAC para una Serie según el flag TESTFEL de su
+// Empresa. dbo.Empresas.USUARIO solo tiene la credencial de PRODUCCIÓN; no
+// existe un usuario de prueba ahí, por eso en modo prueba se toma de .env.
+async function resolverConexionPAC(pool, serie) {
+  const empRes = await pool.request()
+    .input('serie', sql.VarChar(10), serie)
+    .query(`SELECT TESTFEL, USUARIO FROM dbo.Empresas WHERE LTRIM(RTRIM(SERIE)) = @serie`);
+  const emp = empRes.recordset[0];
+  if (!emp) throw new Error(`No se encontró configuración de Empresa para la serie "${serie}"`);
+
+  const testFel = !!parseInt(emp.TESTFEL) || false;
+  const url     = urlPACGlobal(testFel);
+  const usuario = testFel ? (process.env.PAC_USUARIO_PRUEBA || '').trim() : (emp.USUARIO || '').trim();
+
+  if (!usuario) throw new Error(testFel
+    ? 'No hay credencial de prueba configurada (PAC_USUARIO_PRUEBA en .env)'
+    : `La Empresa de la serie "${serie}" no tiene USUARIO (credencial del PAC) configurado`);
+
+  return { url, usuario, testFel };
+}
 
 // ── PREVIEW (debug) ──────────────────────────────────────────────────────────
 // GET /cfdi/preview?serie=CUI&cartaporte=CUI0000517
@@ -15,7 +48,7 @@ router.get('/preview', async (req, res) => {
     if (!serie || !cartaporte) return res.status(400).send('Faltan parámetros: serie y cartaporte');
 
     const pool = await getPool();
-    const xml  = await buildCFDITraslado(serie, cartaporte, pool);
+    const { xml } = await buildCFDITraslado(serie, cartaporte, pool);
 
     res.setHeader('Content-Type', 'application/xml; charset=utf-8');
     res.send(xml);
@@ -139,19 +172,71 @@ router.post('/timbrar', async (req, res) => {
 
     const pool = await getPool();
 
-    // 1. Armar XML
-    const xml = await buildCFDITraslado(serie, cartaporte, pool);
+    // 0. UUID ya existente (para el manejo de reenvío/código 307 más abajo)
+    const prevRes = await pool.request()
+      .input('serie', sql.VarChar(3),  serie)
+      .input('cp',    sql.VarChar(30), cartaporte)
+      .query(`SELECT UUID, FechaTimbrado FROM Empresa2.CartaPorte WHERE Serie=@serie AND CartaPorte=@cp`);
+    if (!prevRes.recordset[0]) return res.status(404).json({ ok: false, error: 'Carta Porte no encontrada' });
+    const uuidExistente = (prevRes.recordset[0].UUID || '').trim();
 
-    // 2. Sellar con CSD y guardar en disco
+    // 1. Resolver a qué PAC conectarse (según TESTFEL de la Empresa)
+    const conexion = await resolverConexionPAC(pool, serie);
+
+    // 2. Armar XML
+    const { xml, idCCP } = await buildCFDITraslado(serie, cartaporte, pool);
+
+    // 3. Sellar con CSD y guardar en disco
     const xmlSellado = await sellarXML(xml, serie, cartaporte, pool);
 
-    // 3. Enviar al PAC (stub — pendiente de integración con Facturalo)
-    const pacResult = await enviarAPAC(xmlSellado);
+    // 4. Enviar al PAC y timbrar
+    const pacResult = await timbrarConPAC(xmlSellado, conexion);
 
-    // Status permanece en EMITIDO hasta que el PAC confirme el UUID
+    if (!pacResult.exito) {
+      return res.json({ ok: false, error: pacResult.mensajeError || 'El PAC rechazó el timbrado' });
+    }
+
+    // Reenvío (307): el PAC ya tenía timbrado este comprobante. Si nuestra BD
+    // ya tiene UUID guardado para este folio, no lo volvemos a escribir (evita
+    // duplicar/sobreescribir); solo informamos el timbre ya existente.
+    if (pacResult.reenvio && uuidExistente) {
+      return res.json({
+        ok:      true,
+        mensaje: `Esta Carta Porte ya estaba timbrada. UUID: ${uuidExistente}`,
+        pacResult: { ...pacResult, uuid: uuidExistente },
+      });
+    }
+
+    // 5. Persistir UUID/FechaTimbrado/IdCCP/NoCertificado. El Status SOLO avanza
+    //    a TRASLADO fuera de modo prueba — un timbrado de prueba no debe marcar
+    //    el pedido como si ya se hubiera trasladado de verdad.
+    const setStatus = conexion.testFel ? '' : `, Status='TRASLADO'`;
+    await pool.request()
+      .input('serie',  sql.VarChar(3),  serie)
+      .input('cp',     sql.VarChar(30), cartaporte)
+      .input('uuid',   sql.VarChar(40), pacResult.uuid)
+      .input('fecha',  sql.VarChar(30), pacResult.fechaTimbrado || null)
+      .input('idCCP',  sql.VarChar(36), idCCP)
+      .input('noCert', sql.VarChar(30), pacResult.noCertificadoSAT || null)
+      .query(`UPDATE Empresa2.CartaPorte
+              SET UUID=@uuid, FechaTimbrado=@fecha, IdCCP=@idCCP, NoCertificado=@noCert${setStatus}
+              WHERE Serie=@serie AND CartaPorte=@cp`);
+
+    // 6. Guardar el XML timbrado final; el sellado ya no es la versión oficial.
+    //    En modo prueba (TESTFEL) el nombre lleva "_Prueba" en vez de "_timbrado",
+    //    usando siempre el folio CartaPorte como identificador del archivo.
+    const sufijoArchivo = conexion.testFel ? 'Prueba' : 'timbrado';
+    fs.mkdirSync(RUTA_XML, { recursive: true });
+    fs.writeFileSync(path.join(RUTA_XML, `CP_${cartaporte}_${sufijoArchivo}.xml`), pacResult.xmlTimbrado, 'utf8');
+    const rutaSellado = path.join(RUTA_XML, `CP_${cartaporte}_sellado.xml`);
+    if (fs.existsSync(rutaSellado)) fs.unlinkSync(rutaSellado);
+
+    // TODO: descuento de folio en Empresa2.ParamTimbre y bitácora en
+    // Empresa2.ParamTimbreDeta — pendiente, no forma parte de este cambio.
     res.json({
-      ok:        true,
-      mensaje:   'XML generado y sellado correctamente. Pendiente de envío al PAC.',
+      ok:      true,
+      mensaje: `Carta Porte timbrada correctamente${conexion.testFel ? ' (modo prueba)' : ''}. UUID: ${pacResult.uuid}`,
+      testFel: conexion.testFel,
       pacResult,
     });
   } catch (err) {

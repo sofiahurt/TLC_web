@@ -791,6 +791,12 @@ function ejecutarTimbrado() {
         `<div class="alert alert-success mb-0">
           <i class="bi bi-check-circle-fill me-2"></i><strong>${d.mensaje}</strong>
         </div>`;
+      if (!d.testFel) {
+        if (window._selectedRow) window._selectedRow.Status = 'TRASLADO';
+        const btnTi = document.getElementById('btnTimbrar');
+        if (btnTi) btnTi.disabled = true;
+        browse.load();
+      }
     } else {
       btn.disabled = false;
       btn.innerHTML = '<i class="bi bi-file-earmark-check me-1"></i>Confirmar timbrado';

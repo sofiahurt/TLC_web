@@ -18,7 +18,7 @@ CREATE TABLE [Empresa2].[CartaPorte] (
   [NoPlacas] varchar(20) COLLATE Modern_Spanish_CI_AS  NULL,
   [Id_Operador] int  NULL,
   [Operador] varchar(80) COLLATE Modern_Spanish_CI_AS  NULL,
-  [NoPedidoCliente] varchar(20) COLLATE Modern_Spanish_CI_AS  NULL,
+  [NoPedidoCliente] varchar(45) COLLATE Modern_Spanish_CI_AS  NULL,
   [Id_Cliente] decimal(7)  NULL,
   [NombreComunCli] varchar(80) COLLATE Modern_Spanish_CI_AS  NULL,
   [Id_ClienteEnt] decimal(7)  NULL,
@@ -128,7 +128,7 @@ CREATE TABLE [Empresa2].[CartaPorte] (
   [WhoAutoriza] varchar(80) COLLATE Modern_Spanish_CI_AS  NULL,
   [WhoModifica] varchar(60) COLLATE Modern_Spanish_CI_AS  NULL,
   [Contenedor] varchar(20) COLLATE Modern_Spanish_CI_AS  NULL,
-  [Booking] varchar(20) COLLATE Modern_Spanish_CI_AS  NULL,
+  [Booking] varchar(45) COLLATE Modern_Spanish_CI_AS  NULL,
   [BARCO] varchar(60) COLLATE Modern_Spanish_CI_AS  NULL,
   [Instrucciones] varchar(250) COLLATE Modern_Spanish_CI_AS  NULL,
   [TotalMercancias] decimal(7,2)  NULL,
@@ -137,77 +137,23 @@ CREATE TABLE [Empresa2].[CartaPorte] (
   [c_Moneda] varchar(10) COLLATE Modern_Spanish_CI_AS  NULL,
   [TipoCambio] decimal(7,2)  NULL,
   [FlagRet] tinyint  NULL,
-  [NoRainde] varchar(20) COLLATE Modern_Spanish_CI_AS  NULL
+  [NoRainde] nvarchar(50) COLLATE Modern_Spanish_CI_AS  NULL,
+  [UUID] varchar(40) COLLATE Modern_Spanish_CI_AS  NULL,
+  [FechaTimbrado] varchar(30) COLLATE Modern_Spanish_CI_AS  NULL,
+  [IdCCP] varchar(36) COLLATE Modern_Spanish_CI_AS  NULL,
+  [FechaCancela] date  NULL,
+  [NoCertificado] varchar(30) COLLATE Modern_Spanish_CI_AS  NULL,
+  [HoraPedido] datetime DEFAULT NULL NULL,
+  [CodBarBi] varchar(255) COLLATE Modern_Spanish_CI_AS  NULL,
+  [Refrigerados] tinyint  NULL,
+  [Secos] tinyint  NULL,
+  [c_MotCancela] varchar(3) COLLATE Modern_Spanish_CI_AS  NULL,
+  [UUIDRelCan] varchar(52) COLLATE Modern_Spanish_CI_AS  NULL,
+  [NotaCancelacion] varchar(250) COLLATE Modern_Spanish_CI_AS  NULL,
+  [WhoCancela] varchar(80) COLLATE Modern_Spanish_CI_AS  NULL,
+  [CP_Rela] varchar(30) COLLATE Modern_Spanish_CI_AS  NULL
 )  
 ON [PRIMARY]
 GO
 
 ALTER TABLE [Empresa2].[CartaPorte] SET (LOCK_ESCALATION = TABLE)
-
-CREATE TABLE [Empresa2].[PedMercancias] (
-  [Serie] varchar(3) COLLATE Modern_Spanish_CI_AS  NOT NULL,
-  [CartaPorte] varchar(30) COLLATE Modern_Spanish_CI_AS  NOT NULL,
-  [Id_Mercancia] decimal(3)  NOT NULL,
-  [SKU] varchar(25) COLLATE Modern_Spanish_CI_AS  NULL,
-  [BienesTransp] varchar(20) COLLATE Modern_Spanish_CI_AS  NULL,
-  [Descripcion] varchar(199) COLLATE Modern_Spanish_CI_AS  NULL,
-  [DesManual] varchar(200) COLLATE Modern_Spanish_CI_AS  NULL,
-  [Cantidad] decimal(14,6)  NULL,
-  [ClaveUnidad] varchar(20) COLLATE Modern_Spanish_CI_AS  NULL,
-  [Unidad] varchar(20) COLLATE Modern_Spanish_CI_AS  NULL,
-  [PesoUnidad] decimal(7,2)  NULL,
-  [MaterialPeligroso] varchar(3) COLLATE Modern_Spanish_CI_AS  NOT NULL,
-  [CveMaterialPeligroso] varchar(20) COLLATE Modern_Spanish_CI_AS  NULL,
-  [cve_Embalaje] varchar(10) COLLATE Modern_Spanish_CI_AS  NULL,
-  [DescripEmbalaje] varchar(100) COLLATE Modern_Spanish_CI_AS  NULL,
-  [PesoEnKg] decimal(9,3)  NULL,
-  [ValorMercancia] decimal(13,6)  NULL,
-  [Moneda] varchar(4) COLLATE Modern_Spanish_CI_AS  NULL
-)  
-ON [PRIMARY]
-GO
-
-ALTER TABLE [Empresa2].[PedMercancias] SET (LOCK_ESCALATION = TABLE)
-
-CREATE TABLE [Empresa2].[DepoSolicitud] (
-  [Id_DepoSol] decimal(9)  NOT NULL,
-  [Fecha] date  NULL,
-  [Hora] datetime  NULL,
-  [Turno] varchar(20) COLLATE Modern_Spanish_CI_AS  NULL,
-  [TC] varchar(20) COLLATE Modern_Spanish_CI_AS  NULL,
-  [ID_OPERADOR] decimal(7)  NOT NULL,
-  [OPERADOR] varchar(45) COLLATE Modern_Spanish_CI_AS  NOT NULL,
-  [Serie] varchar(3) COLLATE Modern_Spanish_CI_AS  NOT NULL,
-  [CartaPorte] varchar(30) COLLATE Modern_Spanish_CI_AS  NOT NULL,
-  [Grupo] varchar(20) COLLATE Modern_Spanish_CI_AS  NULL,
-  [Origen] varchar(50) COLLATE Modern_Spanish_CI_AS  NULL,
-  [Destino] varchar(50) COLLATE Modern_Spanish_CI_AS  NULL,
-  [Folio] varchar(20) COLLATE Modern_Spanish_CI_AS  NULL,
-  [Prestamo] decimal(8,2)  NULL,
-  [Talachas] decimal(8,2)  NULL,
-  [Llantas] decimal(8,2)  NULL,
-  [Diesel] decimal(8,2)  NULL,
-  [Casetas] decimal(8,2)  NULL,
-  [Comidas] decimal(8,2)  NULL,
-  [Maniobra] decimal(8,2)  NULL,
-  [Bascula] decimal(8,2)  NULL,
-  [Pension] decimal(8,1)  NULL,
-  [Refacciones] decimal(8,2)  NULL,
-  [Otros] decimal(8,2)  NULL,
-  [DesOtros] varchar(255) COLLATE Modern_Spanish_CI_AS  NULL,
-  [Monto] decimal(10,2)  NULL,
-  [Observaciones] varchar(499) COLLATE Modern_Spanish_CI_AS  NULL,
-  [WhoCaptura] varchar(79) COLLATE Modern_Spanish_CI_AS  NULL,
-  [FechaCaptura] date  NULL,
-  [WhoModifica] varchar(79) COLLATE Modern_Spanish_CI_AS  NULL,
-  [FechaUltMod] date  NULL,
-  [WhoAutoriza] varchar(100) COLLATE Modern_Spanish_CI_AS  NULL,
-  [FechaAutorizacion] date  NULL,
-  [Autorizado] int  NULL,
-  [FlagDeposito] int  NULL,
-  [FlagEnDeposito] int  NULL
-)  
-ON [PRIMARY]
-GO
-
-ALTER TABLE [Empresa2].[DepoSolicitud] SET (LOCK_ESCALATION = TABLE)

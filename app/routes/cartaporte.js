@@ -122,11 +122,17 @@ router.get('/get', async (req, res) => {
     const result = await pool.request()
       .input('serie', sql.VarChar(3), req.query.serie)
       .input('cp', sql.VarChar(30), req.query.cartaporte)
-      .query(`SELECT * FROM Empresa2.CartaPorte WHERE Serie=@serie AND CartaPorte=@cp`);
+      .query(`SELECT cp.*, cam.DESCRIPCION AS CamionDescripcion, cam.PLACA AS CamionPlaca
+              FROM Empresa2.CartaPorte cp
+              LEFT JOIN Empresa2.Camiones cam ON cam.ID_CAMION = cp.Id_Camion
+              WHERE cp.Serie=@serie AND cp.CartaPorte=@cp`);
     if (!result.recordset[0]) return res.status(404).json({ error: 'No encontrado' });
     const r = result.recordset[0];
     const fmt = v => v instanceof Date ? v.toISOString().slice(0,10) : (v == null ? '' : String(v).trim());
     const fmtDT = v => { if (!v) return ''; const d = new Date(v); return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; };
+    // Registros legados guardaron solo Id_Camion sin la descripción/placa; se completa desde el catálogo.
+    const noCamion = fmt(r.NoCamion) || fmt(r.CamionDescripcion);
+    const noPlacas = fmt(r.NoPlacas) || fmt(r.CamionPlaca);
     res.json({
       Serie: fmt(r.Serie), CartaPorte: fmt(r.CartaPorte), Id_Pedido: r.Id_Pedido||'',
       FechaPedido: fmt(r.FechaPedido), FehcaCarga: fmt(r.FehcaCarga),
@@ -137,7 +143,7 @@ router.get('/get', async (req, res) => {
       Id_ClienteCarga: r.Id_ClienteCarga||'', ClienteCarga: fmt(r.ClienteCarga),
       NoPedidoCliente: fmt(r.NoPedidoCliente), NoRainde: fmt(r.NoRainde),
       Id_Tarifa: r.Id_Tarifa||'', DesFlete: fmt(r.DesFlete),
-      Id_Camion: fmt(r.Id_Camion), NoCamion: fmt(r.NoCamion), NoPlacas: fmt(r.NoPlacas),
+      Id_Camion: fmt(r.Id_Camion), NoCamion: noCamion, NoPlacas: noPlacas,
       NoCaja: fmt(r.NoCaja), NoCaja2: fmt(r.NoCaja2),
       Id_Operador: r.Id_Operador||'', Operador: fmt(r.Operador),
       Id_DomCarga: r.Id_DomCarga||'', DomCarga: fmt(r.DomCarga),
