@@ -8,7 +8,10 @@ const { getPool, sql } = require('../config/db');
 const { buildCFDITraslado } = require('../services/cfdi-traslado');
 const { sellarXML } = require('../services/cfdi-sello');
 const { timbrarConPAC } = require('../services/cfdi-pac');
+const { generarPDFBuffer } = require('../services/cfdi-pdf');
 const { RUTA_XML } = require('../config/storage');
+const { serieFiscal } = require('../config/empresa-serie');
+const { DOMParser } = require('@xmldom/xmldom');
 
 // El PAC (URL) es el mismo para todas las Empresas/series — solo cambia entre
 // prueba y producción, y eso sale de .env, no de dbo.Empresas.
@@ -21,9 +24,10 @@ function urlPACGlobal(testFel) {
 // Resuelve credencial/URL del PAC para una Serie según el flag TESTFEL de su
 // Empresa. dbo.Empresas.USUARIO solo tiene la credencial de PRODUCCIÓN; no
 // existe un usuario de prueba ahí, por eso en modo prueba se toma de .env.
+// Varios centrales comparten la misma razón social/CSD (ver config/empresa-serie.js).
 async function resolverConexionPAC(pool, serie) {
   const empRes = await pool.request()
-    .input('serie', sql.VarChar(10), serie)
+    .input('serie', sql.VarChar(10), serieFiscal(serie))
     .query(`SELECT TESTFEL, USUARIO FROM dbo.Empresas WHERE LTRIM(RTRIM(SERIE)) = @serie`);
   const emp = empRes.recordset[0];
   if (!emp) throw new Error(`No se encontró configuración de Empresa para la serie "${serie}"`);
@@ -210,6 +214,12 @@ router.post('/timbrar', async (req, res) => {
     // 5. Persistir UUID/FechaTimbrado/IdCCP/NoCertificado. El Status SOLO avanza
     //    a TRASLADO fuera de modo prueba — un timbrado de prueba no debe marcar
     //    el pedido como si ya se hubiera trasladado de verdad.
+    // NoCertificado = el de NUESTRO propio CSD (Comprobante@NoCertificado, ya
+    // en el XML sellado) — NO el del PAC (pacResult.noCertificadoSAT es el de
+    // la autoridad certificadora del timbre, un dato distinto que no tiene
+    // columna propia y se sigue leyendo del XML timbrado cuando se arma el PDF.
+    const noCertificadoPropio = new DOMParser({ errorHandler: () => {} })
+      .parseFromString(xmlSellado, 'text/xml').documentElement.getAttribute('NoCertificado');
     const setStatus = conexion.testFel ? '' : `, Status='TRASLADO'`;
     await pool.request()
       .input('serie',  sql.VarChar(3),  serie)
@@ -217,7 +227,7 @@ router.post('/timbrar', async (req, res) => {
       .input('uuid',   sql.VarChar(40), pacResult.uuid)
       .input('fecha',  sql.VarChar(30), pacResult.fechaTimbrado || null)
       .input('idCCP',  sql.VarChar(36), idCCP)
-      .input('noCert', sql.VarChar(30), pacResult.noCertificadoSAT || null)
+      .input('noCert', sql.VarChar(30), noCertificadoPropio || null)
       .query(`UPDATE Empresa2.CartaPorte
               SET UUID=@uuid, FechaTimbrado=@fecha, IdCCP=@idCCP, NoCertificado=@noCert${setStatus}
               WHERE Serie=@serie AND CartaPorte=@cp`);
@@ -242,6 +252,58 @@ router.post('/timbrar', async (req, res) => {
   } catch (err) {
     console.error('CFDI timbrar error:', err);
     res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ── PDF (representación impresa) ────────────────────────────────────────────
+// GET /cfdi/pdf?serie=&cartaporte= — disponible con o sin timbre.
+router.get('/pdf', async (req, res) => {
+  try {
+    const serie      = (req.query.serie || '').trim();
+    const cartaporte = (req.query.cartaporte || '').trim();
+    if (!serie || !cartaporte) return res.status(400).send('Faltan parámetros: serie y cartaporte');
+
+    const pool = await getPool();
+    const buffer = await generarPDFBuffer(serie, cartaporte, pool);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="CP_${cartaporte}.pdf"`);
+    res.send(buffer);
+  } catch (err) {
+    console.error('CFDI pdf error:', err);
+    res.status(500).send(`Error al generar el PDF: ${err.message}`);
+  }
+});
+
+// ── XML timbrado ─────────────────────────────────────────────────────────────
+// GET /cfdi/xml?serie=&cartaporte= — solo disponible si Status=TRASLADO y hay UUID.
+router.get('/xml', async (req, res) => {
+  try {
+    const serie      = (req.query.serie || '').trim();
+    const cartaporte = (req.query.cartaporte || '').trim();
+    if (!serie || !cartaporte) return res.status(400).json({ error: 'Faltan parámetros' });
+
+    const pool = await getPool();
+    const cpRes = await pool.request()
+      .input('serie', sql.VarChar(3), serie)
+      .input('cp',    sql.VarChar(30), cartaporte)
+      .query(`SELECT Status, UUID FROM Empresa2.CartaPorte WHERE Serie=@serie AND CartaPorte=@cp`);
+    const cp = cpRes.recordset[0];
+    if (!cp) return res.status(404).json({ error: 'Carta Porte no encontrada' });
+    if ((cp.Status || '').trim().toUpperCase() !== 'TRASLADO' || !(cp.UUID || '').trim()) {
+      return res.status(400).json({ error: 'Esta Carta Porte todavía no está timbrada' });
+    }
+
+    const rutaTimbrado = path.join(RUTA_XML, `CP_${cartaporte}_timbrado.xml`);
+    const rutaPrueba    = path.join(RUTA_XML, `CP_${cartaporte}_Prueba.xml`);
+    const ruta = fs.existsSync(rutaTimbrado) ? rutaTimbrado : (fs.existsSync(rutaPrueba) ? rutaPrueba : null);
+    if (!ruta) return res.status(404).json({ error: `No se encontró el archivo XML en ${RUTA_XML}` });
+
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="CP_${cartaporte}.xml"`);
+    res.send(fs.readFileSync(ruta, 'utf8'));
+  } catch (err) {
+    console.error('CFDI xml error:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 

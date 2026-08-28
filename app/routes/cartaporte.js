@@ -39,7 +39,7 @@ router.get('/data', async (req, res) => {
     const dr = pool.request().input('serie', sql.VarChar(3), serie).input('anio', sql.Int, parseInt(anio));
     if (q && SEARCH_COLS.has(col)) dr.input('q', `%${q}%`);
     const dataRes = await dr.query(
-      `SELECT Serie,CartaPorte,Id_Pedido,FechaPedido,FehcaCarga,NombreComunCli,DesFlete,Status,RealizoPedido
+      `SELECT Serie,CartaPorte,Id_Pedido,FechaPedido,FehcaCarga,NombreComunCli,DesFlete,Status,RealizoPedido,UUID
        FROM Empresa2.CartaPorte ${where}
        ORDER BY ${orderBy}
        OFFSET ${offset} ROWS FETCH NEXT 20 ROWS ONLY`
@@ -47,8 +47,10 @@ router.get('/data', async (req, res) => {
 
     const fmt = v => v ? (v instanceof Date ? v.toISOString().slice(0,10) : String(v).trim()) : '';
     const fmtDate = v => { if (!v) return ''; const iso = v instanceof Date ? v.toISOString().slice(0,10) : String(v).trim().slice(0,10); return iso.length >= 10 ? `${iso.slice(8,10)}/${iso.slice(5,7)}/${iso.slice(0,4)}` : iso; };
-    const rows = dataRes.recordset.map(r =>
-      `<tr data-id="${fmt(r.CartaPorte)}">
+    const rows = dataRes.recordset.map(r => {
+      const timbrada = fmt(r.Status).toUpperCase() === 'TRASLADO' && !!fmt(r.UUID);
+      const qs = `serie=${encodeURIComponent(fmt(r.Serie))}&cartaporte=${encodeURIComponent(fmt(r.CartaPorte))}`;
+      return `<tr data-id="${fmt(r.CartaPorte)}">
         <td data-field="Serie"         data-value="${fmt(r.Serie)}">${fmt(r.Serie)}</td>
         <td data-field="CartaPorte"    data-value="${fmt(r.CartaPorte)}">${fmt(r.CartaPorte)}</td>
         <td data-field="FechaPedido"   data-value="${fmt(r.FechaPedido)}">${fmtDate(r.FechaPedido)}</td>
@@ -57,9 +59,14 @@ router.get('/data', async (req, res) => {
         <td data-field="DesFlete"      data-value="${fmt(r.DesFlete)}">${fmt(r.DesFlete)}</td>
         <td data-field="Status"        data-value="${fmt(r.Status)}">${fmt(r.Status)}</td>
         <td data-field="RealizoPedido" data-value="${fmt(r.RealizoPedido)}">${fmt(r.RealizoPedido)}</td>
+        <td class="text-center">${timbrada
+          ? `<a href="/cfdi/xml?${qs}" class="btn btn-sm btn-outline-secondary py-0 px-1" title="Descargar XML" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-code"></i></a>`
+          : `<button class="btn btn-sm btn-outline-secondary py-0 px-1" disabled title="Solo disponible una vez timbrada"><i class="bi bi-file-earmark-code"></i></button>`}</td>
+        <td class="text-center"><a href="/cfdi/pdf?${qs}" target="_blank" class="btn btn-sm btn-outline-secondary py-0 px-1" title="Ver/descargar PDF" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-pdf"></i></a></td>
         <td data-field="Id_Pedido"     data-value="${r.Id_Pedido||''}" style="display:none"></td>
-      </tr>`
-    ).join('');
+        <td data-field="UUID"          data-value="${fmt(r.UUID)}" style="display:none"></td>
+      </tr>`;
+    }).join('');
     res.json({ rows, page: safePage, totalPages, total });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

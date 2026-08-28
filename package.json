@@ -16,6 +16,8 @@
     "express": "^4.19.2",
     "express-session": "^1.18.0",
     "mssql": "^11.0.1",
+    "pdfmake": "^0.3.11",
+    "qrcode": "^1.5.4",
     "xmlbuilder2": "^4.0.3",
     "xslt-processor": "^5.0.12"
   },

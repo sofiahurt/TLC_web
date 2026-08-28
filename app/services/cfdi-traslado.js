@@ -3,6 +3,7 @@
 const { create } = require('xmlbuilder2');
 const { sql }    = require('../config/db');
 const { getSatDb } = require('../config/sat-db');
+const { serieFiscal } = require('../config/empresa-serie');
 const crypto     = require('crypto');
 
 // ── helpers ─────────────────────────────────────────────────────────────────
@@ -73,9 +74,11 @@ async function buildCFDITraslado(serie, cartaporte, pool) {
   if (!cpRes.recordset.length) throw new Error(`CartaPorte ${cartaporte} no encontrado`);
   const cp = cpRes.recordset[0];
 
-  // 2. Empresa (emisor/receptor)
+  // 2. Empresa (emisor/receptor) — varios centrales comparten la misma razón
+  // social/CSD (ver config/empresa-serie.js), por eso se resuelve la serie
+  // fiscal antes de consultar dbo.Empresas.
   const empRes = await pool.request()
-    .input('serie', sql.VarChar(10), serie)
+    .input('serie', sql.VarChar(10), serieFiscal(serie))
     .query(`SELECT * FROM dbo.Empresas WHERE LTRIM(RTRIM(SERIE)) = @serie`);
   if (!empRes.recordset.length) throw new Error(`Empresa para serie ${serie} no encontrada`);
   const emp = empRes.recordset[0];

@@ -5,6 +5,7 @@ const path = require('path');
 const { Credential } = require('@nodecfdi/credentials/node');
 const { Xslt, XmlParser } = require('xslt-processor');
 const { sql } = require('../config/db');
+const { serieFiscal } = require('../config/empresa-serie');
 
 const { RUTA_XML } = require('../config/storage');
 
@@ -25,9 +26,10 @@ function fmt(v) { return v ? String(v).trim() : ''; }
  * @returns {Promise<string>} XML sellado
  */
 async function sellarXML(xmlString, serie, cartaporte, pool) {
-  // 1. Empresa
+  // 1. Empresa — varios centrales comparten la misma razón social/CSD (ver
+  // config/empresa-serie.js), por eso se resuelve la serie fiscal primero.
   const empRes = await pool.request()
-    .input('serie', sql.VarChar(10), serie)
+    .input('serie', sql.VarChar(10), serieFiscal(serie))
     .query(`SELECT * FROM dbo.Empresas WHERE LTRIM(RTRIM(SERIE)) = @serie`);
   if (!empRes.recordset[0]) throw new Error(`Empresa no encontrada para serie "${serie}"`);
   const emp = empRes.recordset[0];
