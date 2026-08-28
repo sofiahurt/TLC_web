@@ -233,9 +233,9 @@ router.post('/timbrar', async (req, res) => {
               WHERE Serie=@serie AND CartaPorte=@cp`);
 
     // 6. Guardar el XML timbrado final; el sellado ya no es la versión oficial.
-    //    En modo prueba (TESTFEL) el nombre lleva "_Prueba" en vez de "_timbrado",
+    //    En modo prueba (TESTFEL) el nombre lleva "_Prueba" en vez de "_Timbrada",
     //    usando siempre el folio CartaPorte como identificador del archivo.
-    const sufijoArchivo = conexion.testFel ? 'Prueba' : 'timbrado';
+    const sufijoArchivo = conexion.testFel ? 'Prueba' : 'Timbrada';
     fs.mkdirSync(RUTA_XML, { recursive: true });
     fs.writeFileSync(path.join(RUTA_XML, `CP_${cartaporte}_${sufijoArchivo}.xml`), pacResult.xmlTimbrado, 'utf8');
     const rutaSellado = path.join(RUTA_XML, `CP_${cartaporte}_sellado.xml`);
@@ -293,13 +293,13 @@ router.get('/xml', async (req, res) => {
       return res.status(400).json({ error: 'Esta Carta Porte todavía no está timbrada' });
     }
 
-    const rutaTimbrado = path.join(RUTA_XML, `CP_${cartaporte}_timbrado.xml`);
-    const rutaPrueba    = path.join(RUTA_XML, `CP_${cartaporte}_Prueba.xml`);
-    const ruta = fs.existsSync(rutaTimbrado) ? rutaTimbrado : (fs.existsSync(rutaPrueba) ? rutaPrueba : null);
+    const rutaTimbrada = path.join(RUTA_XML, `CP_${cartaporte}_Timbrada.xml`);
+    const rutaPrueba   = path.join(RUTA_XML, `CP_${cartaporte}_Prueba.xml`);
+    const ruta = fs.existsSync(rutaTimbrada) ? rutaTimbrada : (fs.existsSync(rutaPrueba) ? rutaPrueba : null);
     if (!ruta) return res.status(404).json({ error: `No se encontró el archivo XML en ${RUTA_XML}` });
 
     res.setHeader('Content-Type', 'application/xml; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="CP_${cartaporte}.xml"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${path.basename(ruta)}"`);
     res.send(fs.readFileSync(ruta, 'utf8'));
   } catch (err) {
     console.error('CFDI xml error:', err);

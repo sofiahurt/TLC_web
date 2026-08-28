@@ -189,9 +189,9 @@ async function datosParaImpresion(serie, cartaporte, pool) {
 
   let xmlString;
   if (timbrado) {
-    const rutaTimbrado = path.join(RUTA_XML, `CP_${cartaporte}_timbrado.xml`);
-    const rutaPrueba    = path.join(RUTA_XML, `CP_${cartaporte}_Prueba.xml`);
-    const rutaFinal = fs.existsSync(rutaTimbrado) ? rutaTimbrado : (fs.existsSync(rutaPrueba) ? rutaPrueba : null);
+    const rutaTimbrada = path.join(RUTA_XML, `CP_${cartaporte}_Timbrada.xml`);
+    const rutaPrueba   = path.join(RUTA_XML, `CP_${cartaporte}_Prueba.xml`);
+    const rutaFinal = fs.existsSync(rutaTimbrada) ? rutaTimbrada : (fs.existsSync(rutaPrueba) ? rutaPrueba : null);
     if (!rutaFinal) throw new Error(`Esta Carta Porte está marcada como timbrada pero no se encontró el XML en ${RUTA_XML}`);
     xmlString = fs.readFileSync(rutaFinal, 'utf8');
   } else {
