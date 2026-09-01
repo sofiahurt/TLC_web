@@ -43,6 +43,7 @@ app.get('/', (req, res) => res.redirect('/dashboard'));
 app.get('/dashboard', (req, res) => res.render('dashboard', { usuario: req.session.usuario, modulo: 'dashboard' }));
 
 app.use('/cartaporte',  require('./app/routes/cartaporte'));
+app.use('/facturas',    require('./app/routes/facturas'));
 app.use('/centrales',   require('./app/routes/centrales'));
 app.use('/ciudades',    require('./app/routes/ciudades'));
 app.use('/colonias',    require('./app/routes/colonias'));

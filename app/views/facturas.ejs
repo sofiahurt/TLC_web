@@ -1,0 +1,452 @@
+<%- include('partials/header', { titulo: 'Facturas' }) %>
+<%- include('partials/sidebar') %>
+<div id="page-content">
+  <div class="d-flex align-items-center mb-3">
+    <button class="btn btn-sm btn-outline-secondary me-3 d-md-none" id="sidebarToggle"><i class="bi bi-list fs-5"></i></button>
+    <h4 class="mb-0 fw-bold flex-grow-1">Facturas</h4>
+  </div>
+
+  <div class="card border-0 shadow-sm mb-3 barra-filtros"><div class="card-body py-2">
+    <div class="row align-items-center g-2">
+      <div class="col-auto"><select id="searchCol" class="form-select form-select-sm">
+        <option value="Id_NoFactura">No. Factura</option><option value="NombreCom">Cliente</option><option value="RFC">RFC</option><option value="Status">Status</option><option value="SerieFac">Serie</option>
+      </select></div>
+      <div class="col col-md-4"><input type="text" id="searchInput" class="form-control form-control-sm" placeholder="Buscar..."></div>
+      <div class="col-auto ms-auto btn-action-group">
+        <button class="btn btn-sm btn-success" onclick="openAdd()"><i class="bi bi-plus-lg"></i> Nueva Factura</button>
+        <button class="btn btn-sm btn-primary" data-requires-selection disabled onclick="openEdit()"><i class="bi bi-eye"></i> Ver / Editar</button>
+      </div>
+    </div>
+  </div></div>
+
+  <div class="card border-0 shadow-sm"><div class="card-body p-0">
+    <div class="table-responsive"><table class="table table-hover table-sm mb-0">
+      <thead class="thead-tlc"><tr>
+        <th data-sort="SerieFac" style="width:80px">Serie <span class="sort-icon"></span></th>
+        <th data-sort="Id_NoFactura" style="width:90px">No. <span class="sort-icon"></span></th>
+        <th data-sort="FechaFactura" style="width:105px">Fecha <span class="sort-icon"></span></th>
+        <th data-sort="NombreCom">Cliente <span class="sort-icon"></span></th>
+        <th data-sort="RFC" style="width:130px">RFC <span class="sort-icon"></span></th>
+        <th style="width:70px">Moneda</th>
+        <th style="width:100px" class="text-end">Subtotal</th>
+        <th style="width:100px" class="text-end">Total</th>
+        <th data-sort="Status" style="width:100px">Status <span class="sort-icon"></span></th>
+        <th data-sort="Facturo" style="width:120px">Realizó <span class="sort-icon"></span></th>
+      </tr></thead>
+      <tbody id="tableBody"></tbody>
+    </table></div>
+  </div>
+  <div class="card-footer bg-white d-flex align-items-center justify-content-between py-2">
+    <span class="page-info" id="pageInfo"></span>
+    <div id="pagination">
+      <button class="btn btn-sm btn-outline-secondary" data-action="prev"><i class="bi bi-chevron-left"></i> Anterior</button>
+      <button class="btn btn-sm btn-outline-secondary" data-action="next">Siguiente <i class="bi bi-chevron-right"></i></button>
+    </div>
+  </div></div>
+</div>
+
+<!-- ═══════════════ MODAL FACTURA ═══════════════ -->
+<div class="modal fade" id="frmModal" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="frmTitle">Nueva Factura</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" onclick="return onCerrarModal()"></button>
+      </div>
+      <div class="modal-body">
+        <div id="frmError" class="alert alert-danger d-none py-2 small"></div>
+        <div id="frmWarning" class="alert alert-warning d-none py-2 small"></div>
+
+        <!-- Cabecera -->
+        <div class="row g-2 mb-2 align-items-end">
+          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Serie</label>
+            <input type="text" id="f_SerieFac" class="form-control form-control-sm" maxlength="20"></div>
+          <div class="col-md-1"><label class="form-label fw-semibold small mb-1">No.</label>
+            <input type="text" id="f_Id_NoFactura" class="form-control form-control-sm bg-light" readonly></div>
+          <div class="col-md-5">
+            <label class="form-label fw-semibold small mb-1">Cliente <span class="text-danger">*</span></label>
+            <div class="input-group input-group-sm">
+              <input type="hidden" id="f_Id_Cliente">
+              <input type="text" id="f_NombreCom_disp" class="form-control form-control-sm" placeholder="Seleccionar cliente..." readonly>
+              <button class="btn btn-outline-secondary btn-sm" type="button" onclick="openLookupCliente()"><i class="bi bi-search"></i></button>
+            </div>
+          </div>
+          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">RFC</label>
+            <input type="text" id="f_RFC" class="form-control form-control-sm bg-light" readonly></div>
+          <div class="col-md-2 d-flex align-items-center pb-1">
+            <div class="form-check"><input type="checkbox" id="f_FlagResFac" class="form-check-input" onchange="onToggleResumen()"><label class="form-check-label small" for="f_FlagResFac">Factura resumen</label></div>
+          </div>
+        </div>
+        <div class="row g-2 mb-3">
+          <div class="col-md-2"><label class="form-label small mb-1">Moneda</label><input type="text" id="f_MonFactura" class="form-control form-control-sm bg-light" readonly></div>
+          <div class="col-md-2"><label class="form-label small mb-1">T.C.</label><input type="text" id="f_TipoCambio" class="form-control form-control-sm bg-light" readonly></div>
+          <div class="col-md-2"><label class="form-label small mb-1">Forma de pago</label><input type="text" id="f_c_FormaPago" class="form-control form-control-sm bg-light" readonly></div>
+          <div class="col-md-2"><label class="form-label small mb-1">Método de pago</label><input type="text" id="f_ClaveMP" class="form-control form-control-sm bg-light" readonly></div>
+          <div class="col-md-3"><label class="form-label small mb-1">Uso CFDI</label><input type="text" id="f_c_UsoCFDI" class="form-control form-control-sm bg-light" readonly></div>
+          <div class="col-md-1"><label class="form-label small mb-1">Status</label><input type="text" id="f_Status" class="form-control form-control-sm bg-light" readonly></div>
+        </div>
+
+        <hr>
+
+        <!-- Agregar Carta Porte como partida -->
+        <div class="row g-2 mb-2 align-items-end">
+          <div class="col-md-2">
+            <label class="form-label small mb-1">Serie CP</label>
+            <select id="cp_Serie" class="form-select form-select-sm" disabled>
+              <% (typeof centrales !== 'undefined' ? centrales : []).forEach(c => { const cc=(c.Central||'').trim(); %>
+                <option value="<%= cc %>" <%= cc===central ? 'selected' : '' %>><%= cc %> - <%= c.Descripcion %></option>
+              <% }) %>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <button class="btn btn-sm btn-primary" onclick="openLookupCP()"><i class="bi bi-search"></i> Buscar Carta Porte...</button>
+          </div>
+        </div>
+
+        <!-- Detalle -->
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered align-middle" id="tblDetalle" style="font-size:.78rem">
+            <thead class="table-light">
+              <tr>
+                <th>Carta Porte</th><th>Descripción</th>
+                <th class="text-center">Flete</th><th class="text-center">Demoras</th><th class="text-center">Km</th>
+                <th class="text-center">Casetas</th><th class="text-center">Maniobras</th><th class="text-center">Pensión</th><th class="text-center">Estadías</th><th class="text-center">Otros</th>
+                <th class="text-end">Subtotal</th><th class="text-end">IVA</th><th class="text-end">Reten</th><th class="text-end">Total</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="detBody"></tbody>
+            <tfoot>
+              <tr class="fw-bold table-light">
+                <td colspan="10" class="text-end">Totales:</td>
+                <td class="text-end" id="totSub">0.00</td>
+                <td class="text-end" id="totIva">0.00</td>
+                <td class="text-end" id="totRet">0.00</td>
+                <td class="text-end" id="totTot">0.00</td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal" onclick="return onCerrarModal()"><i class="bi bi-x-lg"></i> Cerrar</button>
+        <button class="btn btn-primary" onclick="confirmarFactura()"><i class="bi bi-check2"></i> Confirmar factura</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Lookup Cliente (reusa /clientes/lookup) -->
+<div class="modal fade modal-lookup" id="lookupCliente" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-lg">
+  <div class="modal-content">
+    <div class="modal-header py-2"><h6 class="modal-title">Seleccionar Cliente</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <input type="text" id="lkCliQ" class="form-control form-control-sm mb-2" placeholder="Buscar cliente...">
+      <table class="table table-hover table-sm"><thead class="table-secondary"><tr><th>ID</th><th>Nombre</th><th>RFC</th></tr></thead>
+      <tbody id="lkCliBody"></tbody></table>
+      <div class="d-flex justify-content-between align-items-center">
+        <span id="lkCliInfo" class="small text-muted"></span>
+        <div><button class="btn btn-sm btn-outline-secondary" id="lkCliPrev">‹</button> <button class="btn btn-sm btn-outline-secondary" id="lkCliNext">›</button></div>
+      </div>
+    </div>
+  </div>
+</div></div>
+
+<!-- Lookup Carta Porte (por cliente, con pestañas Emitidas / Facturadas) -->
+<div class="modal fade modal-lookup" id="lookupCP" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-lg">
+  <div class="modal-content">
+    <div class="modal-header py-2"><h6 class="modal-title">Seleccionar Carta Porte</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <ul class="nav nav-tabs mb-2" id="cpLkTabs">
+        <li class="nav-item"><a class="nav-link active" data-status="EMITIDO" href="#" onclick="return cpLkSwitchTab(this)">Emitidas</a></li>
+        <li class="nav-item"><a class="nav-link" data-status="FACTURADO" href="#" onclick="return cpLkSwitchTab(this)">Facturadas</a></li>
+      </ul>
+      <input type="text" id="cpLkQ" class="form-control form-control-sm mb-2" placeholder="Buscar por folio o descripción...">
+      <table class="table table-hover table-sm"><thead class="table-secondary"><tr><th>Carta Porte</th><th>Fecha</th><th>Descripción</th><th>Status</th><th class="text-end">Flete/Demoras</th><th id="cpLkColExtra"></th></tr></thead>
+      <tbody id="cpLkBody"></tbody></table>
+      <div class="d-flex justify-content-between align-items-center">
+        <span id="cpLkInfo" class="small text-muted"></span>
+        <div><button class="btn btn-sm btn-outline-secondary" id="cpLkPrev">‹</button> <button class="btn btn-sm btn-outline-secondary" id="cpLkNext">›</button></div>
+      </div>
+    </div>
+  </div>
+</div></div>
+
+<%- include('partials/footer') %>
+<script>
+const browse=initBrowse({searchInput:document.getElementById('searchInput'),searchColumn:document.getElementById('searchCol'),tableBody:document.getElementById('tableBody'),paginationEl:document.getElementById('pagination'),infoEl:document.getElementById('pageInfo'),fetchUrl:'/facturas/data',defaultSort:'Id_NoFactura',defaultDir:'desc'});
+const modal=new bootstrap.Modal(document.getElementById('frmModal'));
+const errEl=document.getElementById('frmError'), warnEl=document.getElementById('frmWarning');
+let _factura={idNoFactura:null, confirmada:false, cliente:null};
+
+function showError(msg){errEl.textContent=msg;errEl.classList.remove('d-none');}
+function hideError(){errEl.classList.add('d-none');}
+function showWarning(msg){warnEl.textContent=msg;warnEl.classList.remove('d-none');}
+function hideWarning(){warnEl.classList.add('d-none');}
+
+function clearForm(){
+  _factura={idNoFactura:null, confirmada:false, cliente:null};
+  document.getElementById('f_Id_NoFactura').value='';
+  document.getElementById('f_SerieFac').value='';
+  document.getElementById('f_Id_Cliente').value='';
+  document.getElementById('f_NombreCom_disp').value='';
+  document.getElementById('f_RFC').value='';
+  document.getElementById('f_MonFactura').value='';
+  document.getElementById('f_TipoCambio').value='';
+  document.getElementById('f_c_FormaPago').value='';
+  document.getElementById('f_ClaveMP').value='';
+  document.getElementById('f_c_UsoCFDI').value='';
+  document.getElementById('f_Status').value='EMITIDA';
+  document.getElementById('f_FlagResFac').checked=false;
+  document.getElementById('detBody').innerHTML='';
+  pintarTotales({SubTotal:0,IVA:0,Retencion:0,TOTAL:0});
+  hideError(); hideWarning();
+}
+
+function refrescarNumeroConsecutivo(){
+  if(_factura.idNoFactura) return; // ya se creó la cabecera, el número ya está fijo
+  const serieFac=document.getElementById('f_SerieFac').value.trim();
+  fetch('/facturas/lookup/numero-consecutivo?serieFac='+encodeURIComponent(serieFac)).then(r=>r.json()).then(d=>{
+    if(d.next!=null) document.getElementById('f_Id_NoFactura').value=d.next;
+  });
+}
+document.getElementById('f_SerieFac').addEventListener('input',debounce(refrescarNumeroConsecutivo,300));
+
+function openAdd(){
+  clearForm();
+  document.getElementById('frmTitle').textContent='Nueva Factura';
+  document.getElementById('f_SerieFac').readOnly=false;
+  document.getElementById('f_NombreCom_disp').readOnly=false;
+  refrescarNumeroConsecutivo();
+  modal.show();
+}
+
+function openEdit(){
+  if(!window._selectedRow) return;
+  clearForm();
+  document.getElementById('frmTitle').textContent='Factura #'+window._selectedRow.Id_NoFactura;
+  cargarFactura(parseInt(window._selectedRow.Id_NoFactura), window._selectedRow.SerieFac||'');
+  modal.show();
+}
+
+function cargarFactura(idNoFactura, serieFac){
+  serieFac=serieFac||'';
+  fetch('/facturas/get?idNoFactura='+idNoFactura+'&serieFac='+encodeURIComponent(serieFac)).then(r=>r.json()).then(d=>{
+    if(d.error){showError(d.error);return;}
+    _factura={idNoFactura, serieFac, confirmada:true, cliente:d.cabecera.Id_Cliente};
+    const c=d.cabecera;
+    document.getElementById('f_Id_NoFactura').value=c.Id_NoFactura;
+    document.getElementById('f_SerieFac').value=(c.SerieFac||'').trim();
+    document.getElementById('f_SerieFac').readOnly=true;
+    document.getElementById('f_Id_Cliente').value=c.Id_Cliente;
+    document.getElementById('f_NombreCom_disp').value=(c.NombreCom||'').trim();
+    document.getElementById('f_NombreCom_disp').readOnly=true;
+    document.getElementById('f_RFC').value=(c.RFC||'').trim();
+    document.getElementById('f_MonFactura').value=(c.MonFactura||'').trim();
+    document.getElementById('f_TipoCambio').value=c.TipoCambio||'';
+    document.getElementById('f_c_FormaPago').value=(c.c_FormaPago||'').trim();
+    document.getElementById('f_ClaveMP').value=(c.ClaveMP||'').trim();
+    document.getElementById('f_c_UsoCFDI').value=(c.c_UsoCFDI||'').trim();
+    document.getElementById('f_Status').value=(c.Status||'').trim();
+    document.getElementById('f_FlagResFac').checked=c.FlagResFac==1;
+    pintarDetalle(d.lineas);
+    pintarTotales(c);
+  });
+}
+
+function onToggleResumen(){
+  // Solo aplica visualmente si ya hay factura creada; el backend recalcula al tocar cualquier línea.
+  // Si aún no hay líneas no hace falta llamar al server.
+}
+
+function fmtN(v){return (parseFloat(v)||0).toFixed(2);}
+
+function pintarTotales(c){
+  document.getElementById('totSub').textContent=fmtN(c.SubTotal);
+  document.getElementById('totIva').textContent=fmtN(c.IVA);
+  document.getElementById('totRet').textContent=fmtN(c.Retencion);
+  document.getElementById('totTot').textContent=fmtN(c.TOTAL);
+}
+
+const CONCEPTOS=[
+  {key:'flete',montoCol:'COSTOFLETE',flagCol:'FlagCobFlete',label:'Flete'},
+  {key:'demoras',montoCol:'COSTODEMORAS',flagCol:'FLAGCOBDEM',label:'Demoras'},
+  {key:'kilometros',montoCol:'KILOMETROS',flagCol:'FLAGKILOMETROS',label:'Km'},
+  {key:'casetas',montoCol:'COSTOAUTOPISTAS',flagCol:'FLAGCOBAUTO',label:'Casetas'},
+  {key:'maniobras',montoCol:'COSTOMANIOBRAS',flagCol:'FLAGCOBMAN',label:'Maniobras'},
+  {key:'pension',montoCol:'CostoPension',flagCol:'FlagCostoPension',label:'Pensión'},
+  {key:'estadias',montoCol:'CostoEstadias',flagCol:'FlagCostoEstadias',label:'Estadías'},
+  {key:'otros',montoCol:'COSTOSOTROS',flagCol:'FLAGCOBOTROS',label:'Otros'},
+];
+
+// Nota: idNoFactura por sí solo NO identifica de forma única una factura
+// (la clave real es SerieFac+Id_NoFactura); toggleFlag/eliminarLinea toman
+// la SerieFac de _factura.serieFac (la factura abierta en el modal), no de la fila.
+function filaDetalleHtml(l){
+  const cp=(l.CARTAPORTE||'').trim(), desc=(l.DESFLETE||'').trim();
+  const celdas=CONCEPTOS.map(c=>{
+    const activo=Number(l[c.flagCol])===1;
+    const monto=parseFloat(l[c.montoCol])||0;
+    return `<td class="text-center">
+      <div class="form-check form-check-inline mb-0">
+        <input type="checkbox" class="form-check-input" ${activo?'checked':''} onchange="toggleFlag(${l.ID_NOFACTURA},${l.ID_NODETAFAC},'${c.key}')">
+      </div>
+      <div class="small">${monto?fmtN(monto):''}</div>
+    </td>`;
+  }).join('');
+  return `<tr data-idf="${l.ID_NOFACTURA}" data-idd="${l.ID_NODETAFAC}">
+    <td>${cp}</td><td>${desc}</td>
+    ${celdas}
+    <td class="text-end" data-col="SUBTOTAL">${fmtN(l.SUBTOTAL)}</td>
+    <td class="text-end" data-col="IVA">${fmtN(l.IVA)}</td>
+    <td class="text-end" data-col="RETEN">${fmtN(l.RETEN)}</td>
+    <td class="text-end" data-col="TOTAL">${fmtN(l.TOTAL)}</td>
+    <td class="text-center"><button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="eliminarLinea(${l.ID_NOFACTURA},${l.ID_NODETAFAC})"><i class="bi bi-trash"></i></button></td>
+  </tr>`;
+}
+
+function pintarDetalle(lineas){
+  document.getElementById('detBody').innerHTML=lineas.map(filaDetalleHtml).join('');
+}
+
+// ── Cliente lookup ────────────────────────────────────────────────────────
+let lkCliPage=1;const lkCliModal=new bootstrap.Modal(document.getElementById('lookupCliente'));
+function openLookupCliente(){
+  if(_factura.idNoFactura){showError('No se puede cambiar el cliente de una factura que ya tiene partidas.');return;}
+  lkCliPage=1;document.getElementById('lkCliQ').value='';loadLkCli();lkCliModal.show();
+}
+function loadLkCli(){fetch(`/clientes/lookup?q=${encodeURIComponent(document.getElementById('lkCliQ').value)}&page=${lkCliPage}`).then(r=>r.json()).then(d=>{
+  document.getElementById('lkCliBody').innerHTML=d.rows.map(r=>`<tr data-id="${r.ID_CLIENTE}" style="cursor:pointer"><td>${r.ID_CLIENTE}</td><td>${(r.NOMBRECOMUN||'').trim()}</td><td>${(r.RFC||'').trim()}</td></tr>`).join('');
+  document.getElementById('lkCliInfo').textContent=`Pág ${d.page}/${d.totalPages}`;
+  document.getElementById('lkCliPrev').disabled=d.page<=1;document.getElementById('lkCliNext').disabled=d.page>=d.totalPages;
+});}
+document.getElementById('lkCliQ').addEventListener('input',debounce(()=>{lkCliPage=1;loadLkCli();},300));
+document.getElementById('lkCliPrev').addEventListener('click',()=>{if(lkCliPage>1){lkCliPage--;loadLkCli();}});
+document.getElementById('lkCliNext').addEventListener('click',()=>{lkCliPage++;loadLkCli();});
+document.getElementById('lkCliBody').addEventListener('click',e=>{
+  const row=e.target.closest('tr[data-id]');if(!row)return;
+  const idCliente=row.dataset.id;
+  lkCliModal.hide();
+  fetch('/facturas/lookup/cliente-defaults?idCliente='+idCliente).then(r=>r.json()).then(d=>{
+    if(d.error){showError(d.error);return;}
+    _factura.cliente=idCliente;
+    document.getElementById('f_Id_Cliente').value=idCliente;
+    document.getElementById('f_NombreCom_disp').value=d.NOMBRECOMUN||d.NOMBRECOM;
+    document.getElementById('f_RFC').value=d.RFC;
+    document.getElementById('f_c_FormaPago').value=d.c_FormaPago;
+    document.getElementById('f_ClaveMP').value=d.ClaveMP;
+    document.getElementById('f_c_UsoCFDI').value=d.c_UsoCFDI;
+    document.getElementById('f_MonFactura').value='MXN';
+    document.getElementById('f_TipoCambio').value='';
+    window._cliProdServ={clave:d.C_CLAVEPRODSERV, desc:d.DESCRIPCION_PRO};
+  });
+});
+
+// ── Agregar partida ───────────────────────────────────────────────────────
+function agregarPartida(serie, cp){
+  hideError();hideWarning();
+  const idCliente=document.getElementById('f_Id_Cliente').value;
+  if(!idCliente){showError('Seleccione primero un cliente.');return;}
+  const body={
+    idNoFactura:_factura.idNoFactura||'', idCliente,
+    serie, cartaporte:cp,
+    serieFac:document.getElementById('f_SerieFac').value.trim(),
+    flagResFac:document.getElementById('f_FlagResFac').checked?1:0,
+    c_FormaPago:document.getElementById('f_c_FormaPago').value.trim(),
+    ClaveMP:document.getElementById('f_ClaveMP').value.trim(),
+    c_UsoCFDI:document.getElementById('f_c_UsoCFDI').value.trim(),
+    claveProdServ:(window._cliProdServ&&window._cliProdServ.clave)||'',
+    descripcionProdServ:(window._cliProdServ&&window._cliProdServ.desc)||'',
+  };
+  fetch('/facturas/partida/agregar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+    .then(r=>r.json()).then(d=>{
+      if(d.error){showError(d.error);return;}
+      _factura.idNoFactura=d.idNoFactura;
+      _factura.serieFac=d.serieFac||'';
+      document.getElementById('f_Id_NoFactura').value=d.idNoFactura;
+      document.getElementById('f_SerieFac').readOnly=true;
+      document.getElementById('f_NombreCom_disp').readOnly=true;
+      cargarFactura(d.idNoFactura, d.serieFac||'');
+    });
+}
+
+// ── Lookup Carta Porte (por cliente, pestañas Emitidas/Facturadas) ─────────
+let cpLkPage=1, cpLkStatus='EMITIDO'; const cpLkModal=new bootstrap.Modal(document.getElementById('lookupCP'));
+function openLookupCP(){
+  const idCliente=document.getElementById('f_Id_Cliente').value;
+  if(!idCliente){showError('Seleccione primero un cliente.');return;}
+  hideError();
+  cpLkPage=1; cpLkStatus='EMITIDO';
+  document.querySelectorAll('#cpLkTabs .nav-link').forEach(a=>a.classList.toggle('active', a.dataset.status===cpLkStatus));
+  document.getElementById('cpLkQ').value='';
+  loadCpLk();
+  cpLkModal.show();
+}
+function cpLkSwitchTab(a){
+  cpLkStatus=a.dataset.status; cpLkPage=1;
+  document.querySelectorAll('#cpLkTabs .nav-link').forEach(x=>x.classList.toggle('active', x===a));
+  loadCpLk();
+  return false;
+}
+function loadCpLk(){
+  const idCliente=document.getElementById('f_Id_Cliente').value;
+  const q=document.getElementById('cpLkQ').value;
+  document.getElementById('cpLkColExtra').textContent = cpLkStatus==='FACTURADO' ? 'Factura' : '';
+  fetch(`/facturas/lookup/cartaporte?idCliente=${idCliente}&status=${cpLkStatus}&q=${encodeURIComponent(q)}&page=${cpLkPage}`)
+    .then(r=>r.json()).then(d=>{
+      document.getElementById('cpLkBody').innerHTML=d.rows.map(r=>{
+        const monto=r.CostoFlete||r.CostoDemoras||0;
+        const extra=cpLkStatus==='FACTURADO' ? `${r.NoFactura||''}${r.AnioFactura?(' / '+r.AnioFactura):''}` : '';
+        return `<tr data-cp="${r.CartaPorte}" style="cursor:pointer"><td>${r.CartaPorte}</td><td>${r.FechaPedido}</td><td>${r.DesFlete}</td><td>${r.Status||''}</td><td class="text-end">${fmtN(monto)}</td><td>${extra}</td></tr>`;
+      }).join('');
+      document.getElementById('cpLkInfo').textContent=`Pág ${d.page}/${d.totalPages} — ${d.total} registros`;
+      document.getElementById('cpLkPrev').disabled=d.page<=1;
+      document.getElementById('cpLkNext').disabled=d.page>=d.totalPages;
+    });
+}
+document.getElementById('cpLkQ').addEventListener('input',debounce(()=>{cpLkPage=1;loadCpLk();},300));
+document.getElementById('cpLkPrev').addEventListener('click',()=>{if(cpLkPage>1){cpLkPage--;loadCpLk();}});
+document.getElementById('cpLkNext').addEventListener('click',()=>{cpLkPage++;loadCpLk();});
+document.getElementById('cpLkBody').addEventListener('click',e=>{
+  const row=e.target.closest('tr[data-cp]'); if(!row) return;
+  const cp=row.dataset.cp;
+  const serie=document.getElementById('cp_Serie').value;
+  if(cpLkStatus==='FACTURADO' && !confirm('La Carta Porte ya está facturada, proceda con cuidado.\n¿Desea continuar?')) return;
+  cpLkModal.hide();
+  agregarPartida(serie, cp);
+});
+
+function toggleFlag(idNoFactura, idNoDetaFac, concepto){
+  const serieFac=_factura.serieFac||'';
+  fetch('/facturas/detalle/toggle-flag',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idNoFactura,idNoDetaFac,serieFac,concepto})})
+    .then(r=>r.json()).then(d=>{
+      if(d.error){showError(d.error);cargarFactura(idNoFactura,serieFac);return;}
+      cargarFactura(idNoFactura,serieFac);
+    });
+}
+
+function eliminarLinea(idNoFactura, idNoDetaFac){
+  if(!confirm('¿Eliminar esta partida de la factura? La Carta Porte quedará disponible para facturarse de nuevo si no queda en otra factura.')) return;
+  const serieFac=_factura.serieFac||'';
+  fetch('/facturas/partida/eliminar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idNoFactura,idNoDetaFac,serieFac})})
+    .then(r=>r.json()).then(d=>{
+      if(d.error){showError(d.error);return;}
+      cargarFactura(idNoFactura,serieFac);
+    });
+}
+
+function confirmarFactura(){
+  if(!_factura.idNoFactura){showError('Agregue al menos una Carta Porte como partida antes de confirmar.');return;}
+  _factura.confirmada=true;
+  modal.hide();
+  browse.load();
+}
+
+function onCerrarModal(){
+  if(_factura.idNoFactura && !_factura.confirmada){
+    fetch('/facturas/cabecera/cancelar-sin-confirmar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idNoFactura:_factura.idNoFactura,serieFac:_factura.serieFac||''})})
+      .then(()=>browse.load());
+  }
+  return true;
+}
+</script>
