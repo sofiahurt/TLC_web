@@ -73,13 +73,18 @@
           </div>
           <div class="col-md-2"><label class="form-label fw-semibold small mb-1">RFC</label>
             <input type="text" id="f_RFC" class="form-control form-control-sm bg-light" readonly></div>
-          <div class="col-md-2 d-flex align-items-center pb-1">
-            <div class="form-check"><input type="checkbox" id="f_FlagResFac" class="form-check-input" onchange="onToggleResumen()"><label class="form-check-label small" for="f_FlagResFac">Factura resumen</label></div>
+          <div class="col-md-2">
+            <div class="form-check"><input type="checkbox" id="f_FlagResFac" class="form-check-input" onchange="onToggleResumen()"><label class="form-check-label small" for="f_FlagResFac">Un Concepto</label></div>
+            <div class="form-check"><input type="checkbox" id="f_IncluirCP" class="form-check-input" onchange="onCabeceraFieldChange()"><label class="form-check-label small" for="f_IncluirCP">Incluir CP</label></div>
           </div>
+        </div>
+        <div class="row g-2 mb-2 d-none" id="rowDescripcionResumen">
+          <div class="col-md-12"><label class="form-label small mb-1">Descripción (Un Concepto)</label>
+            <input type="text" id="f_Descripcion" class="form-control form-control-sm" maxlength="254" onchange="onCabeceraFieldChange()"></div>
         </div>
         <div class="row g-2 mb-3">
           <div class="col-md-2"><label class="form-label small mb-1">Moneda</label><input type="text" id="f_MonFactura" class="form-control form-control-sm bg-light" readonly></div>
-          <div class="col-md-2"><label class="form-label small mb-1">T.C.</label><input type="text" id="f_TipoCambio" class="form-control form-control-sm bg-light" readonly></div>
+          <div class="col-md-2"><label class="form-label small mb-1">Ref. Cliente</label><input type="text" id="f_RefCliente" class="form-control form-control-sm bg-light" readonly></div>
           <div class="col-md-2"><label class="form-label small mb-1">Forma de pago</label><input type="text" id="f_c_FormaPago" class="form-control form-control-sm bg-light" readonly></div>
           <div class="col-md-2"><label class="form-label small mb-1">Método de pago</label><input type="text" id="f_ClaveMP" class="form-control form-control-sm bg-light" readonly></div>
           <div class="col-md-3"><label class="form-label small mb-1">Uso CFDI</label><input type="text" id="f_c_UsoCFDI" class="form-control form-control-sm bg-light" readonly></div>
@@ -109,7 +114,7 @@
             <thead class="table-light">
               <tr>
                 <th>Carta Porte</th><th>Descripción</th>
-                <th class="text-center">Flete</th><th class="text-center">Demoras</th><th class="text-center">Km</th>
+                <th class="text-center">Flete</th><th class="text-center">Renta</th><th class="text-center">Km</th>
                 <th class="text-center">Casetas</th><th class="text-center">Maniobras</th><th class="text-center">Pensión</th><th class="text-center">Estadías</th><th class="text-center">Otros</th>
                 <th class="text-end">Subtotal</th><th class="text-end">IVA</th><th class="text-end">Reten</th><th class="text-end">Total</th><th></th>
               </tr>
@@ -126,6 +131,13 @@
               </tr>
             </tfoot>
           </table>
+        </div>
+
+        <div class="row g-2 mt-2">
+          <div class="col-md-12"><label class="form-label small mb-1">Observaciones</label>
+            <textarea id="f_Observaciones" class="form-control form-control-sm" rows="2" maxlength="1000" onchange="onCabeceraFieldChange()"></textarea>
+          </div>
+          <div class="col-md-12 small text-muted mt-1">Facturó: <strong><%= usuario.nombre.trim() %> <%= usuario.apellido ? usuario.apellido.trim() : '' %></strong></div>
         </div>
       </div>
       <div class="modal-footer">
@@ -192,12 +204,16 @@ function clearForm(){
   document.getElementById('f_NombreCom_disp').value='';
   document.getElementById('f_RFC').value='';
   document.getElementById('f_MonFactura').value='';
-  document.getElementById('f_TipoCambio').value='';
+  document.getElementById('f_RefCliente').value='';
   document.getElementById('f_c_FormaPago').value='';
   document.getElementById('f_ClaveMP').value='';
   document.getElementById('f_c_UsoCFDI').value='';
   document.getElementById('f_Status').value='EMITIDA';
   document.getElementById('f_FlagResFac').checked=false;
+  document.getElementById('f_IncluirCP').checked=false;
+  document.getElementById('f_Descripcion').value='';
+  document.getElementById('f_Observaciones').value='';
+  document.getElementById('rowDescripcionResumen').classList.add('d-none');
   document.getElementById('detBody').innerHTML='';
   pintarTotales({SubTotal:0,IVA:0,Retencion:0,TOTAL:0});
   hideError(); hideWarning();
@@ -243,20 +259,42 @@ function cargarFactura(idNoFactura, serieFac){
     document.getElementById('f_NombreCom_disp').readOnly=true;
     document.getElementById('f_RFC').value=(c.RFC||'').trim();
     document.getElementById('f_MonFactura').value=(c.MonFactura||'').trim();
-    document.getElementById('f_TipoCambio').value=c.TipoCambio||'';
+    document.getElementById('f_RefCliente').value=(c.RefCliente||'').trim();
     document.getElementById('f_c_FormaPago').value=(c.c_FormaPago||'').trim();
     document.getElementById('f_ClaveMP').value=(c.ClaveMP||'').trim();
     document.getElementById('f_c_UsoCFDI').value=(c.c_UsoCFDI||'').trim();
     document.getElementById('f_Status').value=(c.Status||'').trim();
     document.getElementById('f_FlagResFac').checked=c.FlagResFac==1;
+    document.getElementById('f_IncluirCP').checked=c.IncluirCP==1;
+    document.getElementById('f_Descripcion').value=(c.Descripcion||'').trim();
+    document.getElementById('f_Observaciones').value=(c.Observaciones||'').trim();
+    document.getElementById('rowDescripcionResumen').classList.toggle('d-none', c.FlagResFac!=1);
     pintarDetalle(d.lineas);
     pintarTotales(c);
   });
 }
 
 function onToggleResumen(){
-  // Solo aplica visualmente si ya hay factura creada; el backend recalcula al tocar cualquier línea.
-  // Si aún no hay líneas no hace falta llamar al server.
+  document.getElementById('rowDescripcionResumen').classList.toggle('d-none', !document.getElementById('f_FlagResFac').checked);
+  onCabeceraFieldChange();
+}
+
+// Persiste IncluirCP/Descripción/Observaciones/Un-Concepto si la factura ya existe;
+// si aún no existe, los valores viajan con la primera partida (ver agregarPartida).
+function onCabeceraFieldChange(){
+  if(!_factura.idNoFactura) return;
+  const body={
+    idNoFactura:_factura.idNoFactura, serieFac:_factura.serieFac||'',
+    flagResFac:document.getElementById('f_FlagResFac').checked?1:0,
+    incluirCP:document.getElementById('f_IncluirCP').checked?1:0,
+    descripcion:document.getElementById('f_Descripcion').value.trim(),
+    observaciones:document.getElementById('f_Observaciones').value.trim(),
+  };
+  fetch('/facturas/cabecera/actualizar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+    .then(r=>r.json()).then(d=>{
+      if(d.error){showError(d.error);return;}
+      pintarTotales(d.totales);
+    });
 }
 
 function fmtN(v){return (parseFloat(v)||0).toFixed(2);}
@@ -337,7 +375,6 @@ document.getElementById('lkCliBody').addEventListener('click',e=>{
     document.getElementById('f_ClaveMP').value=d.ClaveMP;
     document.getElementById('f_c_UsoCFDI').value=d.c_UsoCFDI;
     document.getElementById('f_MonFactura').value='MXN';
-    document.getElementById('f_TipoCambio').value='';
     window._cliProdServ={clave:d.C_CLAVEPRODSERV, desc:d.DESCRIPCION_PRO};
   });
 });
@@ -352,6 +389,9 @@ function agregarPartida(serie, cp){
     serie, cartaporte:cp,
     serieFac:document.getElementById('f_SerieFac').value.trim(),
     flagResFac:document.getElementById('f_FlagResFac').checked?1:0,
+    incluirCP:document.getElementById('f_IncluirCP').checked?1:0,
+    descripcion:document.getElementById('f_Descripcion').value.trim(),
+    observaciones:document.getElementById('f_Observaciones').value.trim(),
     c_FormaPago:document.getElementById('f_c_FormaPago').value.trim(),
     ClaveMP:document.getElementById('f_ClaveMP').value.trim(),
     c_UsoCFDI:document.getElementById('f_c_UsoCFDI').value.trim(),

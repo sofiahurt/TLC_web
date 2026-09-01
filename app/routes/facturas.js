@@ -107,6 +107,10 @@ const CONCEPTOS = {
 };
 
 async function yaFacturadoPorConcepto(tx, serie, cartaporte, excluir) {
+  // Solo cuenta lo que SIGUE marcado (bandera=1) en líneas previas no
+  // canceladas. Si el usuario desmarcó un concepto en una factura anterior,
+  // ese importe se borra (ver toggle-flag) y queda libre para poder
+  // facturarse después -- desmarcar no debe "consumir" el monto para siempre.
   const partes = Object.entries(CONCEPTOS).map(([k, c]) =>
     `ISNULL(SUM(CASE WHEN ISNULL(fd.${c.flagCol},0)=1 THEN fd.${c.montoCol} ELSE 0 END),0) AS ${k}`
   ).join(', ');
@@ -128,6 +132,43 @@ async function yaFacturadoPorConcepto(tx, serie, cartaporte, excluir) {
      AND ISNULL(LTRIM(RTRIM(f.SerieFac)),'') = ISNULL(LTRIM(RTRIM(fd.SerieFac)),'')
     WHERE LTRIM(RTRIM(fd.SERIE))=@serie AND LTRIM(RTRIM(fd.CARTAPORTE))=@cp AND f.Status <> 'CANCELADA'${excl}`);
   return r.recordset[0];
+}
+
+// ── Subtotal/IVA/Retención/Total de una línea (fórmula del sistema legado) ────
+// El concepto "núcleo" (flete o renta, y kilómetros) NO se recalcula al 16%/4%:
+// se copia tal cual de los totales ya calculados en la propia Carta Porte
+// (SubTotalMX/IVAMX/RetenMX/TOTALMX). Los conceptos "extra" (casetas,
+// maniobras, y por extensión pensión/estadías/otros — mismo tratamiento que
+// pidió el usuario) SIEMPRE llevan IVA plano de 16% y NUNCA retención, y se
+// suman aparte al núcleo cuando ambos aplican en la misma línea.
+const CONCEPTOS_EXTRA = ['casetas', 'maniobras', 'pension', 'estadias', 'otros'];
+function calcularTotalesLinea(cpRow, activos) {
+  const extra = CONCEPTOS_EXTRA.reduce((a, k) => a + (activos[k] || 0), 0);
+  const coreActivo = !!(activos.flete || activos.demoras);
+  const extraActivo = extra > 0.005;
+  const kmActivo = !!activos.kilometros;
+
+  let subtotal, iva, reten, total;
+  if (extraActivo && coreActivo) {
+    subtotal = num(cpRow.SubTotalMX) + extra;
+    reten    = num(cpRow.RetenMX);
+    iva      = num(cpRow.IVAMX) + extra * 0.16;
+    total    = subtotal + iva - reten;
+  } else if (extraActivo) {
+    subtotal = extra;
+    reten    = 0;
+    iva      = extra * 0.16;
+    total    = subtotal + iva - reten;
+  } else if (coreActivo || kmActivo) {
+    subtotal = num(cpRow.SubTotalMX);
+    reten    = num(cpRow.RetenMX);
+    iva      = num(cpRow.IVAMX);
+    total    = num(cpRow.TOTALMX);
+  } else {
+    subtotal = 0; reten = 0; iva = 0; total = 0;
+  }
+  const r2 = v => Math.round(v * 100) / 100;
+  return { subtotal: r2(subtotal), iva: r2(iva), reten: r2(reten), total: r2(total) };
 }
 
 // ── Montos cobrables reportados en Solicitudes de Depósito del viaje (punto 3/6) ─
@@ -333,24 +374,27 @@ router.post('/partida/agregar', async (req, res) => {
       const depo = await cobrableDepositos(tx, serie, cp);
       Object.assign(bruto, depo); // casetas, maniobras, pension, estadias, otros
 
-      const previo = await yaFacturadoPorConcepto(tx, serie, cp, null);
-
+      // Solo se descuenta lo ya facturado si la CP YA estaba en 'FACTURADO'
+      // (ya tuvo al menos una partida previa). En la primera facturación de
+      // una CP no hay nada que restar -- así lo hace el sistema legado.
       const activos = {};
-      let subtotal = 0;
-      for (const k of Object.keys(CONCEPTOS)) {
-        const netoRaw = num(bruto[k]) - num(previo[k]);
-        const neto = Math.round(netoRaw * 100) / 100;
-        if (neto > 0.005) { activos[k] = neto; subtotal += neto; }
+      if (cpStatus === 'FACTURADO') {
+        const previo = await yaFacturadoPorConcepto(tx, serie, cp, null);
+        for (const k of Object.keys(CONCEPTOS)) {
+          const neto = Math.round(Math.max(num(bruto[k]) - num(previo[k]), 0) * 100) / 100;
+          if (neto > 0.005) activos[k] = neto;
+        }
+      } else {
+        for (const k of Object.keys(CONCEPTOS)) {
+          const v = Math.round(num(bruto[k]) * 100) / 100;
+          if (v > 0.005) activos[k] = v;
+        }
       }
-      subtotal = Math.round(subtotal * 100) / 100;
 
-      if (subtotal <= 0) {
+      const { subtotal, iva, reten, total } = calcularTotalesLinea(cpRow, activos);
+      if (subtotal <= 0.005) {
         throw Object.assign(new Error('La Carta Porte ya fue facturada en su totalidad, seleccione otra.'), { status: 400 });
       }
-
-      const iva   = Math.round(subtotal * 0.16 * 100) / 100;
-      const reten = Math.round(subtotal * 0.04 * 100) / 100;
-      const total = Math.round((subtotal + iva - reten) * 100) / 100;
 
       // ── Cabecera: crear si es la primera partida de una factura nueva ──────
       let idNoFactura = parseInt(f.idNoFactura) || 0;
@@ -371,6 +415,9 @@ router.post('/partida/agregar', async (req, res) => {
         const claveMP = trim(f.ClaveMP) || trim(cli.CLAVEMP) || 'PPD';
         const metodoPago = trim(f.MetodoPago) || trim(cli.METODOPAGO) || 'Pago en parcialidades o diferido';
         const flagResFac = f.flagResFac ? 1 : 0;
+        const incluirCP = f.incluirCP ? 1 : 0;
+        const descripcion = trim(f.descripcion);
+        const observaciones = trim(f.observaciones);
 
         const nextRes = await reqSerieFac(new sql.Request(tx), serieFac)
           .query(`SELECT ISNULL(MAX(Id_NoFactura),0)+1 AS next FROM Empresa2.Factura WITH (UPDLOCK, HOLDLOCK) WHERE ${SERIEFAC_EQ}`);
@@ -391,13 +438,16 @@ router.post('/partida/agregar', async (req, res) => {
           .input('metodopago', sql.VarChar(60), metodoPago)
           .input('cusocfdi', sql.VarChar(5), usoCFDI)
           .input('flagres', sql.Int, flagResFac)
+          .input('incluircp', sql.Int, incluirCP)
+          .input('descripcion', sql.VarChar(254), descripcion || null)
+          .input('observaciones', sql.VarChar(1000), observaciones || null)
           .input('realizo', sql.VarChar(60), [req.session.usuario.nombre, req.session.usuario.apellido].filter(Boolean).join(' '))
           .query(`INSERT INTO Empresa2.Factura(
             Id_NoFactura,FechaFactura,Hora,Id_Cliente,NombreCom,RFC,MonFactura,TipoCambio,Status,
-            c_FormaPago,ClaveMP,MetodoPago,c_UsoCFDI,FlagResFac,SerieFac,Facturo,SubTotal,IVA,Retencion,TOTAL
+            c_FormaPago,ClaveMP,MetodoPago,c_UsoCFDI,FlagResFac,IncluirCP,Descripcion,Observaciones,SerieFac,Facturo,SubTotal,IVA,Retencion,TOTAL
           ) VALUES(
             @id,@fecha,@hora,@idCli,@nombreCom,@rfc,@mon,@tc,@status,
-            @cformapago,@clavemp,@metodopago,@cusocfdi,@flagres,@serieFac,@realizo,0,0,0,0
+            @cformapago,@clavemp,@metodopago,@cusocfdi,@flagres,@incluircp,@descripcion,@observaciones,@serieFac,@realizo,0,0,0,0
           )`);
       } else {
         const facRes = await reqSerieFac(new sql.Request(tx), serieFac).input('id', sql.Decimal(9), idNoFactura)
@@ -408,8 +458,10 @@ router.post('/partida/agregar', async (req, res) => {
         }
       }
 
-      // Clave de producto/servicio: de los defaults del cliente si vinieron en el body
-      const claveProdServ = trim(f.claveProdServ);
+      // Clave de producto/servicio: de los defaults del cliente si vinieron en el
+      // body, si no, el default del sistema legado ('78141500'). ClaveUnidad
+      // siempre 'E48' (fijo, igual que en el sistema legado).
+      const claveProdServ = trim(f.claveProdServ) || '78141500';
       const descProdServ = trim(f.descripcionProdServ);
 
       const nextDetaRes = await reqSerieFac(new sql.Request(tx), serieFac).input('id', sql.Decimal(9), idNoFactura)
@@ -452,8 +504,9 @@ router.post('/partida/agregar', async (req, res) => {
         .input('sub', sql.Decimal(9,2), subtotal)
         .input('iva', sql.Decimal(9,2), iva)
         .input('tot', sql.Decimal(9,2), total)
-        .input('cprodserv', sql.VarChar(20), claveProdServ || null)
+        .input('cprodserv', sql.VarChar(20), claveProdServ)
         .input('descprodserv', sql.VarChar(100), descProdServ || null)
+        .input('claveunidad', sql.VarChar(5), 'E48')
         .input('flagsinret', sql.TinyInt, 0)
         .input('flagiva', sql.TinyInt, 0)
         .query(`INSERT INTO Empresa2.FacDeta(
@@ -461,13 +514,13 @@ router.post('/partida/agregar', async (req, res) => {
           COSTOFLETE,FlagCobFlete,COSTODEMORAS,FLAGCOBDEM,COSTOAUTOPISTAS,FLAGCOBAUTO,COSTOMANIOBRAS,FLAGCOBMAN,
           CostoPension,FlagCostoPension,CostoEstadias,FlagCostoEstadias,COSTOSOTROS,FLAGCOBOTROS,
           KILOMETROS,KILOMETROSTAR,RETENKILO,FLAGKILOMETROS,
-          RETEN,SUBTOTAL,IVA,TOTAL,C_CLAVEPRODSERV,DESCRIPCION,FLAGSINRET,FLAGIVA
+          RETEN,SUBTOTAL,IVA,TOTAL,C_CLAVEPRODSERV,DESCRIPCION,C_CLAVEUNIDAD,FLAGSINRET,FLAGIVA
         ) VALUES(
           @idf,@idd,@seriefac,@idcli,@serie,@idped,@cp,@tipoped,@aniop,@desflete,@nocaja,
           @cflete,@fflete,@cdem,@fdem,@cauto,@fauto,@cman,@fman,
           @cpen,@fpen,@cest,@fest,@cotros,@fotros,
           @km,@kmtar,@retenkm,@fkm,
-          @reten,@sub,@iva,@tot,@cprodserv,@descprodserv,@flagsinret,@flagiva
+          @reten,@sub,@iva,@tot,@cprodserv,@descprodserv,@claveunidad,@flagsinret,@flagiva
         )`);
 
       // Marcar la Carta Porte como facturada (punto 3)
@@ -478,6 +531,12 @@ router.post('/partida/agregar', async (req, res) => {
         .query(`UPDATE Empresa2.CartaPorte SET Status='FACTURADO', NoFactura=@nofac, AnioFactura=@anio WHERE Serie=@serie AND CartaPorte=@cp`);
       await recalcularImporteFacCP(tx, serie, cp);
 
+      // RefCliente de la cabecera = NoPedidoCliente de la última Carta Porte agregada
+      await reqSerieFac(new sql.Request(tx), serieFac)
+        .input('id', sql.Decimal(9), idNoFactura)
+        .input('refCliente', sql.VarChar(45), trim(cpRow.NoPedidoCliente) || null)
+        .query(`UPDATE Empresa2.Factura SET RefCliente=@refCliente WHERE Id_NoFactura=@id AND ${SERIEFAC_EQ}`);
+
       const totales = await recalcularCabecera(tx, idNoFactura, serieFac);
       return { idNoFactura, serieFac: serieFac || '', idNoDetaFac, activos, totales };
     });
@@ -485,6 +544,33 @@ router.post('/partida/agregar', async (req, res) => {
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });
   }
+});
+
+// ── ACTUALIZAR CABECERA (resumen / incluir CP / descripción / observaciones) ─
+router.post('/cabecera/actualizar', async (req, res) => {
+  const idNoFactura = parseInt(req.body.idNoFactura);
+  const serieFac = req.body.serieFac;
+  if (!idNoFactura) return res.status(400).json({ error: 'Factura inválida.' });
+  try {
+    const pool = await getPool();
+    const result = await withTransaction(pool, async (tx) => {
+      const facRes = await reqSerieFac(new sql.Request(tx), serieFac).input('id', sql.Decimal(9), idNoFactura)
+        .query(`SELECT Id_NoFactura FROM Empresa2.Factura WHERE Id_NoFactura=@id AND ${SERIEFAC_EQ}`);
+      if (!facRes.recordset[0]) throw Object.assign(new Error('Factura no encontrada.'), { status: 404 });
+
+      await reqSerieFac(new sql.Request(tx), serieFac)
+        .input('id', sql.Decimal(9), idNoFactura)
+        .input('flagres', sql.Int, req.body.flagResFac ? 1 : 0)
+        .input('incluircp', sql.Int, req.body.incluirCP ? 1 : 0)
+        .input('descripcion', sql.VarChar(254), trim(req.body.descripcion) || null)
+        .input('observaciones', sql.VarChar(1000), trim(req.body.observaciones) || null)
+        .query(`UPDATE Empresa2.Factura SET FlagResFac=@flagres, IncluirCP=@incluircp, Descripcion=@descripcion, Observaciones=@observaciones
+                WHERE Id_NoFactura=@id AND ${SERIEFAC_EQ}`);
+
+      return await recalcularCabecera(tx, idNoFactura, serieFac);
+    });
+    res.json({ ok: true, totales: result });
+  } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
 });
 
 // ── ELIMINAR LÍNEA (punto 7) ──────────────────────────────────────────────────
@@ -532,31 +618,34 @@ router.post('/detalle/toggle-flag', async (req, res) => {
       if (!linea) throw Object.assign(new Error('Línea no encontrada.'), { status: 404 });
       const serie = trim(linea.SERIE), cp = trim(linea.CARTAPORTE);
       const activoActual = ISNULLtoBool(linea[flagCol]);
-      let nuevoMonto = 0, nuevoFlag = 0;
 
+      const cpRes = await new sql.Request(tx).input('serie', sql.VarChar(3), serie).input('cp', sql.VarChar(30), cp)
+        .query(`SELECT * FROM Empresa2.CartaPorte WHERE Serie=@serie AND CartaPorte=@cp`);
+      const cpRow = cpRes.recordset[0];
+      if (!cpRow) throw Object.assign(new Error('Carta Porte no encontrada.'), { status: 400 });
+
+      let nuevoMonto, nuevoFlag;
       if (!activoActual) {
         // Se está marcando: recalcular el monto realmente cobrable (punto 6)
         let bruto = 0;
-        if (['casetas','maniobras','pension','estadias','otros'].includes(concepto)) {
+        if (CONCEPTOS_EXTRA.includes(concepto)) {
           const depo = await cobrableDepositos(tx, serie, cp);
           bruto = depo[concepto];
         } else if (concepto === 'kilometros') {
-          const cpRes = await new sql.Request(tx).input('serie', sql.VarChar(3), serie).input('cp', sql.VarChar(30), cp)
-            .query(`SELECT Kilometros FROM Empresa2.CartaPorte WHERE Serie=@serie AND CartaPorte=@cp`);
-          bruto = num(cpRes.recordset[0]?.Kilometros);
+          bruto = num(cpRow.Kilometros);
         } else {
-          const col = concepto === 'flete' ? 'CostoFlete' : 'CostoDemoras';
-          const cpRes = await new sql.Request(tx).input('serie', sql.VarChar(3), serie).input('cp', sql.VarChar(30), cp)
-            .query(`SELECT ${col} AS v FROM Empresa2.CartaPorte WHERE Serie=@serie AND CartaPorte=@cp`);
-          bruto = num(cpRes.recordset[0]?.v);
+          bruto = concepto === 'flete' ? num(cpRow.CostoFlete) : num(cpRow.CostoDemoras);
         }
         const previo = await yaFacturadoPorConcepto(tx, serie, cp, { idNoFactura, idNoDetaFac, serieFac });
-        const neto = Math.round((bruto - num(previo[concepto])) * 100) / 100;
+        const neto = Math.round(Math.max(bruto - num(previo[concepto]), 0) * 100) / 100;
         if (neto <= 0.005) {
           throw Object.assign(new Error('Ese concepto ya está facturado en su totalidad para esta Carta Porte.'), { status: 400 });
         }
         nuevoMonto = neto; nuevoFlag = 1;
       } else {
+        // Se está desmarcando: se borra el importe (vuelve a 0). Si no se
+        // borrara, quedaría "aplicado" a esta CP para siempre y bloquearía
+        // facturarlo despues en otra factura, aunque nunca se haya cobrado.
         nuevoMonto = 0; nuevoFlag = 0;
       }
 
@@ -565,18 +654,14 @@ router.post('/detalle/toggle-flag', async (req, res) => {
         .input('monto', sql.Decimal(9,2), nuevoMonto).input('flag', sql.TinyInt, nuevoFlag)
         .query(`UPDATE Empresa2.FacDeta SET ${montoCol}=@monto, ${flagCol}=@flag WHERE ID_NOFACTURA=@idf AND ID_NODETAFAC=@idd AND ${SERIEFAC_EQ}`);
 
-      // Recalcular subtotal/IVA/retención/total de la línea sumando todos sus conceptos vigentes
+      // Recalcular subtotal/IVA/retención/total de la línea con los conceptos vigentes
       const actRes = await reqSerieFac(new sql.Request(tx), serieFac)
         .input('idf', sql.Decimal(9), idNoFactura).input('idd', sql.Decimal(6), idNoDetaFac)
         .query(`SELECT * FROM Empresa2.FacDeta WHERE ID_NOFACTURA=@idf AND ID_NODETAFAC=@idd AND ${SERIEFAC_EQ}`);
       const l = actRes.recordset[0];
-      let subtotal = 0;
-      for (const [, c] of Object.entries(CONCEPTOS)) if (ISNULLtoBool(l[c.flagCol])) subtotal += num(l[c.montoCol]);
-      subtotal = Math.round(subtotal * 100) / 100;
-      const flagIVA = ISNULLtoBool(l.FLAGIVA), flagSinRet = ISNULLtoBool(l.FLAGSINRET);
-      const iva = flagIVA ? 0 : Math.round(subtotal * 0.16 * 100) / 100;
-      const reten = flagSinRet ? 0 : Math.round(subtotal * 0.04 * 100) / 100;
-      const total = Math.round((subtotal + iva - reten) * 100) / 100;
+      const activos = {};
+      for (const [k, c] of Object.entries(CONCEPTOS)) if (ISNULLtoBool(l[c.flagCol])) activos[k] = num(l[c.montoCol]);
+      const { subtotal, iva, reten, total } = calcularTotalesLinea(cpRow, activos);
 
       await reqSerieFac(new sql.Request(tx), serieFac)
         .input('idf', sql.Decimal(9), idNoFactura).input('idd', sql.Decimal(6), idNoDetaFac)
