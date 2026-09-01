@@ -40,7 +40,7 @@ router.post('/login', async (req, res) => {
 // Year selection page
 router.get('/seleccionar-anio', async (req, res) => {
   if (!req.session.usuario) return res.redirect('/login');
-  if (req.session.anio && req.session.central) return res.redirect('/dashboard');
+  if (req.session.anio && req.session.central && !req.query.cambiar) return res.redirect('/dashboard');
   try {
     const pool = await getPool();
     const r = await pool.request().query(`SELECT Central, Descripcion FROM Empresa2.Centrales ORDER BY Descripcion`);

@@ -27,6 +27,9 @@ const vfs         = require('pdfmake/js/virtual-fs.js').default;
 
 const FONTS = { Helvetica: require('pdfmake/standard-fonts/Helvetica.js').Helvetica };
 const AZUL  = '#1a3f6f';
+// Padding vertical un poco más generoso que el default de pdfmake (2pt) para
+// que las tablas no se vean tan apretadas.
+const LAYOUT_ESPACIADO = { paddingTop: () => 5, paddingBottom: () => 5, paddingLeft: () => 4, paddingRight: () => 4 };
 
 function fmt(v) { return v ? String(v).trim() : ''; }
 
@@ -73,10 +76,29 @@ function numFmt(v, dec) {
   return n.toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec });
 }
 
+// Sellos/certificados en base64 no traen espacios; pdfmake NO hace salto de
+// línea dentro de una "palabra" sin espacios y el texto se sale de la página.
+// Se inserta un espacio cada N caracteres para que sí pueda partirse (mismo
+// truco visual que usa el PDF de referencia del sistema legado).
+function partirLargo(str, cada = 90) {
+  const s = fmt(str);
+  if (!s) return '';
+  return (s.match(new RegExp(`.{1,${cada}}`, 'g')) || []).join(' ');
+}
+
 // La ruta guardada en dbo.Empresas viene del sistema legado con su propia letra
 // de unidad (ej. "D:\..."); se sustituye por la unidad real de esta máquina,
 // igual que RUTA_XML en config/storage.js.
+// Logo empaquetado dentro del propio proyecto (imagenes/LogoTLC.jpg) — funciona
+// igual en desarrollo y en el VPS sin depender de rutas absolutas del sistema
+// legado. Se prioriza sobre dbo.Empresas.LOGOEMPRESA, que solo queda como
+// respaldo (esa ruta trae la unidad de disco de la máquina legada, ej. "D:\...",
+// y hay que sustituirla por la unidad real de esta máquina para que sirva).
+const LOGO_PROYECTO = path.join(__dirname, '..', '..', 'imagenes', 'LogoTLC.jpg');
+
 function resolverLogo(rutaGuardada) {
+  if (fs.existsSync(LOGO_PROYECTO)) return LOGO_PROYECTO;
+
   const ruta = fmt(rutaGuardada);
   if (!ruta) return null;
   const unidadActual = path.parse(__dirname).root;
@@ -236,30 +258,37 @@ function encabezadoEmpresa(emp, cartaporte, fechaTxt, logo) {
       {
         width: '*',
         stack: [
-          { text: fmt(emp.NOMBRECORTO) || fmt(emp.EMPRESA), bold: true, fontSize: 12, alignment: 'center' },
-          { text: 'SERVICIO PUBLICO FEDERAL DE AUTO TRANSPORTE DE CARGA', fontSize: 7, alignment: 'center' },
-          { text: 'SERVICIO A TODA LA REPUBLICA', fontSize: 7, alignment: 'center' },
-          { text: 'Reg.CANCAR', fontSize: 7, alignment: 'center', margin: [0, 2, 0, 0] },
-          { text: domicilioEmpresa, fontSize: 7, alignment: 'center' },
-          { text: ciudadEmpresa, fontSize: 7, alignment: 'center' },
+          { text: fmt(emp.NOMBRECORTO) || fmt(emp.EMPRESA), bold: true, fontSize: 12, alignment: 'center', margin: [0, 0, 0, 3] },
+          { text: 'SERVICIO PUBLICO FEDERAL DE AUTO TRANSPORTE DE CARGA', fontSize: 7, alignment: 'center', margin: [0, 0, 0, 2] },
+          { text: 'SERVICIO A TODA LA REPUBLICA', fontSize: 7, alignment: 'center', margin: [0, 0, 0, 2] },
+          { text: 'Reg.CANCAR', fontSize: 7, alignment: 'center', margin: [0, 2, 0, 2] },
+          { text: domicilioEmpresa, fontSize: 7, alignment: 'center', margin: [0, 0, 0, 2] },
+          { text: ciudadEmpresa, fontSize: 7, alignment: 'center', margin: [0, 0, 0, 2] },
           { text: `RFC: ${fmt(emp.RFC)}   ${fmt(emp.REGIMENFISCAL)}`, fontSize: 7, alignment: 'center' },
         ],
       },
       {
+        // fillColor SOLO pinta fondo dentro de celdas de tabla — en un `stack`
+        // de texto suelto pdfmake lo ignora silenciosamente, por eso este
+        // bloque va como tabla de una columna en vez de stack.
         width: 130,
-        stack: [
-          { text: 'CARTA PORTE - TRASLADO', fillColor: AZUL, color: 'white', fontSize: 8, bold: true, alignment: 'center', margin: [0,2,0,2] },
-          { text: cartaporte, fillColor: '#eeeeee', fontSize: 9, bold: true, alignment: 'center', margin: [0,1,0,1] },
-          { text: 'Fecha', fillColor: AZUL, color: 'white', fontSize: 7, alignment: 'center', margin: [0,2,0,2] },
-          { text: fechaTxt, fillColor: '#eeeeee', fontSize: 9, alignment: 'center', margin: [0,1,0,1] },
-        ],
+        table: {
+          widths: ['*'],
+          body: [
+            [{ text: 'CARTA PORTE - TRASLADO', fillColor: AZUL, color: 'white', fontSize: 8, bold: true, alignment: 'center' }],
+            [{ text: cartaporte, fillColor: '#eeeeee', fontSize: 9, bold: true, alignment: 'center' }],
+            [{ text: 'Fecha', fillColor: AZUL, color: 'white', fontSize: 7, alignment: 'center' }],
+            [{ text: fechaTxt, fillColor: '#eeeeee', fontSize: 9, alignment: 'center' }],
+          ],
+        },
+        layout: { paddingTop: () => 3, paddingBottom: () => 3, paddingLeft: () => 4, paddingRight: () => 4, hLineWidth: () => 0, vLineWidth: () => 0 },
       },
     ],
   };
 }
 
 function filaLabel(label, value) {
-  return { columns: [ { text: label, width: 80, bold: true, fontSize: 8 }, { text: value || '', fontSize: 8 } ] };
+  return { margin: [0, 0, 0, 4], columns: [ { text: label, width: 80, bold: true, fontSize: 8 }, { text: value || '', fontSize: 8 } ] };
 }
 
 async function generarPDFBuffer(serie, cartaporte, pool) {
@@ -302,7 +331,8 @@ async function generarPDFBuffer(serie, cartaporte, pool) {
 
   // Origen / Destino
   content.push({
-    margin: [0, 6, 0, 0],
+    margin: [0, 10, 0, 0],
+    layout: LAYOUT_ESPACIADO,
     table: {
       widths: ['*', '*'],
       body: [
@@ -311,18 +341,18 @@ async function generarPDFBuffer(serie, cartaporte, pool) {
           { text: 'DESTINO', fillColor: AZUL, color: 'white', bold: true, fontSize: 8, alignment: 'center' },
         ],
         [
-          { fontSize: 8, stack: [
-            { text: [{ text: 'FECHA SALIDA: ', bold: true }, fechaHora(d.origen?.fechaHora)] },
-            { text: [{ text: 'REMITENTE: ', bold: true }, d.origen?.nombre || ''] },
-            { text: [{ text: 'RFC: ', bold: true }, d.origen?.rfc || ''] },
-            { text: [{ text: 'DOMICILIO: ', bold: true }, d.origen?.domicilio || ''] },
+          { fontSize: 8, margin: [4, 6, 4, 6], stack: [
+            { text: [{ text: 'FECHA SALIDA: ', bold: true }, fechaHora(d.origen?.fechaHora)], margin: [0, 0, 0, 4] },
+            { text: [{ text: 'REMITENTE: ', bold: true }, d.origen?.nombre || ''], margin: [0, 0, 0, 4] },
+            { text: [{ text: 'RFC: ', bold: true }, d.origen?.rfc || ''], margin: [0, 0, 0, 4] },
+            { text: [{ text: 'DOMICILIO: ', bold: true }, d.origen?.domicilio || ''], margin: [0, 0, 0, 4] },
             { text: d.origen?.domicilio2 || '' },
           ]},
-          { fontSize: 8, stack: [
-            { text: [{ text: 'FECHA LLEGADA: ', bold: true }, fechaHora(d.destino?.fechaHora)] },
-            { text: [{ text: 'DESTINATARIO: ', bold: true }, d.destino?.nombre || ''] },
-            { text: [{ text: 'RFC: ', bold: true }, d.destino?.rfc || ''] },
-            { text: [{ text: 'DOMICILIO: ', bold: true }, d.destino?.domicilio || ''] },
+          { fontSize: 8, margin: [4, 6, 4, 6], stack: [
+            { text: [{ text: 'FECHA LLEGADA: ', bold: true }, fechaHora(d.destino?.fechaHora)], margin: [0, 0, 0, 4] },
+            { text: [{ text: 'DESTINATARIO: ', bold: true }, d.destino?.nombre || ''], margin: [0, 0, 0, 4] },
+            { text: [{ text: 'RFC: ', bold: true }, d.destino?.rfc || ''], margin: [0, 0, 0, 4] },
+            { text: [{ text: 'DOMICILIO: ', bold: true }, d.destino?.domicilio || ''], margin: [0, 0, 0, 4] },
             { text: d.destino?.domicilio2 || '' },
           ]},
         ],
@@ -331,17 +361,17 @@ async function generarPDFBuffer(serie, cartaporte, pool) {
   });
 
   content.push({
-    margin: [0, 6, 0, 0],
+    margin: [0, 10, 0, 0],
     columns: [
       { text: [{ text: 'TRANSPORTE INTERNACIONAL: ', bold: true, fontSize: 8 }, { text: 'NO', fontSize: 8 }] },
       { text: [{ text: 'TOTAL DISTANCIA RECORRIDA: ', bold: true, fontSize: 8 }, { text: `${d.totalDistRec} KM`, fontSize: 8 }], alignment: 'right' },
     ],
   });
 
-  content.push({ margin: [0, 6, 0, 0], table: { widths: ['12%','38%','12%','16%','11%','11%'], body: mercTablaBody } });
+  content.push({ margin: [0, 10, 0, 0], layout: LAYOUT_ESPACIADO, table: { widths: ['12%','38%','12%','16%','11%','11%'], body: mercTablaBody } });
 
   content.push({
-    margin: [0, 4, 0, 0],
+    margin: [0, 8, 0, 0],
     columns: [
       { text: [{ text: 'MATERIAL PELIGROSO: ', bold: true, fontSize: 8 }, { text: primeraMerc.materialPeligroso || 'No', fontSize: 8 }] },
       { text: [{ text: 'CVE. MAT. PEL.: ', bold: true, fontSize: 8 }, { text: primeraMerc.cveMaterialPeligroso || '', fontSize: 8 }] },
@@ -353,7 +383,7 @@ async function generarPDFBuffer(serie, cartaporte, pool) {
 
   const remolque = d.remolques[0] || {};
   content.push({
-    margin: [0, 6, 0, 0],
+    margin: [0, 10, 0, 0],
     columns: [
       { fontSize: 8, stack: [
         filaLabel('CONFIGURACION\nVEHICULAR', d.configVehicular),
@@ -371,7 +401,7 @@ async function generarPDFBuffer(serie, cartaporte, pool) {
   });
 
   content.push({
-    margin: [0, 6, 0, 0],
+    margin: [0, 10, 0, 0],
     columns: [
       filaLabel('NOMBRE OPERADOR:', d.operadorNombre),
       filaLabel('RFC:', d.operadorRfc),
@@ -381,7 +411,8 @@ async function generarPDFBuffer(serie, cartaporte, pool) {
 
   if (d.timbre) {
     content.push({
-      margin: [0, 8, 0, 0],
+      margin: [0, 12, 0, 0],
+      layout: LAYOUT_ESPACIADO,
       table: { widths: ['*','*','*','*'], body: [
         [
           { text: 'FOLIO FISCAL', fontSize: 7, bold: true },
@@ -403,28 +434,30 @@ async function generarPDFBuffer(serie, cartaporte, pool) {
       const totalStr = numFmt(d.cp.TOTALMX, 6);
       const feUrl = (d.timbre.selloCFD || '').slice(-8);
       const qrTexto = `https://verificacfdi.facturaelectronica.sat.gob.mx/default.aspx?id=${d.timbre.uuid}&re=${d.emisorRfc}&rr=${d.receptorRfc}&tt=${totalStr}&fe=${feUrl}`;
-      qrDataUrl = await QRCode.toDataURL(qrTexto, { margin: 1, width: 110 });
+      qrDataUrl = await QRCode.toDataURL(qrTexto, { margin: 1, width: 90 });
     } catch (e) { /* si falla el QR, se omite sin tronar el PDF */ }
 
     content.push({
-      margin: [0, 4, 0, 0],
+      margin: [0, 8, 0, 0],
       columns: [
         { width: '*', stack: [
-          { text: 'SELLO DIGITAL', fontSize: 7, bold: true, margin: [0,0,0,2] },
-          { text: d.timbre.selloCFD, fontSize: 6 },
-          { text: 'SELLO DEL SAT', fontSize: 7, bold: true, margin: [0,4,0,2] },
-          { text: d.timbre.selloSAT, fontSize: 6 },
+          { text: 'SELLO DIGITAL', fontSize: 7, bold: true, margin: [0,0,0,3] },
+          { text: partirLargo(d.timbre.selloCFD), fontSize: 6, margin: [0,0,0,6] },
+          { text: 'SELLO DEL SAT', fontSize: 7, bold: true, margin: [0,0,0,3] },
+          { text: partirLargo(d.timbre.selloSAT), fontSize: 6 },
         ]},
-        qrDataUrl ? { width: 90, image: qrDataUrl } : { width: 90, text: '' },
+        // fit (no solo width en el generador) asegura que pdfmake nunca la
+        // dibuje más grande que la columna, aunque el PNG venga con otro tamaño.
+        qrDataUrl ? { width: 90, image: qrDataUrl, fit: [90, 90] } : { width: 90, text: '' },
       ],
     });
   }
 
   content.push({
-    margin: [0, 8, 0, 0],
+    margin: [0, 12, 0, 0],
     columns: [
       { width: '*', stack: [
-        { text: 'OBSERVACIONES:', fontSize: 7, bold: true },
+        { text: 'OBSERVACIONES:', fontSize: 7, bold: true, margin: [0,0,0,3] },
         { text: 'MERCANCIA CARGADA POR EL REMITENTE, IGNORANDO SU ESTADO Y CONTENIDO, MANIOBRAS DE DESCARGA POR CUENTA Y RIESGO DEL DESTINATARIO', fontSize: 7 },
       ]},
       { width: 150, table: { widths: ['*'], body: [[{ text: 'RECIBÍ DE CONFORMIDAD', fontSize: 7, bold: true, alignment: 'center', margin: [0,20,0,20] }]] } },
@@ -441,7 +474,7 @@ async function generarPDFBuffer(serie, cartaporte, pool) {
 
   const docDefinition = {
     pageMargins: [30, 30, 30, 30],
-    defaultStyle: { font: 'Helvetica', fontSize: 8 },
+    defaultStyle: { font: 'Helvetica', fontSize: 8, lineHeight: 1.3 },
     content,
   };
 

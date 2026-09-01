@@ -5,16 +5,14 @@
       <i class="bi bi-person-circle me-1"></i>
       <%= usuario.nombre.trim() %> <%= usuario.apellido ? usuario.apellido.trim() : '' %>
     </div>
-    <div class="d-flex gap-2 mt-1 flex-wrap">
-      <% if (typeof serie !== 'undefined' && serie) { %>
-        <span class="badge bg-primary" style="font-size:.7rem">Serie: <%= serie %></span>
-      <% } %>
+    <div class="d-flex gap-2 mt-1 flex-wrap align-items-center">
       <% if (typeof anio !== 'undefined' && anio) { %>
         <span class="badge" style="background:#E8861A;font-size:.7rem">Año: <%= anio %></span>
       <% } %>
       <% if (typeof central !== 'undefined' && central) { %>
         <span class="badge bg-success" style="font-size:.7rem">Central: <%= central %></span>
       <% } %>
+      <a href="/seleccionar-anio?cambiar=1" class="btn btn-sm btn-outline-light py-0 px-1" style="font-size:.7rem" title="Cambiar central"><i class="bi bi-arrow-repeat"></i></a>
     </div>
   </div>
 
