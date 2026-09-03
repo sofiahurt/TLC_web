@@ -21,11 +21,15 @@ function fmt(v) { return v ? String(v).trim() : ''; }
  *
  * @param {string} xmlString  XML sin sellar (NoCertificado/Certificado/Sello vacíos)
  * @param {string} serie      Serie/central activa (req.session.central)
- * @param {string} cartaporte Folio de la Carta Porte (ej. "CUI0000517") — usado para el nombre del archivo
+ * @param {string} nombreBase Identificador para el nombre del archivo en disco
+ *   (ej. "CP_CUI0000517" para Carta Porte, "FAC_TESTQA126251" para Factura) —
+ *   el llamador decide el prefijo/formato, este módulo solo lo usa tal cual.
  * @param {object} pool       Conexión mssql
- * @returns {Promise<string>} XML sellado
+ * @returns {Promise<{xml: string, noCertificado: string}>} XML sellado y el
+ *   número de certificado del CSD usado (para persistirlo de inmediato, antes
+ *   de siquiera intentar el timbrado — no depende de que el PAC responda).
  */
-async function sellarXML(xmlString, serie, cartaporte, pool) {
+async function sellarXML(xmlString, serie, nombreBase, pool) {
   // 1. Empresa — varios centrales comparten la misma razón social/CSD (ver
   // config/empresa-serie.js), por eso se resuelve la serie fiscal primero.
   const empRes = await pool.request()
@@ -88,16 +92,16 @@ async function sellarXML(xmlString, serie, cartaporte, pool) {
   // 7. Inyectar el Sello (único dato que sí depende de la firma, va al final)
   const signed = xmlConCert.replace('Sello=""', `Sello="${sello}"`);
 
-  // 8. Guardar en disco: <unidad>:\TLC_Web\Empresa2\XML\CP_<cartaporte>_sellado.xml
+  // 8. Guardar en disco: <unidad>:\TLC_Web\Empresa2\XML\<nombreBase>_sellado.xml
   fs.mkdirSync(RUTA_XML, { recursive: true });
-  fs.writeFileSync(path.join(RUTA_XML, `CP_${cartaporte}_sellado.xml`), signed, 'utf8');
+  fs.writeFileSync(path.join(RUTA_XML, `${nombreBase}_sellado.xml`), signed, 'utf8');
 
   // TODO: cuando se confirme el timbrado (ver app/services/cfdi-pac.js), al guardar
-  // exitosamente CP_<CartaPorte>_timbrado.xml, eliminar el archivo
-  // CP_<CartaPorte>_sellado.xml correspondiente, ya que el timbrado lo reemplaza
+  // exitosamente <nombreBase>_Timbrada.xml, eliminar el archivo
+  // <nombreBase>_sellado.xml correspondiente, ya que el timbrado lo reemplaza
   // como versión oficial final.
 
-  return signed;
+  return { xml: signed, noCertificado };
 }
 
 module.exports = { sellarXML };

@@ -6,12 +6,13 @@ const express  = require('express');
 const router   = express.Router();
 const { getPool, sql } = require('../config/db');
 const { buildCFDITraslado } = require('../services/cfdi-traslado');
+const { buildCFDIFactura } = require('../services/cfdi-factura');
 const { sellarXML } = require('../services/cfdi-sello');
 const { timbrarConPAC } = require('../services/cfdi-pac');
+const { descontarTimbre } = require('../services/timbre-consumo');
 const { generarPDFBuffer } = require('../services/cfdi-pdf');
 const { RUTA_XML } = require('../config/storage');
 const { serieFiscal } = require('../config/empresa-serie');
-const { DOMParser } = require('@xmldom/xmldom');
 
 // El PAC (URL) es el mismo para todas las Empresas/series — solo cambia entre
 // prueba y producción, y eso sale de .env, no de dbo.Empresas.
@@ -191,7 +192,7 @@ router.post('/timbrar', async (req, res) => {
     const { xml, idCCP } = await buildCFDITraslado(serie, cartaporte, pool);
 
     // 3. Sellar con CSD y guardar en disco
-    const xmlSellado = await sellarXML(xml, serie, cartaporte, pool);
+    const { xml: xmlSellado, noCertificado: noCertificadoPropio } = await sellarXML(xml, serie, `CP_${cartaporte}`, pool);
 
     // 4. Enviar al PAC y timbrar
     const pacResult = await timbrarConPAC(xmlSellado, conexion);
@@ -215,11 +216,9 @@ router.post('/timbrar', async (req, res) => {
     //    a TRASLADO fuera de modo prueba — un timbrado de prueba no debe marcar
     //    el pedido como si ya se hubiera trasladado de verdad.
     // NoCertificado = el de NUESTRO propio CSD (Comprobante@NoCertificado, ya
-    // en el XML sellado) — NO el del PAC (pacResult.noCertificadoSAT es el de
-    // la autoridad certificadora del timbre, un dato distinto que no tiene
+    // regresado por sellarXML) — NO el del PAC (pacResult.noCertificadoSAT es el
+    // de la autoridad certificadora del timbre, un dato distinto que no tiene
     // columna propia y se sigue leyendo del XML timbrado cuando se arma el PDF.
-    const noCertificadoPropio = new DOMParser({ errorHandler: () => {} })
-      .parseFromString(xmlSellado, 'text/xml').documentElement.getAttribute('NoCertificado');
     const setStatus = conexion.testFel ? '' : `, Status='TRASLADO'`;
     await pool.request()
       .input('serie',  sql.VarChar(3),  serie)
@@ -241,8 +240,12 @@ router.post('/timbrar', async (req, res) => {
     const rutaSellado = path.join(RUTA_XML, `CP_${cartaporte}_sellado.xml`);
     if (fs.existsSync(rutaSellado)) fs.unlinkSync(rutaSellado);
 
-    // TODO: descuento de folio en Empresa2.ParamTimbre y bitácora en
-    // Empresa2.ParamTimbreDeta — pendiente, no forma parte de este cambio.
+    // 7. Descuento/bitácora de timbres — solo fuera de modo prueba (un timbrado
+    //    de prueba no debe consumir crédito real de Empresa2.ParamTimbre).
+    if (!conexion.testFel) {
+      await descontarTimbre(pool, { tipo: 'Traslado', serie, idFacVen: cartaporte, uuid: pacResult.uuid });
+    }
+
     res.json({
       ok:      true,
       mensaje: `Carta Porte timbrada correctamente${conexion.testFel ? ' (modo prueba)' : ''}. UUID: ${pacResult.uuid}`,
@@ -251,6 +254,102 @@ router.post('/timbrar', async (req, res) => {
     });
   } catch (err) {
     console.error('CFDI timbrar error:', err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ── TIMBRAR FACTURA ────────────────────────────────────────────────────────
+// POST /cfdi/timbrar-factura  { idNoFactura, serieFac }
+router.post('/timbrar-factura', async (req, res) => {
+  try {
+    const idNoFactura = parseInt(req.body.idNoFactura);
+    if (!idNoFactura) return res.status(400).json({ ok: false, error: 'Falta idNoFactura' });
+    const serieFacKey = (req.body.serieFac == null ? '' : String(req.body.serieFac)).trim() || null;
+    const SERIEFAC_EQ = `ISNULL(LTRIM(RTRIM(SerieFac)),'') = ISNULL(@serieFac,'')`;
+
+    const pool = await getPool();
+
+    // 0. UUID ya existente (para el manejo de reenvío/código 307 más abajo)
+    const prevRes = await pool.request()
+      .input('id', sql.Decimal(9), idNoFactura)
+      .input('serieFac', sql.VarChar(20), serieFacKey)
+      .query(`SELECT UUID, FechaTimbrado FROM Empresa2.Factura WHERE Id_NoFactura=@id AND ${SERIEFAC_EQ}`);
+    if (!prevRes.recordset[0]) return res.status(404).json({ ok: false, error: 'Factura no encontrada' });
+    const uuidExistente = (prevRes.recordset[0].UUID || '').trim();
+
+    // 1. Resolver a qué PAC conectarse — Factura no guarda su propio central
+    // operativo (solo SerieFac, que es otra cosa), así que se usa el central
+    // de la sesión activa, igual que hace Carta Porte con el suyo.
+    const central = (req.session.central || '').trim();
+    const conexion = await resolverConexionPAC(pool, central);
+
+    // 2. Armar XML
+    const { xml, idCCP } = await buildCFDIFactura(idNoFactura, serieFacKey, central, pool);
+
+    // 3. Sellar con CSD y guardar en disco
+    const nombreBase = `FAC_${serieFacKey || 'SF'}${idNoFactura}`;
+    const { xml: xmlSellado, noCertificado } = await sellarXML(xml, central, nombreBase, pool);
+
+    // Punto 3 pedido por el usuario: el NoCertificado del emisor se guarda en
+    // cuanto se lee del CSD (dentro de sellarXML), ANTES de siquiera intentar
+    // el timbrado — no depende de que el PAC responda.
+    await pool.request()
+      .input('id', sql.Decimal(9), idNoFactura)
+      .input('serieFac', sql.VarChar(20), serieFacKey)
+      .input('noCert', sql.VarChar(30), noCertificado || null)
+      .query(`UPDATE Empresa2.Factura SET noCertificado=@noCert WHERE Id_NoFactura=@id AND ${SERIEFAC_EQ}`);
+
+    // 4. Enviar al PAC y timbrar
+    const pacResult = await timbrarConPAC(xmlSellado, conexion);
+
+    if (!pacResult.exito) {
+      return res.json({ ok: false, error: pacResult.mensajeError || 'El PAC rechazó el timbrado' });
+    }
+
+    // Reenvío (307): igual manejo que Carta Porte — si ya hay UUID local para
+    // este folio, no se vuelve a escribir (evita duplicar/sobreescribir).
+    if (pacResult.reenvio && uuidExistente) {
+      return res.json({
+        ok:      true,
+        mensaje: `Esta Factura ya estaba timbrada. UUID: ${uuidExistente}`,
+        pacResult: { ...pacResult, uuid: uuidExistente },
+      });
+    }
+
+    // 5. Persistir UUID/FechaTimbrado/IdCCP/RfcProvCertif. El Status de Factura
+    // NO cambia (solo tiene EMITIDA/CANCELADA/PAGADA, ninguno representa
+    // "timbrada") — que ya esté timbrada se sabe por UUID IS NOT NULL.
+    await pool.request()
+      .input('id', sql.Decimal(9), idNoFactura)
+      .input('serieFac', sql.VarChar(20), serieFacKey)
+      .input('uuid',  sql.VarChar(40), pacResult.uuid)
+      .input('fecha', sql.VarChar(30), pacResult.fechaTimbrado || null)
+      .input('idCCP', sql.VarChar(36), idCCP)
+      .input('rfcProv', sql.VarChar(15), pacResult.rfcProvCertif || null)
+      .query(`UPDATE Empresa2.Factura
+              SET UUID=@uuid, FechaTimbrado=@fecha, IdCCP=@idCCP, RfcProvCertif=@rfcProv
+              WHERE Id_NoFactura=@id AND ${SERIEFAC_EQ}`);
+
+    // 6. Guardar el XML timbrado final; el sellado ya no es la versión oficial.
+    const sufijoArchivo = conexion.testFel ? 'Prueba' : 'Timbrada';
+    fs.mkdirSync(RUTA_XML, { recursive: true });
+    fs.writeFileSync(path.join(RUTA_XML, `${nombreBase}_${sufijoArchivo}.xml`), pacResult.xmlTimbrado, 'utf8');
+    const rutaSellado = path.join(RUTA_XML, `${nombreBase}_sellado.xml`);
+    if (fs.existsSync(rutaSellado)) fs.unlinkSync(rutaSellado);
+
+    // 7. Descuento/bitácora de timbres — solo fuera de modo prueba.
+    if (!conexion.testFel) {
+      await descontarTimbre(pool, { tipo: 'Factura', serie: serieFacKey, idFacVen: String(idNoFactura), uuid: pacResult.uuid });
+    }
+
+    res.json({
+      ok:      true,
+      mensaje: `Factura timbrada correctamente${conexion.testFel ? ' (modo prueba)' : ''}. UUID: ${pacResult.uuid}`,
+      testFel: conexion.testFel,
+      pacResult,
+    });
+  } catch (err) {
+    console.error('CFDI timbrar-factura error:', err);
     res.status(500).json({ ok: false, error: err.message });
   }
 });

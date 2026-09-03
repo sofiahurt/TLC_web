@@ -252,7 +252,7 @@ router.get('/data', async (req, res) => {
   try {
     const data = await browseQuery({
       table: 'Empresa2.Factura',
-      columns: ['Id_NoFactura','FechaFactura','Id_Cliente','NombreCom','RFC','MonFactura','SubTotal','IVA','Retencion','TOTAL','Status','SerieFac','Facturo'],
+      columns: ['Id_NoFactura','FechaFactura','Id_Cliente','NombreCom','RFC','MonFactura','SubTotal','IVA','Retencion','TOTAL','Status','SerieFac','Facturo','UUID'],
       searchableCols: ['Id_NoFactura','NombreCom','RFC','Status','SerieFac','Facturo'],
       req
     });
@@ -270,6 +270,7 @@ router.get('/data', async (req, res) => {
       <td data-field="Status" data-value="${fmt(r.Status)}">${fmt(r.Status)}</td>
       <td data-field="Facturo" data-value="${fmt(r.Facturo)}">${fmt(r.Facturo)}</td>
       <td data-field="Id_Cliente" data-value="${r.Id_Cliente||''}" style="display:none"></td>
+      <td data-field="UUID" data-value="${fmt(r.UUID)}" style="display:none"></td>
     </tr>`).join('');
     res.json({ rows, page: data.page, totalPages: data.totalPages, total: data.total });
   } catch (err) { res.status(500).json({ error: err.message }); }

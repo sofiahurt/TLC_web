@@ -158,19 +158,25 @@
        cfdi:Impuestos (nivel comprobante)
   ════════════════════════════════════════════════════════════════════ -->
 
+  <!-- Orden verificado contra el XSLT oficial del SAT (cadenaoriginal_4_0.xslt):
+       ciclo Retenciones, luego TotalImpuestosRetenidos, luego ciclo Traslados
+       (con Base -- requerido, se omitía), luego TotalImpuestosTrasladados.
+       Este nodo nunca lo ejercitaba Carta Porte (Total="0", sin Impuestos),
+       por eso el orden incorrecto original nunca se detectó. -->
   <xsl:template match="cfdi:Impuestos">
-    <xsl:call-template name="Opcional"><xsl:with-param name="valor" select="./@TotalImpuestosRetenidos"/></xsl:call-template>
-    <xsl:call-template name="Opcional"><xsl:with-param name="valor" select="./@TotalImpuestosTrasladados"/></xsl:call-template>
     <xsl:for-each select="./cfdi:Retenciones/cfdi:Retencion">
       <xsl:call-template name="Requerido"><xsl:with-param name="valor" select="./@Impuesto"/></xsl:call-template>
       <xsl:call-template name="Requerido"><xsl:with-param name="valor" select="./@Importe"/></xsl:call-template>
     </xsl:for-each>
+    <xsl:call-template name="Opcional"><xsl:with-param name="valor" select="./@TotalImpuestosRetenidos"/></xsl:call-template>
     <xsl:for-each select="./cfdi:Traslados/cfdi:Traslado">
+      <xsl:call-template name="Requerido"><xsl:with-param name="valor" select="./@Base"/></xsl:call-template>
       <xsl:call-template name="Requerido"><xsl:with-param name="valor" select="./@Impuesto"/></xsl:call-template>
       <xsl:call-template name="Requerido"><xsl:with-param name="valor" select="./@TipoFactor"/></xsl:call-template>
       <xsl:call-template name="Opcional"><xsl:with-param name="valor" select="./@TasaOCuota"/></xsl:call-template>
       <xsl:call-template name="Opcional"><xsl:with-param name="valor" select="./@Importe"/></xsl:call-template>
     </xsl:for-each>
+    <xsl:call-template name="Opcional"><xsl:with-param name="valor" select="./@TotalImpuestosTrasladados"/></xsl:call-template>
   </xsl:template>
 
   <!-- ═══════════════════════════════════════════════════════════════════

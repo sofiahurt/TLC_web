@@ -15,6 +15,7 @@
       <div class="col-auto ms-auto btn-action-group">
         <button class="btn btn-sm btn-success" onclick="openAdd()"><i class="bi bi-plus-lg"></i> Nueva Factura</button>
         <button class="btn btn-sm btn-primary" data-requires-selection disabled onclick="openEdit()"><i class="bi bi-eye"></i> Ver / Editar</button>
+        <button class="btn btn-sm btn-warning" id="btnTimbrarFactura" disabled onclick="openTimbrarFactura()"><i class="bi bi-file-earmark-check"></i> Timbrar</button>
       </div>
     </div>
   </div></div>
@@ -184,12 +185,88 @@
   </div>
 </div></div>
 
+<!-- ═══════════════ MODAL TIMBRAR FACTURA ═══════════════ -->
+<div class="modal fade" id="timbraFacModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title"><i class="bi bi-file-earmark-check me-2 text-warning"></i>Timbrar Factura</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="timbraFacBody"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-warning btn-sm" id="btnConfirmTimbrarFac" onclick="ejecutarTimbradoFactura()">
+          <i class="bi bi-file-earmark-check me-1"></i>Confirmar timbrado
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <%- include('partials/footer') %>
 <script>
 const browse=initBrowse({searchInput:document.getElementById('searchInput'),searchColumn:document.getElementById('searchCol'),tableBody:document.getElementById('tableBody'),paginationEl:document.getElementById('pagination'),infoEl:document.getElementById('pageInfo'),fetchUrl:'/facturas/data',defaultSort:'Id_NoFactura',defaultDir:'desc'});
 const modal=new bootstrap.Modal(document.getElementById('frmModal'));
+const timbraFacModal=new bootstrap.Modal(document.getElementById('timbraFacModal'));
 const errEl=document.getElementById('frmError'), warnEl=document.getElementById('frmWarning');
 let _factura={idNoFactura:null, confirmada:false, cliente:null};
+
+// Habilita "Timbrar" solo cuando hay una factura seleccionada, sin UUID
+// todavía (no timbrada) y que no esté cancelada.
+document.addEventListener('click', function(e){
+  const row=e.target.closest('tr[data-id]');
+  if(!row || e.target.closest('.modal-lookup')) return;
+  const btnTi=document.getElementById('btnTimbrarFactura');
+  if(!btnTi) return;
+  const yaTimbrada=!!(window._selectedRow?.UUID||'').trim();
+  const status=(window._selectedRow?.Status||'').trim().toUpperCase();
+  btnTi.disabled = yaTimbrada || status==='CANCELADA';
+});
+
+function openTimbrarFactura(){
+  if(!window._selectedRow) return;
+  const { Id_NoFactura, SerieFac } = window._selectedRow;
+  document.getElementById('timbraFacBody').innerHTML =
+    `<p class="mb-2">¿Confirmar timbrado de la Factura <strong>${Id_NoFactura}</strong>${SerieFac?(' (serie '+SerieFac+')'):''}?</p>
+     <p class="text-muted small mb-0"><i class="bi bi-exclamation-triangle-fill me-1 text-warning"></i>Esta acción sellará digitalmente el XML y lo enviará al PAC para su timbrado fiscal.</p>`;
+  const btn=document.getElementById('btnConfirmTimbrarFac');
+  btn.style.display=''; btn.disabled=false;
+  btn.innerHTML='<i class="bi bi-file-earmark-check me-1"></i>Confirmar timbrado';
+  timbraFacModal.show();
+}
+
+function ejecutarTimbradoFactura(){
+  if(!window._selectedRow) return;
+  const { Id_NoFactura, SerieFac } = window._selectedRow;
+  const btn=document.getElementById('btnConfirmTimbrarFac');
+  btn.disabled=true;
+  btn.innerHTML='<span class="spinner-border spinner-border-sm me-1"></span>Procesando...';
+
+  fetch('/cfdi/timbrar-factura',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idNoFactura:Id_NoFactura,serieFac:SerieFac||''})})
+    .then(r=>r.json()).then(d=>{
+      btn.style.display='none';
+      if(d.ok){
+        document.getElementById('timbraFacBody').innerHTML=
+          `<div class="alert alert-success mb-0"><i class="bi bi-check-circle-fill me-2"></i><strong>${d.mensaje}</strong></div>`;
+        if(!d.testFel){
+          if(window._selectedRow) window._selectedRow.UUID=d.pacResult?.uuid||'x';
+          document.getElementById('btnTimbrarFactura').disabled=true;
+          browse.load();
+        }
+      } else {
+        btn.disabled=false; btn.style.display='';
+        btn.innerHTML='<i class="bi bi-file-earmark-check me-1"></i>Confirmar timbrado';
+        document.getElementById('timbraFacBody').innerHTML=
+          `<div class="alert alert-danger mb-0"><i class="bi bi-x-circle me-2"></i>${d.error||'Error desconocido'}</div>`;
+      }
+    })
+    .catch(()=>{
+      btn.disabled=false; btn.style.display='';
+      btn.innerHTML='<i class="bi bi-file-earmark-check me-1"></i>Confirmar timbrado';
+      document.getElementById('timbraFacBody').innerHTML='<div class="alert alert-danger mb-0">Error de comunicación con el servidor.</div>';
+    });
+}
 
 function showError(msg){errEl.textContent=msg;errEl.classList.remove('d-none');}
 function hideError(){errEl.classList.add('d-none');}

@@ -60,10 +60,21 @@ function domAttrs(dom) {
   return attrs;
 }
 
-// ── main builder ─────────────────────────────────────────────────────────────
-
-async function buildCFDITraslado(serie, cartaporte, pool) {
-
+// ── Complemento Carta Porte 3.1 ────────────────────────────────────────────
+// Reutilizable: arma el nodo cartaporte31:CartaPorte completo (Ubicaciones,
+// Mercancias, Autotransporte, FiguraTransporte) dentro del nodo cfdi:Complemento
+// que le pase el llamador, a partir del folio de UNA Carta Porte. Usado tanto
+// por buildCFDITraslado (comprobante "T") como por cfdi-factura.js cuando
+// Factura.IncluirCP=1 (comprobante "I" con el complemento adjunto).
+//
+// @param {object} complementoNode Nodo xmlbuilder2 cfdi:Complemento ya creado
+// @param {string} serie Serie/central de la Carta Porte
+// @param {string} cartaporte Folio de la Carta Porte
+// @param {object} emp Fila de dbo.Empresas ya resuelta por el llamador (fallback
+//   de PermSCT/NumPermisoSCT/Seguros cuando el camión no trae su propio dato)
+// @param {object} pool Conexión mssql
+// @returns {Promise<{idCCP: string}>}
+async function buildComplementoCartaPorte(complementoNode, serie, cartaporte, emp, pool) {
   // 1. CartaPorte record
   const cpRes = await pool.request()
     .input('serie',      sql.VarChar(10),  serie)
@@ -74,22 +85,13 @@ async function buildCFDITraslado(serie, cartaporte, pool) {
   if (!cpRes.recordset.length) throw new Error(`CartaPorte ${cartaporte} no encontrado`);
   const cp = cpRes.recordset[0];
 
-  // 2. Empresa (emisor/receptor) — varios centrales comparten la misma razón
-  // social/CSD (ver config/empresa-serie.js), por eso se resuelve la serie
-  // fiscal antes de consultar dbo.Empresas.
-  const empRes = await pool.request()
-    .input('serie', sql.VarChar(10), serieFiscal(serie))
-    .query(`SELECT * FROM dbo.Empresas WHERE LTRIM(RTRIM(SERIE)) = @serie`);
-  if (!empRes.recordset.length) throw new Error(`Empresa para serie ${serie} no encontrada`);
-  const emp = empRes.recordset[0];
-
-  // 3. Cliente principal (receptor físico)
+  // 2. Cliente principal (receptor físico)
   const cliRes = await pool.request()
     .input('id', sql.Decimal(18,0), cp.Id_Cliente)
     .query(`SELECT * FROM Empresa2.Clientes WHERE Id_Cliente = @id`);
   const cli = cliRes.recordset[0] || null;
 
-  // 4. Cliente carga (origen) – si difiere
+  // 3. Cliente carga (origen) – si difiere
   let cliCarga = null;
   if (cp.Id_ClienteCarga && parseInt(cp.Id_ClienteCarga) !== parseInt(cp.Id_Cliente)) {
     const ccRes = await pool.request()
@@ -98,7 +100,7 @@ async function buildCFDITraslado(serie, cartaporte, pool) {
     cliCarga = ccRes.recordset[0] || null;
   }
 
-  // 5. Domicilios
+  // 4. Domicilios
   const domCargaRes = await pool.request()
     .input('idCliente',   sql.Decimal(18,0), cp.Id_ClienteCarga || cp.Id_Cliente)
     .input('idDomicilio', sql.Decimal(18,0), cp.Id_DomCarga)
@@ -113,13 +115,13 @@ async function buildCFDITraslado(serie, cartaporte, pool) {
             WHERE ID_CLIENTE = @idCliente AND ID_DOMICILIO = @idDomicilio`);
   const domDesc = domDescRes.recordset[0] || null;
 
-  // 6. Camión (Id_Camion en CartaPorte es varchar; ID_CAMION en Camiones es char)
+  // 5. Camión (Id_Camion en CartaPorte es varchar; ID_CAMION en Camiones es char)
   const camRes = await pool.request()
     .input('id', sql.VarChar(10), fmt(cp.Id_Camion))
     .query(`SELECT * FROM Empresa2.Camiones WHERE LTRIM(RTRIM(ID_CAMION)) = LTRIM(RTRIM(@id))`);
   const cam = camRes.recordset[0] || null;
 
-  // 6b. Remolques (NoCaja/NoCaja2 en CartaPorte apuntan a Camiones con TIPO='Remolque';
+  // 5b. Remolques (NoCaja/NoCaja2 en CartaPorte apuntan a Camiones con TIPO='Remolque';
   // ahí es donde viven SubTipoRem (columna C_SUBTIPO, no SUBTIPOREM) y la Placa
   // del remolque, no en el tracto/Id_Camion)
   async function buscarRemolque(idCaja) {
@@ -132,13 +134,13 @@ async function buildCFDITraslado(serie, cartaporte, pool) {
   }
   const remolques = (await Promise.all([buscarRemolque(cp.NoCaja), buscarRemolque(cp.NoCaja2)])).filter(Boolean);
 
-  // 7. Operador
+  // 6. Operador
   const opRes = await pool.request()
     .input('id', sql.Int, cp.Id_Operador)
     .query(`SELECT * FROM Empresa2.Operadores WHERE Id_Operador = @id`);
   const op = opRes.recordset[0] || null;
 
-  // 8. Mercancias
+  // 7. Mercancias
   const mercRes = await pool.request()
     .input('serie',      sql.VarChar(10), serie)
     .input('cartaporte', sql.VarChar(30), cartaporte)
@@ -147,82 +149,15 @@ async function buildCFDITraslado(serie, cartaporte, pool) {
               AND LTRIM(RTRIM(CartaPorte)) = @cartaporte`);
   const mercs = mercRes.recordset;
 
-  // ── build XML ───────────────────────────────────────────────────────────────
-
-  const fechaEmision = isoFecha(cp.FechaPedido || new Date());
-  const idCCP        = generarIdCCP();
-
-  // Emisor y Receptor son la misma empresa (autotraslado)
+  const idCCP = generarIdCCP();
   const emisorRFC    = fmt(emp.RFC);
-  // El SAT valida que Nombre coincida con el registrado para ese RFC — EMPRESA
-  // trae la razón social completa (con "S.A. DE C.V.") pero lo que el SAT tiene
-  // registrado es NOMBRECORTO.
   const emisorNombre = fmt(emp.NOMBRECORTO);
-  const emisorRegFis = fmt(emp.C_REGIMENFISCAL);
-  const lugarExp     = fmt(emp.LUGAREXPEDICION) || fmt(emp.CP);
-
-  const doc = create({ version: '1.0', encoding: 'UTF-8' })
-    .ele('cfdi:Comprobante', {
-      'xmlns:cfdi':  'http://www.sat.gob.mx/cfd/4',
-      'xmlns:cartaporte31': 'http://www.sat.gob.mx/CartaPorte31',
-      'xmlns:xsi':   'http://www.w3.org/2001/XMLSchema-instance',
-      'xsi:schemaLocation': [
-        'http://www.sat.gob.mx/cfd/4',
-        'http://www.sat.gob.mx/sitio_internet/cfd/4/cfdv40.xsd',
-        'http://www.sat.gob.mx/CartaPorte31',
-        'http://www.sat.gob.mx/sitio_internet/cfd/CartaPorte/CartaPorte31.xsd'
-      ].join(' '),
-      'Version':          '4.0',
-      'Serie':            'CP',
-      'Folio':            fmt(cp.CartaPorte),
-      'Fecha':            fechaEmision,
-      'NoCertificado':    '',
-      'Certificado':      '',
-      'Sello':            '',
-      'SubTotal':         '0',
-      'Moneda':           'XXX',
-      'Total':            '0',
-      'TipoDeComprobante': 'T',
-      'Exportacion':      '01',
-      'LugarExpedicion':  lugarExp,
-    });
-
-  // cfdi:Emisor
-  doc.ele('cfdi:Emisor', {
-    Rfc:              emisorRFC,
-    Nombre:           emisorNombre,
-    RegimenFiscal:    emisorRegFis,
-  }).up();
-
-  // cfdi:Receptor (autotraslado = misma empresa)
-  doc.ele('cfdi:Receptor', {
-    Rfc:                     emisorRFC,
-    Nombre:                  emisorNombre,
-    DomicilioFiscalReceptor: lugarExp,
-    RegimenFiscalReceptor:   emisorRegFis,
-    UsoCFDI:                 'S01',
-  }).up();
-
-  // cfdi:Conceptos → 1 concepto fijo
-  const conceptos = doc.ele('cfdi:Conceptos');
-  conceptos.ele('cfdi:Concepto', {
-    ClaveProdServ: '01010101',
-    Cantidad:      '1',
-    ClaveUnidad:   'ACT',
-    Descripcion:   'TRASLADO',
-    ValorUnitario: '0',
-    Importe:       '0',
-    ObjetoImp:     '01',
-  }).up();
-
-  // cfdi:Complemento
-  const complemento = doc.ele('cfdi:Complemento');
 
   // cartaporte31:CartaPorte
   // PesoBrutoTotal/UnidadPeso/NumTotalMercancias NO son atributos de este nodo
   // raíz según el XSD de Carta Porte 3.1 — solo existen en cartaporte31:Mercancias
   // (ver más abajo). Ponerlos aquí causa "attribute is not declared" en el PAC.
-  const cpNode = complemento.ele('cartaporte31:CartaPorte', {
+  const cpNode = complementoNode.ele('cartaporte31:CartaPorte', {
     'Version':            '3.1',
     'IdCCP':              idCCP,
     'TranspInternac':     'No',
@@ -277,7 +212,7 @@ async function buildCFDITraslado(serie, cartaporte, pool) {
     NumTotalMercancias: String(parseInt(cp.TotalMercancias) || mercs.length),
   });
 
-  mercs.forEach((m, i) => {
+  mercs.forEach((m) => {
     const desc = fmt(m.DesManual) || fmt(m.Descripcion) || 'MERCANCIA';
 
     // Réplica de la regla del sistema legado (Clarion): el atributo
@@ -357,7 +292,105 @@ async function buildCFDITraslado(serie, cartaporte, pool) {
     }).up();
   }
 
+  return { idCCP };
+}
+
+// ── main builder (comprobante "T" — Traslado) ─────────────────────────────────
+
+async function buildCFDITraslado(serie, cartaporte, pool) {
+
+  // 1. CartaPorte record (solo para Fecha/Folio del comprobante — el resto lo
+  // vuelve a consultar buildComplementoCartaPorte)
+  const cpRes = await pool.request()
+    .input('serie',      sql.VarChar(10),  serie)
+    .input('cartaporte', sql.VarChar(30),  cartaporte)
+    .query(`SELECT * FROM Empresa2.CartaPorte
+            WHERE LTRIM(RTRIM(Serie)) = @serie
+              AND LTRIM(RTRIM(CartaPorte)) = @cartaporte`);
+  if (!cpRes.recordset.length) throw new Error(`CartaPorte ${cartaporte} no encontrado`);
+  const cp = cpRes.recordset[0];
+
+  // 2. Empresa (emisor/receptor) — varios centrales comparten la misma razón
+  // social/CSD (ver config/empresa-serie.js), por eso se resuelve la serie
+  // fiscal antes de consultar dbo.Empresas.
+  const empRes = await pool.request()
+    .input('serie', sql.VarChar(10), serieFiscal(serie))
+    .query(`SELECT * FROM dbo.Empresas WHERE LTRIM(RTRIM(SERIE)) = @serie`);
+  if (!empRes.recordset.length) throw new Error(`Empresa para serie ${serie} no encontrada`);
+  const emp = empRes.recordset[0];
+
+  // ── build XML ───────────────────────────────────────────────────────────────
+
+  const fechaEmision = isoFecha(cp.FechaPedido || new Date());
+
+  // Emisor y Receptor son la misma empresa (autotraslado)
+  const emisorRFC    = fmt(emp.RFC);
+  // El SAT valida que Nombre coincida con el registrado para ese RFC — EMPRESA
+  // trae la razón social completa (con "S.A. DE C.V.") pero lo que el SAT tiene
+  // registrado es NOMBRECORTO.
+  const emisorNombre = fmt(emp.NOMBRECORTO);
+  const emisorRegFis = fmt(emp.C_REGIMENFISCAL);
+  const lugarExp     = fmt(emp.LUGAREXPEDICION) || fmt(emp.CP);
+
+  const doc = create({ version: '1.0', encoding: 'UTF-8' })
+    .ele('cfdi:Comprobante', {
+      'xmlns:cfdi':  'http://www.sat.gob.mx/cfd/4',
+      'xmlns:cartaporte31': 'http://www.sat.gob.mx/CartaPorte31',
+      'xmlns:xsi':   'http://www.w3.org/2001/XMLSchema-instance',
+      'xsi:schemaLocation': [
+        'http://www.sat.gob.mx/cfd/4',
+        'http://www.sat.gob.mx/sitio_internet/cfd/4/cfdv40.xsd',
+        'http://www.sat.gob.mx/CartaPorte31',
+        'http://www.sat.gob.mx/sitio_internet/cfd/CartaPorte/CartaPorte31.xsd'
+      ].join(' '),
+      'Version':          '4.0',
+      'Serie':            'CP',
+      'Folio':            fmt(cp.CartaPorte),
+      'Fecha':            fechaEmision,
+      'NoCertificado':    '',
+      'Certificado':      '',
+      'Sello':            '',
+      'SubTotal':         '0',
+      'Moneda':           'XXX',
+      'Total':            '0',
+      'TipoDeComprobante': 'T',
+      'Exportacion':      '01',
+      'LugarExpedicion':  lugarExp,
+    });
+
+  // cfdi:Emisor
+  doc.ele('cfdi:Emisor', {
+    Rfc:              emisorRFC,
+    Nombre:           emisorNombre,
+    RegimenFiscal:    emisorRegFis,
+  }).up();
+
+  // cfdi:Receptor (autotraslado = misma empresa)
+  doc.ele('cfdi:Receptor', {
+    Rfc:                     emisorRFC,
+    Nombre:                  emisorNombre,
+    DomicilioFiscalReceptor: lugarExp,
+    RegimenFiscalReceptor:   emisorRegFis,
+    UsoCFDI:                 'S01',
+  }).up();
+
+  // cfdi:Conceptos → 1 concepto fijo
+  const conceptos = doc.ele('cfdi:Conceptos');
+  conceptos.ele('cfdi:Concepto', {
+    ClaveProdServ: '01010101',
+    Cantidad:      '1',
+    ClaveUnidad:   'ACT',
+    Descripcion:   'TRASLADO',
+    ValorUnitario: '0',
+    Importe:       '0',
+    ObjetoImp:     '01',
+  }).up();
+
+  // cfdi:Complemento
+  const complemento = doc.ele('cfdi:Complemento');
+  const { idCCP } = await buildComplementoCartaPorte(complemento, serie, cartaporte, emp, pool);
+
   return { xml: doc.end({ prettyPrint: true }), idCCP };
 }
 
-module.exports = { buildCFDITraslado, generarIdCCP };
+module.exports = { buildCFDITraslado, buildComplementoCartaPorte, generarIdCCP };

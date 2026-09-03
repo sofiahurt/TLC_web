@@ -431,7 +431,10 @@ async function generarPDFBuffer(serie, cartaporte, pool) {
 
     let qrDataUrl = null;
     try {
-      const totalStr = numFmt(d.cp.TOTALMX, 6);
+      // El comprobante "T" (traslado) siempre tiene Total="0" fiscal -- no
+      // existe importe fiscal en una Carta Porte (era un bug usar TOTALMX,
+      // que es el total operativo interno, casi nunca 0).
+      const totalStr = numFmt(0, 6);
       const feUrl = (d.timbre.selloCFD || '').slice(-8);
       const qrTexto = `https://verificacfdi.facturaelectronica.sat.gob.mx/default.aspx?id=${d.timbre.uuid}&re=${d.emisorRfc}&rr=${d.receptorRfc}&tt=${totalStr}&fe=${feUrl}`;
       qrDataUrl = await QRCode.toDataURL(qrTexto, { margin: 1, width: 90 });
