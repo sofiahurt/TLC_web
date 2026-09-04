@@ -20,6 +20,10 @@ const { serieFiscal } = require('../config/empresa-serie');
 const { buildCFDITraslado } = require('./cfdi-traslado');
 const { DOMParser } = require('@xmldom/xmldom');
 const QRCode = require('qrcode');
+const {
+  fmt, numFmt, fechaCorta, fechaHora, partirLargo, resolverLogo,
+  porLocalName, todosPorLocalName, attr,
+} = require('./pdf-utils');
 
 const PdfPrinter  = require('pdfmake/js/Printer.js').default;
 const URLResolver = require('pdfmake/js/URLResolver.js').default;
@@ -30,83 +34,6 @@ const AZUL  = '#1a3f6f';
 // Padding vertical un poco más generoso que el default de pdfmake (2pt) para
 // que las tablas no se vean tan apretadas.
 const LAYOUT_ESPACIADO = { paddingTop: () => 5, paddingBottom: () => 5, paddingLeft: () => 4, paddingRight: () => 4 };
-
-function fmt(v) { return v ? String(v).trim() : ''; }
-
-// ── helpers de lectura de XML (namespaces con prefijo fijo cartaporte31:) ──────
-function porLocalName(node, name) {
-  const nameLower = name.toLowerCase();
-  const all = node.getElementsByTagName('*');
-  for (let i = 0; i < all.length; i++) {
-    if ((all[i].localName || all[i].nodeName).toLowerCase() === nameLower) return all[i];
-  }
-  return null;
-}
-function todosPorLocalName(node, name) {
-  const nameLower = name.toLowerCase();
-  const all = node.getElementsByTagName('*');
-  const out = [];
-  for (let i = 0; i < all.length; i++) {
-    if ((all[i].localName || all[i].nodeName).toLowerCase() === nameLower) out.push(all[i]);
-  }
-  return out;
-}
-function attr(el, name) { return el ? fmt(el.getAttribute(name)) : ''; }
-
-// ── formato de fecha/hora estilo "9 JUL 2026" / "9/07/2026 - 08:19 p." ─────────
-const MESES = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
-function fechaCorta(iso) {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (isNaN(d)) return '';
-  return `${d.getUTCDate()} ${MESES[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
-}
-function fechaHora(iso) {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (isNaN(d)) return '';
-  let h = d.getUTCHours();
-  const ampm = h >= 12 ? 'p.' : 'a.';
-  h = h % 12; if (h === 0) h = 12;
-  const mm = String(d.getUTCMinutes()).padStart(2, '0');
-  return `${d.getUTCDate()}/${String(d.getUTCMonth()+1).padStart(2,'0')}/${d.getUTCFullYear()} - ${h}:${mm} ${ampm}`;
-}
-function numFmt(v, dec) {
-  const n = parseFloat(v) || 0;
-  return n.toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec });
-}
-
-// Sellos/certificados en base64 no traen espacios; pdfmake NO hace salto de
-// línea dentro de una "palabra" sin espacios y el texto se sale de la página.
-// Se inserta un espacio cada N caracteres para que sí pueda partirse (mismo
-// truco visual que usa el PDF de referencia del sistema legado).
-function partirLargo(str, cada = 90) {
-  const s = fmt(str);
-  if (!s) return '';
-  return (s.match(new RegExp(`.{1,${cada}}`, 'g')) || []).join(' ');
-}
-
-// La ruta guardada en dbo.Empresas viene del sistema legado con su propia letra
-// de unidad (ej. "D:\..."); se sustituye por la unidad real de esta máquina,
-// igual que RUTA_XML en config/storage.js.
-// Logo empaquetado dentro del propio proyecto (imagenes/LogoTLC.jpg) — funciona
-// igual en desarrollo y en el VPS sin depender de rutas absolutas del sistema
-// legado. Se prioriza sobre dbo.Empresas.LOGOEMPRESA, que solo queda como
-// respaldo (esa ruta trae la unidad de disco de la máquina legada, ej. "D:\...",
-// y hay que sustituirla por la unidad real de esta máquina para que sirva).
-const LOGO_PROYECTO = path.join(__dirname, '..', '..', 'imagenes', 'LogoTLC.jpg');
-
-function resolverLogo(rutaGuardada) {
-  if (fs.existsSync(LOGO_PROYECTO)) return LOGO_PROYECTO;
-
-  const ruta = fmt(rutaGuardada);
-  if (!ruta) return null;
-  const unidadActual = path.parse(__dirname).root;
-  const rutaLocal = ruta.replace(/^[A-Za-z]:\\/, unidadActual);
-  if (fs.existsSync(rutaLocal)) return rutaLocal;
-  if (fs.existsSync(ruta)) return ruta;
-  return null;
-}
 
 // ── extrae del XML (timbrado o preview) todo lo necesario para la plantilla ────
 function extraerDatosXML(xmlString) {

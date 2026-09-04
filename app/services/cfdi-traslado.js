@@ -20,6 +20,18 @@ function isoFecha(d) {
   return dt.toISOString().replace(/\.\d{3}Z$/, '');
 }
 
+// Combina una columna `date` (fecha) con una columna `datetime` (de la que
+// solo interesa la hora) en un solo ISO local -- FehcaCarga/FechaDesCarta son
+// `date` puro (sin hora) y la hora real vive aparte en HoraCarga/HorarioDesCarta.
+// Usar solo isoFecha(fecha) produce siempre T00:00:00, aunque sí se haya
+// capturado una hora real.
+function isoFechaHora(fecha, hora) {
+  if (!fecha) return '';
+  const f = (fecha instanceof Date ? fecha : new Date(fecha)).toISOString().slice(0, 10);
+  const h = hora ? (hora instanceof Date ? hora : new Date(hora)).toISOString().slice(11, 19) : '00:00:00';
+  return `${f}T${h}`;
+}
+
 function fmtDec(v, dec = 2) {
   const n = parseFloat(v) || 0;
   return n.toFixed(dec);
@@ -53,7 +65,12 @@ function domAttrs(dom) {
   if (fmt(dom.CALLE))   attrs.Calle   = fmt(dom.CALLE);
   if (fmt(dom.NOEXT))   attrs.NumeroExterior = fmt(dom.NOEXT);
   if (fmt(dom.NOINT))   attrs.NumeroInterior = fmt(dom.NOINT);
-  // Colonia, Localidad y Municipio no se declaran (todos opcionales en el XSD)
+  // Colonia no se declara (opcional en el XSD, no se usa en el PDF de referencia).
+  // Municipio y Localidad SÍ son texto libre (t_Descrip120, sin catálogo
+  // restringido -- verificado contra el XSD oficial CartaPorte31.xsd), por
+  // eso es seguro declararlos con el texto tal cual viene de DomCarDes.
+  if (fmt(dom.MUNICIPIO)) attrs.Municipio = fmt(dom.MUNICIPIO);
+  if (fmt(dom.CIUDAD))    attrs.Localidad = fmt(dom.CIUDAD);
   if (fmt(dom.ESTADO))  attrs.Estado   = fmt(dom.ESTADO);
   if (fmt(dom.CP))      attrs.CodigoPostal = fmt(dom.CP);
   attrs.Pais = normPais(dom.PAIS || 'MEX');
@@ -174,8 +191,8 @@ async function buildComplementoCartaPorte(complementoNode, serie, cartaporte, em
     TipoUbicacion:      'Origen',
     IDUbicacion:        'OR000001',
     RFCRemitenteDestinatario: origenOp ? fmt(origenOp.RFC) : emisorRFC,
-    NombreRemitenteDestinatario: origenOp ? fmt(origenOp.NOMBRECOMUN) : emisorNombre,
-    FechaHoraSalidaLlegada: isoFecha(cp.FehcaCarga),
+    NombreRemitenteDestinatario: origenOp ? (fmt(origenOp.NOMBRECOM) || fmt(origenOp.NOMBRECOMUN)) : emisorNombre,
+    FechaHoraSalidaLlegada: isoFechaHora(cp.FehcaCarga, cp.HoraCarga),
   };
   if (origenOp && parseInt(origenOp.FLAGEXTRANJERO)) {
     origenAttrs.NumRegIdTrib = fmt(origenOp.CLAVEIDFISCAL);
@@ -191,8 +208,8 @@ async function buildComplementoCartaPorte(complementoNode, serie, cartaporte, em
     TipoUbicacion:      'Destino',
     IDUbicacion:        'DE000001',
     RFCRemitenteDestinatario: cli ? fmt(cli.RFC) : emisorRFC,
-    NombreRemitenteDestinatario: cli ? fmt(cli.NOMBRECOMUN) : emisorNombre,
-    FechaHoraSalidaLlegada: isoFecha(cp.FechaDesCarta),
+    NombreRemitenteDestinatario: cli ? (fmt(cli.NOMBRECOM) || fmt(cli.NOMBRECOMUN)) : emisorNombre,
+    FechaHoraSalidaLlegada: isoFechaHora(cp.FechaDesCarta, cp.HorarioDesCarta),
     DistanciaRecorrida:  fmtDec(cp.KilometrosTar, 2),
   };
   if (cli && parseInt(cli.FLAGEXTRANJERO)) {

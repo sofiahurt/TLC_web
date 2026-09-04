@@ -11,6 +11,7 @@ const { sellarXML } = require('../services/cfdi-sello');
 const { timbrarConPAC } = require('../services/cfdi-pac');
 const { descontarTimbre } = require('../services/timbre-consumo');
 const { generarPDFBuffer } = require('../services/cfdi-pdf');
+const { generarPDFBufferFactura } = require('../services/factura-pdf');
 const { RUTA_XML } = require('../config/storage');
 const { serieFiscal } = require('../config/empresa-serie');
 
@@ -373,6 +374,25 @@ router.get('/pdf', async (req, res) => {
   }
 });
 
+// ── PDF de Factura ───────────────────────────────────────────────────────────
+// GET /cfdi/pdf-factura?idNoFactura=&serieFac= — disponible con o sin timbre.
+router.get('/pdf-factura', async (req, res) => {
+  try {
+    const idNoFactura = parseInt(req.query.idNoFactura);
+    if (!idNoFactura) return res.status(400).send('Falta el parámetro idNoFactura');
+    const serieFac = req.query.serieFac || '';
+
+    const pool = await getPool();
+    const buffer = await generarPDFBufferFactura(idNoFactura, serieFac, pool);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="FAC_${idNoFactura}.pdf"`);
+    res.send(buffer);
+  } catch (err) {
+    console.error('CFDI pdf-factura error:', err);
+    res.status(500).send(`Error al generar el PDF: ${err.message}`);
+  }
+});
+
 // ── XML timbrado ─────────────────────────────────────────────────────────────
 // GET /cfdi/xml?serie=&cartaporte= — solo disponible si Status=TRASLADO y hay UUID.
 router.get('/xml', async (req, res) => {
@@ -402,6 +422,38 @@ router.get('/xml', async (req, res) => {
     res.send(fs.readFileSync(ruta, 'utf8'));
   } catch (err) {
     console.error('CFDI xml error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /cfdi/xml-factura?idNoFactura=&serieFac= — solo disponible una vez timbrada.
+router.get('/xml-factura', async (req, res) => {
+  try {
+    const idNoFactura = parseInt(req.query.idNoFactura);
+    if (!idNoFactura) return res.status(400).json({ error: 'Falta el parámetro idNoFactura' });
+    const serieFacKey = (req.query.serieFac || '').trim() || null;
+
+    const pool = await getPool();
+    const facRes = await pool.request()
+      .input('id', sql.Decimal(9), idNoFactura)
+      .input('serieFac', sql.VarChar(20), serieFacKey)
+      .query(`SELECT UUID FROM Empresa2.Factura
+              WHERE Id_NoFactura=@id AND ISNULL(LTRIM(RTRIM(SerieFac)),'') = ISNULL(@serieFac,'')`);
+    const fac = facRes.recordset[0];
+    if (!fac) return res.status(404).json({ error: 'Factura no encontrada' });
+    if (!(fac.UUID || '').trim()) return res.status(400).json({ error: 'Esta Factura todavía no está timbrada' });
+
+    const nombreBase = `FAC_${serieFacKey || 'SF'}${idNoFactura}`;
+    const rutaTimbrada = path.join(RUTA_XML, `${nombreBase}_Timbrada.xml`);
+    const rutaPrueba   = path.join(RUTA_XML, `${nombreBase}_Prueba.xml`);
+    const ruta = fs.existsSync(rutaTimbrada) ? rutaTimbrada : (fs.existsSync(rutaPrueba) ? rutaPrueba : null);
+    if (!ruta) return res.status(404).json({ error: `No se encontró el archivo XML en ${RUTA_XML}` });
+
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${path.basename(ruta)}"`);
+    res.send(fs.readFileSync(ruta, 'utf8'));
+  } catch (err) {
+    console.error('CFDI xml-factura error:', err);
     res.status(500).json({ error: err.message });
   }
 });
