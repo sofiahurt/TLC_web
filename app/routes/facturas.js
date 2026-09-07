@@ -98,13 +98,22 @@ async function recalcularImporteFacCP(tx, serie, cartaporte) {
 // ── Montos "cobrables" ya facturados en líneas previas no canceladas de esa CP ─
 const CONCEPTOS = {
   flete:     { montoCol: 'COSTOFLETE',      flagCol: 'FlagCobFlete' },
-  demoras:   { montoCol: 'COSTODEMORAS',    flagCol: 'FLAGCOBDEM' },
+  // Núcleo alternativo a flete (viaje cobrado "por renta"). Antes vivía en
+  // CartaPorte.CostoDemoras/FacDeta.COSTODEMORAS; ahora CartaPorte tiene su
+  // propio campo CostoRenta dedicado (CostoDemoras ya no se usa ahí) y
+  // FacDeta lo copia a su propia columna CostoRenta/FlagRenta.
+  renta:     { montoCol: 'CostoRenta',      flagCol: 'FlagRenta' },
   kilometros:{ montoCol: 'KILOMETROS',      flagCol: 'FLAGKILOMETROS' },
   casetas:   { montoCol: 'COSTOAUTOPISTAS', flagCol: 'FLAGCOBAUTO' },
   maniobras: { montoCol: 'COSTOMANIOBRAS',  flagCol: 'FLAGCOBMAN' },
   pension:   { montoCol: 'CostoPension',    flagCol: 'FlagCostoPension' },
   estadias:  { montoCol: 'CostoEstadias',   flagCol: 'FlagCostoEstadias' },
   otros:     { montoCol: 'COSTOSOTROS',     flagCol: 'FLAGCOBOTROS' },
+  // "Demoras" del depósito (Empresa2.DepoSolicitud.Demoras/FlagDemoras),
+  // tratado como un extra más -- igual que estadias/casetas/etc. Reutiliza
+  // las columnas COSTODEMORAS/FLAGCOBDEM de FacDeta (antes usadas para el
+  // núcleo, ahora libres para este propósito).
+  demoras:   { montoCol: 'COSTODEMORAS',    flagCol: 'FLAGCOBDEM' },
 };
 
 async function yaFacturadoPorConcepto(tx, serie, cartaporte, excluir) {
@@ -142,10 +151,10 @@ async function yaFacturadoPorConcepto(tx, serie, cartaporte, excluir) {
 // maniobras, y por extensión pensión/estadías/otros — mismo tratamiento que
 // pidió el usuario) SIEMPRE llevan IVA plano de 16% y NUNCA retención, y se
 // suman aparte al núcleo cuando ambos aplican en la misma línea.
-const CONCEPTOS_EXTRA = ['casetas', 'maniobras', 'pension', 'estadias', 'otros'];
+const CONCEPTOS_EXTRA = ['casetas', 'maniobras', 'pension', 'estadias', 'otros', 'demoras'];
 function calcularTotalesLinea(cpRow, activos) {
   const extra = CONCEPTOS_EXTRA.reduce((a, k) => a + (activos[k] || 0), 0);
-  const coreActivo = !!(activos.flete || activos.demoras);
+  const coreActivo = !!(activos.flete || activos.renta);
   const extraActivo = extra > 0.005;
   const kmActivo = !!activos.kilometros;
 
@@ -182,7 +191,8 @@ async function cobrableDepositos(tx, serie, cartaporte) {
         ISNULL(SUM(CASE WHEN FlagCobMan=1    THEN Maniobra ELSE 0 END),0) AS maniobras,
         ISNULL(SUM(CASE WHEN FlagCobPen=1    THEN Pension  ELSE 0 END),0) AS pension,
         ISNULL(SUM(CASE WHEN FlagCobEsta=1   THEN Estadias ELSE 0 END),0) AS estadias,
-        ISNULL(SUM(CASE WHEN FlagCobOtros=1  THEN Otros    ELSE 0 END),0) AS otros
+        ISNULL(SUM(CASE WHEN FlagCobOtros=1  THEN Otros    ELSE 0 END),0) AS otros,
+        ISNULL(SUM(CASE WHEN FlagDemoras=1   THEN Demoras  ELSE 0 END),0) AS demoras
       FROM Empresa2.DepoSolicitud WHERE Serie=@serie AND CartaPorte=@cp`);
   const d = r.recordset[0];
   return {
@@ -191,6 +201,7 @@ async function cobrableDepositos(tx, serie, cartaporte) {
     pension:   Math.round((d.pension   / 1.16) * 100) / 100,
     estadias:  Math.round((d.estadias  / 1.16) * 100) / 100,
     otros:     Math.round((d.otros     / 1.16) * 100) / 100,
+    demoras:   Math.round((d.demoras   / 1.16) * 100) / 100,
   };
 }
 
@@ -235,13 +246,13 @@ router.get('/lookup/cartaporte', async (req, res) => {
     const dr = pool.request().input('serie', sql.VarChar(3), serie).input('idCliente', sql.Decimal(7), idCliente).input('status', sql.VarChar(20), status);
     if (q) dr.input('q', `%${q}%`);
     const data = await dr.query(
-      `SELECT CartaPorte,FechaPedido,DesFlete,CostoFlete,CostoDemoras,NoFactura,AnioFactura,Status
+      `SELECT CartaPorte,FechaPedido,DesFlete,CostoFlete,CostoRenta,NoFactura,AnioFactura,Status
        FROM Empresa2.CartaPorte ${where} ORDER BY CartaPorte DESC OFFSET ${offset} ROWS FETCH NEXT 10 ROWS ONLY`
     );
     const fmtDate = v => { if (!v) return ''; const d = v instanceof Date ? v : new Date(v); return d.toISOString().slice(0,10); };
     const rows = data.recordset.map(r => ({
       CartaPorte: trim(r.CartaPorte), FechaPedido: fmtDate(r.FechaPedido), DesFlete: trim(r.DesFlete),
-      CostoFlete: r.CostoFlete||0, CostoDemoras: r.CostoDemoras||0, NoFactura: r.NoFactura||'', AnioFactura: r.AnioFactura||'',
+      CostoFlete: r.CostoFlete||0, CostoRenta: r.CostoRenta||0, NoFactura: r.NoFactura||'', AnioFactura: r.AnioFactura||'',
       Status: trim(r.Status),
     }));
     res.json({ rows, total, totalPages: Math.ceil(total/10)||1, page });
@@ -343,7 +354,7 @@ router.get('/lookup/cartaporte-validar', async (req, res) => {
       Id_Cliente: cpRow.Id_Cliente, NombreComunCli: trim(cpRow.NombreComunCli),
       DesFlete: trim(cpRow.DesFlete), TipoPedido: trim(cpRow.TipoPedido), NoCaja: trim(cpRow.NoCaja),
       FechaPedido: cpRow.FechaPedido, Status: status,
-      CostoFlete: cpRow.CostoFlete||0, CostoDemoras: cpRow.CostoDemoras||0,
+      CostoFlete: cpRow.CostoFlete||0, CostoRenta: cpRow.CostoRenta||0,
       Kilometros: cpRow.Kilometros||0, KilometrosTar: cpRow.KilometrosTar||0, RetenKilo: cpRow.RetenKilo||0,
       c_Moneda: trim(cpRow.c_Moneda) || 'MXN', TipoCambio: cpRow.TipoCambio||0,
     });
@@ -374,11 +385,11 @@ router.post('/partida/agregar', requierePermiso('facturas.editar'), async (req, 
       }
 
       // Conceptos brutos de la CP + depósitos
-      const bruto = { flete: 0, demoras: 0, kilometros: num(cpRow.Kilometros) };
+      const bruto = { flete: 0, renta: 0, kilometros: num(cpRow.Kilometros) };
       if (num(cpRow.CostoFlete) > 0) bruto.flete = num(cpRow.CostoFlete);
-      else if (num(cpRow.CostoDemoras) > 0) bruto.demoras = num(cpRow.CostoDemoras);
+      else if (num(cpRow.CostoRenta) > 0) bruto.renta = num(cpRow.CostoRenta);
       const depo = await cobrableDepositos(tx, serie, cp);
-      Object.assign(bruto, depo); // casetas, maniobras, pension, estadias, otros
+      Object.assign(bruto, depo); // casetas, maniobras, pension, estadias, otros, demoras
 
       // Solo se descuenta lo ya facturado si la CP YA estaba en 'FACTURADO'
       // (ya tuvo al menos una partida previa). En la primera facturación de
@@ -502,6 +513,8 @@ router.post('/partida/agregar', requierePermiso('facturas.editar'), async (req, 
         .input('fest', sql.TinyInt, activos.estadias ? 1 : 0)
         .input('cotros', sql.Decimal(9,2), activos.otros || 0)
         .input('fotros', sql.TinyInt, activos.otros ? 1 : 0)
+        .input('crenta', sql.Decimal(9,2), activos.renta || 0)
+        .input('frenta', sql.TinyInt, activos.renta ? 1 : 0)
         .input('km', sql.Decimal(10,2), activos.kilometros || 0)
         .input('kmtar', sql.Decimal(7), cpRow.KilometrosTar || 0)
         .input('retenkm', sql.Decimal(7,2), cpRow.RetenKilo || 0)
@@ -518,13 +531,13 @@ router.post('/partida/agregar', requierePermiso('facturas.editar'), async (req, 
         .query(`INSERT INTO Empresa2.FacDeta(
           ID_NOFACTURA,ID_NODETAFAC,SerieFac,ID_CLIENTE,SERIE,ID_PEDIDO,CARTAPORTE,TIPOPEDIDO,ANIOPEDIDO,DESFLETE,NOCAJA,
           COSTOFLETE,FlagCobFlete,COSTODEMORAS,FLAGCOBDEM,COSTOAUTOPISTAS,FLAGCOBAUTO,COSTOMANIOBRAS,FLAGCOBMAN,
-          CostoPension,FlagCostoPension,CostoEstadias,FlagCostoEstadias,COSTOSOTROS,FLAGCOBOTROS,
+          CostoPension,FlagCostoPension,CostoEstadias,FlagCostoEstadias,COSTOSOTROS,FLAGCOBOTROS,CostoRenta,FlagRenta,
           KILOMETROS,KILOMETROSTAR,RETENKILO,FLAGKILOMETROS,
           RETEN,SUBTOTAL,IVA,TOTAL,C_CLAVEPRODSERV,DESCRIPCION,C_CLAVEUNIDAD,FLAGSINRET,FLAGIVA
         ) VALUES(
           @idf,@idd,@seriefac,@idcli,@serie,@idped,@cp,@tipoped,@aniop,@desflete,@nocaja,
           @cflete,@fflete,@cdem,@fdem,@cauto,@fauto,@cman,@fman,
-          @cpen,@fpen,@cest,@fest,@cotros,@fotros,
+          @cpen,@fpen,@cest,@fest,@cotros,@fotros,@crenta,@frenta,
           @km,@kmtar,@retenkm,@fkm,
           @reten,@sub,@iva,@tot,@cprodserv,@descprodserv,@claveunidad,@flagsinret,@flagiva
         )`);
@@ -662,7 +675,7 @@ router.post('/detalle/toggle-flag', requierePermiso('facturas.editar'), async (r
         } else if (concepto === 'kilometros') {
           bruto = num(cpRow.Kilometros);
         } else {
-          bruto = concepto === 'flete' ? num(cpRow.CostoFlete) : num(cpRow.CostoDemoras);
+          bruto = concepto === 'flete' ? num(cpRow.CostoFlete) : num(cpRow.CostoRenta);
         }
         const previo = await yaFacturadoPorConcepto(tx, serie, cp, { idNoFactura, idNoDetaFac, serieFac });
         const neto = Math.round(Math.max(bruto - num(previo[concepto]), 0) * 100) / 100;

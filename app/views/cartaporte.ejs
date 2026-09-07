@@ -305,6 +305,7 @@
                     <th style="min-width:110px">Maniobra</th>
                     <th style="min-width:110px">Estadías</th>
                     <th style="min-width:110px">Otros</th>
+                    <th style="min-width:110px">Demoras</th>
                     <th style="min-width:120px">Monto</th>
                     <th style="min-width:110px">Préstamo</th>
                     <th style="min-width:110px">Talachas</th>
@@ -334,7 +335,7 @@
               </div>
               <div class="col-6">
                 <label class="form-label fw-semibold small mb-1">Renta</label>
-                <input type="number" id="f_CostoDemoras" class="form-control form-control-sm bg-light" step="0.01" readonly>
+                <input type="number" id="f_CostoRenta" class="form-control form-control-sm bg-light" step="0.01" readonly>
               </div>
               <div class="col-6">
                 <label class="form-label fw-semibold small mb-1">Costo kilómetros</label>
@@ -558,6 +559,11 @@
                 <span class="small flex-grow-1">Otros</span>
                 <input type="number" id="d_Otros" class="form-control form-control-sm" style="width:95px" step="0.01" min="0" oninput="recalcularMontoDepo()">
                 <input type="checkbox" id="d_FlagCobOtros" class="form-check-input flex-shrink-0" style="transform:scale(1.4)" title="¿Se cobra al cliente?">
+              </div>
+              <div class="d-flex align-items-center gap-2 p-2 rounded" style="background:#fff; box-shadow:0 2px 6px rgba(0,0,0,.18); border:1px solid #eee;">
+                <span class="small flex-grow-1">Demoras</span>
+                <input type="number" id="d_Demoras" class="form-control form-control-sm" style="width:95px" step="0.01" min="0" oninput="recalcularMontoDepo()">
+                <input type="checkbox" id="d_FlagDemoras" class="form-check-input flex-shrink-0" style="transform:scale(1.4)" title="¿Se cobra al cliente?">
               </div>
             </div>
           </div>
@@ -883,7 +889,7 @@ function populateForm(d) {
   set('f_Status', d.Status); set('f_RealizoPedido', d.RealizoPedido);
   set('f_Observaciones', d.Observaciones);
   // costos
-  ['CostoFlete','CostoManiobras','CostoDemoras','CostoAutopistas','CostoDobOpe','CostoDisel',
+  ['CostoFlete','CostoManiobras','CostoRenta','CostoAutopistas','CostoDobOpe','CostoDisel',
    'NoParadas','CostoParada','CostosOtros','CargoExtraTrans','Kilometros','KilometrosTar',
    'RetenKilo','c_Moneda','TipoCambio','DesOtrosCostos',
    'PorIVAMX','SubTotalMX','IVAMX','RetenMX','TOTALMX',
@@ -895,11 +901,11 @@ function populateForm(d) {
   ].forEach(k => chk('f_' + k, d[k]));
   set('f_UnidadPeso', d.UnidadPeso || 'KGM');
   // Inferir tipo de tarifa para recalcular correctamente
-  const dem = parseFloat(d.CostoDemoras) || 0;
+  const renta = parseFloat(d.CostoRenta) || 0;
   const fl  = parseFloat(d.CostoFlete)   || 0;
   const km  = parseFloat(d.Kilometros)   || 0;
-  if (dem > 0 && fl === 0 && km === 0)       _tarifaTipo = 'renta';
-  else if (km > 0 && fl === 0 && dem === 0)  _tarifaTipo = 'km';
+  if (renta > 0 && fl === 0 && km === 0)     _tarifaTipo = 'renta';
+  else if (km > 0 && fl === 0 && renta === 0) _tarifaTipo = 'km';
   else                                        _tarifaTipo = 'flete';
 }
 
@@ -993,7 +999,7 @@ function clearCliente() {
     const el = document.getElementById(id); if (el) el.value = '';
   });
   // Costos de venta
-  ['f_CostoFlete','f_CostoManiobras','f_CostoDemoras','f_CostoAutopistas',
+  ['f_CostoFlete','f_CostoManiobras','f_CostoRenta','f_CostoAutopistas',
    'f_CostoDobOpe','f_CostoDisel','f_NoParadas','f_CostoParada','f_CostosOtros',
    'f_DesOtrosCostos','f_CargoExtraTrans','f_Kilometros','f_KilometrosTar',
    'f_RetenKilo','f_c_Moneda','f_TipoCambio',
@@ -1051,7 +1057,7 @@ function guardar() {
     Id_DomCarga: v('f_Id_DomCarga'), DomCarga: v('f_DomCarga'),
     Id_DomDescarga1: v('f_Id_DomDescarga1'), DomDescarga: v('f_DomDescarga'),
     CostoFlete: v('f_CostoFlete'), CostoManiobras: v('f_CostoManiobras'),
-    CostoDemoras: v('f_CostoDemoras'), CostoAutopistas: v('f_CostoAutopistas'),
+    CostoRenta: v('f_CostoRenta'), CostoAutopistas: v('f_CostoAutopistas'),
     CostoDobOpe: v('f_CostoDobOpe'), CostoDisel: v('f_CostoDisel'),
     NoParadas: v('f_NoParadas'), CostoParada: v('f_CostoParada'),
     CostosOtros: v('f_CostosOtros'), DesOtrosCostos: v('f_DesOtrosCostos'),
@@ -1101,13 +1107,13 @@ function confirmDelete() {
 function recalcular() {
   const n   = id => parseFloat(document.getElementById(id)?.value) || 0;
   const chk = id => !!document.getElementById(id)?.checked;
-  const sub = n('f_CostoFlete') + n('f_CostoManiobras') + n('f_CostoDemoras') +
+  const sub = n('f_CostoFlete') + n('f_CostoManiobras') + n('f_CostoRenta') +
               n('f_CostoAutopistas') + n('f_CostoDobOpe') + n('f_CostoDisel') +
               n('f_CostoParada') * n('f_NoParadas') + n('f_CostosOtros') +
               n('f_CargoExtraTrans') + n('f_Kilometros') - n('f_RetenKilo');
   // Base para IVA y retención según tipo de tarifa
   let base;
-  if (_tarifaTipo === 'renta')    base = n('f_CostoDemoras');
+  if (_tarifaTipo === 'renta')    base = n('f_CostoRenta');
   else if (_tarifaTipo === 'km')  base = n('f_Kilometros');
   else                            base = n('f_CostoFlete');
   const porIVA = n('f_PorIVAMX') || 16;
@@ -1238,7 +1244,7 @@ function guardarMerc() {
 }
 
 // ── DEPOSITOS (Solicitud de Depósito por Viaje) ────────────────────────────────
-const DEPO_IMPORTE_IDS = ['d_Prestamo','d_Talachas','d_Llantas','d_Diesel','d_Comidas','d_Pension','d_Bascula','d_Casetas','d_Refacciones','d_Maniobra','d_Otros','d_Estadias'];
+const DEPO_IMPORTE_IDS = ['d_Prestamo','d_Talachas','d_Llantas','d_Diesel','d_Comidas','d_Pension','d_Bascula','d_Casetas','d_Refacciones','d_Maniobra','d_Otros','d_Estadias','d_Demoras'];
 
 function recalcularMontoDepo() {
   const total = DEPO_IMPORTE_IDS.reduce((acc, id) => acc + (parseFloat(document.getElementById(id).value) || 0), 0);
@@ -1260,6 +1266,7 @@ function loadDepositos(serie, cp) {
           <td>${imp(r.Maniobra)}</td>
           <td>${imp(r.Estadias)}</td>
           <td>${imp(r.Otros)}</td>
+          <td>${imp(r.Demoras)}</td>
           <td class="fw-bold">${imp(r.Monto)}</td>
           <td>${imp(r.Prestamo)}</td>
           <td>${imp(r.Talachas)}</td>
@@ -1274,7 +1281,7 @@ function loadDepositos(serie, cp) {
             <button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="delDepo(${r.Id_DepoSol})"><i class="bi bi-trash"></i></button>
           </td>
         </tr>`
-      ).join('') || '<tr><td colspan="16" class="text-center text-muted small">Sin registros</td></tr>';
+      ).join('') || '<tr><td colspan="17" class="text-center text-muted small">Sin registros</td></tr>';
     });
 }
 
@@ -1320,13 +1327,14 @@ function editDepo(id) {
       document.getElementById('d_TC').value = r.TC||'';
       ['Turno','OPERADOR','Grupo','Origen','Destino','Prestamo',
        'Talachas','Llantas','Diesel','Casetas','Comidas','Maniobra','Bascula',
-       'Pension','Refacciones','Otros','Estadias','DesOtros','Observaciones'
+       'Pension','Refacciones','Otros','Estadias','Demoras','DesOtros','Observaciones'
       ].forEach(k => { const el = document.getElementById('d_'+k); if (el) el.value = r[k]??''; });
       chk('d_FlagCobCaseta', r.FlagCobCaseta);
       chk('d_FlagCobMan',    r.FlagCobMan);
       chk('d_FlagCobPen',    r.FlagCobPen);
       chk('d_FlagCobEsta',   r.FlagCobEsta);
       chk('d_FlagCobOtros',  r.FlagCobOtros);
+      chk('d_FlagDemoras',   r.FlagDemoras);
       recalcularMontoDepo();
       depoModal.show();
     });
@@ -1353,9 +1361,11 @@ function guardarDepo() {
     Diesel: v('d_Diesel'), Casetas: v('d_Casetas'), Comidas: v('d_Comidas'),
     Maniobra: v('d_Maniobra'), Bascula: v('d_Bascula'), Pension: v('d_Pension'),
     Refacciones: v('d_Refacciones'), Otros: v('d_Otros'), Estadias: v('d_Estadias'),
+    Demoras: v('d_Demoras'),
     DesOtros: v('d_DesOtros'), Observaciones: v('d_Observaciones'),
     FlagCobCaseta: c('d_FlagCobCaseta'), FlagCobMan: c('d_FlagCobMan'),
-    FlagCobPen: c('d_FlagCobPen'), FlagCobEsta: c('d_FlagCobEsta'), FlagCobOtros: c('d_FlagCobOtros')
+    FlagCobPen: c('d_FlagCobPen'), FlagCobEsta: c('d_FlagCobEsta'), FlagCobOtros: c('d_FlagCobOtros'),
+    FlagDemoras: c('d_FlagDemoras')
   };
   fetch('/cartaporte/depositos/guardar', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1443,13 +1453,13 @@ function openLkTarifa() {
       const cAuto = parseFloat(row.COSTOAUTOPISTAS) || 0;
       const km    = parseFloat(row.KILOMETROS) || 0;
 
-      let cFlete = 0, cDem = 0, kmTar = 0, kmVal = 0, autoVal = 0;
+      let cFlete = 0, cRenta = 0, kmTar = 0, kmVal = 0, autoVal = 0;
       let valid = false;
 
       if ((flete === 'flete' || flete === 'caseta') && renta !== 0) {
         cFlete = renta; _tarifaTipo = 'flete'; kmTar = km; kmVal = cKm; autoVal = cAuto; valid = true;
       } else if (flete === 'renta' && renta !== 0) {
-        cDem = renta; _tarifaTipo = 'renta'; kmTar = km; kmVal = cKm; autoVal = cAuto; valid = true;
+        cRenta = renta; _tarifaTipo = 'renta'; kmTar = km; kmVal = cKm; autoVal = cAuto; valid = true;
       } else if (cKm !== 0 || cAuto !== 0) {
         _tarifaTipo = 'km'; kmTar = km; kmVal = cKm; autoVal = cAuto; valid = true;
       } else if (venta !== 0) {
@@ -1461,7 +1471,7 @@ function openLkTarifa() {
       document.getElementById('f_Id_Tarifa').value = row.ID_TARIFA;
       document.getElementById('f_DesFlete').value  = (row.DESFLETE||'').trim();
       document.getElementById('f_CostoFlete').value     = cFlete.toFixed(2);
-      document.getElementById('f_CostoDemoras').value   = cDem.toFixed(2);
+      document.getElementById('f_CostoRenta').value     = cRenta.toFixed(2);
       document.getElementById('f_KilometrosTar').value  = kmTar;
       document.getElementById('f_Kilometros').value     = kmVal.toFixed(2);
       document.getElementById('f_CostoAutopistas').value= autoVal.toFixed(2);

@@ -253,17 +253,17 @@ function tablaUnConcepto(d) {
 function tablaPorLinea(d) {
   const body = d.lineas.map(l => {
     const flete   = num(l.COSTOFLETE);
-    const demoras = num(l.COSTODEMORAS);
+    const renta   = num(l.CostoRenta);
     const maniobras = num(l.COSTOMANIOBRAS);
-    const otros = num(l.COSTOAUTOPISTAS) + num(l.CostoPension) + num(l.CostoEstadias) + num(l.COSTOSOTROS) + num(l.KILOMETROS);
-    const prefijo = flete > 0 ? 'FLETE' : (demoras > 0 ? 'RENTA' : '');
+    const otros = num(l.COSTOAUTOPISTAS) + num(l.CostoPension) + num(l.CostoEstadias) + num(l.COSTOSOTROS) + num(l.KILOMETROS) + num(l.COSTODEMORAS);
+    const prefijo = flete > 0 ? 'FLETE' : (renta > 0 ? 'RENTA' : '');
     const descripcion = [prefijo, fmt(l.DESFLETE)].filter(Boolean).join(' ');
     return [
       { text: fmt(l.C_CLAVEPRODSERV), fontSize: 8 },
       { text: descripcion, fontSize: 8 },
       { text: `$${numFmt(flete, 2)}`, fontSize: 8, alignment: 'right' },
       { text: `$${numFmt(maniobras, 2)}`, fontSize: 8, alignment: 'right' },
-      { text: `$${numFmt(demoras, 2)}`, fontSize: 8, alignment: 'right' },
+      { text: `$${numFmt(renta, 2)}`, fontSize: 8, alignment: 'right' },
       { text: `$${numFmt(otros, 2)}`, fontSize: 8, alignment: 'right' },
     ];
   });

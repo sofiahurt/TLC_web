@@ -158,14 +158,14 @@
               <tr>
                 <th>Carta Porte</th><th>Descripción</th>
                 <th class="text-center">Flete</th><th class="text-center">Renta</th><th class="text-center">Km</th>
-                <th class="text-center">Casetas</th><th class="text-center">Maniobras</th><th class="text-center">Pensión</th><th class="text-center">Estadías</th><th class="text-center">Otros</th>
+                <th class="text-center">Casetas</th><th class="text-center">Maniobras</th><th class="text-center">Pensión</th><th class="text-center">Estadías</th><th class="text-center">Otros</th><th class="text-center">Demoras</th>
                 <th class="text-end">Subtotal</th><th class="text-end">IVA</th><th class="text-end">Reten</th><th class="text-end">Total</th><th></th>
               </tr>
             </thead>
             <tbody id="detBody"></tbody>
             <tfoot>
               <tr class="fw-bold table-light">
-                <td colspan="10" class="text-end">Totales:</td>
+                <td colspan="11" class="text-end">Totales:</td>
                 <td class="text-end" id="totSub">0.00</td>
                 <td class="text-end" id="totIva">0.00</td>
                 <td class="text-end" id="totRet">0.00</td>
@@ -466,13 +466,14 @@ function pintarTotales(c){
 
 const CONCEPTOS=[
   {key:'flete',montoCol:'COSTOFLETE',flagCol:'FlagCobFlete',label:'Flete'},
-  {key:'demoras',montoCol:'COSTODEMORAS',flagCol:'FLAGCOBDEM',label:'Demoras'},
+  {key:'renta',montoCol:'CostoRenta',flagCol:'FlagRenta',label:'Renta'},
   {key:'kilometros',montoCol:'KILOMETROS',flagCol:'FLAGKILOMETROS',label:'Km'},
   {key:'casetas',montoCol:'COSTOAUTOPISTAS',flagCol:'FLAGCOBAUTO',label:'Casetas'},
   {key:'maniobras',montoCol:'COSTOMANIOBRAS',flagCol:'FLAGCOBMAN',label:'Maniobras'},
   {key:'pension',montoCol:'CostoPension',flagCol:'FlagCostoPension',label:'Pensión'},
   {key:'estadias',montoCol:'CostoEstadias',flagCol:'FlagCostoEstadias',label:'Estadías'},
   {key:'otros',montoCol:'COSTOSOTROS',flagCol:'FLAGCOBOTROS',label:'Otros'},
+  {key:'demoras',montoCol:'COSTODEMORAS',flagCol:'FLAGCOBDEM',label:'Demoras'},
 ];
 
 // Nota: idNoFactura por sí solo NO identifica de forma única una factura
@@ -597,7 +598,7 @@ function loadCpLk(){
   fetch(`/facturas/lookup/cartaporte?idCliente=${idCliente}&status=${cpLkStatus}&q=${encodeURIComponent(q)}&page=${cpLkPage}`)
     .then(r=>r.json()).then(d=>{
       document.getElementById('cpLkBody').innerHTML=d.rows.map(r=>{
-        const monto=r.CostoFlete||r.CostoDemoras||0;
+        const monto=r.CostoFlete||r.CostoRenta||0;
         const extra=cpLkStatus==='FACTURADO' ? `${r.NoFactura||''}${r.AnioFactura?(' / '+r.AnioFactura):''}` : '';
         return `<tr data-cp="${r.CartaPorte}" style="cursor:pointer"><td>${r.CartaPorte}</td><td>${r.FechaPedido}</td><td>${r.DesFlete}</td><td>${r.Status||''}</td><td class="text-end">${fmtN(monto)}</td><td>${extra}</td></tr>`;
       }).join('');

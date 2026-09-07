@@ -157,7 +157,7 @@ router.get('/get', async (req, res) => {
       Id_DomCarga: r.Id_DomCarga||'', DomCarga: fmt(r.DomCarga),
       Id_DomDescarga1: r.Id_DomDescarga1||'', DomDescarga: fmt(r.DomDescarga),
       CostoFlete: r.CostoFlete||0, CostoManiobras: r.CostoManiobras||0,
-      CostoDemoras: r.CostoDemoras||0, CostoAutopistas: r.CostoAutopistas||0,
+      CostoRenta: r.CostoRenta||0, CostoAutopistas: r.CostoAutopistas||0,
       CostoDobOpe: r.CostoDobOpe||0, CostoDisel: r.CostoDisel||0,
       NoParadas: r.NoParadas||0, CostoParada: r.CostoParada||0,
       CostosOtros: r.CostosOtros||0, DesOtrosCostos: fmt(r.DesOtrosCostos),
@@ -463,7 +463,7 @@ router.post('/mercancias/eliminar', requierePermiso('cartaporte.editar'), async 
 
 // ── DEPÓSITOS (Solicitud de Depósito por Viaje) ────────────────────────────────
 const DEPO_TURNOS = new Set(['Mañana', 'Tarde']);
-const DEPO_IMPORTES = ['Prestamo','Talachas','Llantas','Diesel','Comidas','Pension','Bascula','Casetas','Refacciones','Maniobra','Otros','Estadias'];
+const DEPO_IMPORTES = ['Prestamo','Talachas','Llantas','Diesel','Comidas','Pension','Bascula','Casetas','Refacciones','Maniobra','Otros','Estadias','Demoras'];
 
 router.get('/depositos', async (req, res) => {
   try {
@@ -530,6 +530,7 @@ router.post('/depositos/guardar', requierePermiso('cartaporte.editar'), async (r
         .input('ref',     sql.Decimal(8,2),  num(f.Refacciones))
         .input('otros',   sql.Decimal(8,2),  num(f.Otros))
         .input('esta',    sql.Decimal(8,2),  num(f.Estadias))
+        .input('dem',     sql.Decimal(8,2),  num(f.Demoras))
         .input('desOtros',sql.VarChar(255),  f.DesOtros||null)
         .input('monto',   sql.Decimal(10,2), monto)
         .input('obs',     sql.VarChar(499),  f.Observaciones||null)
@@ -543,16 +544,17 @@ router.post('/depositos/guardar', requierePermiso('cartaporte.editar'), async (r
         .input('fCobPen', sql.TinyInt,       flag(f.FlagCobPen))
         .input('fCobEst', sql.TinyInt,       flag(f.FlagCobEsta))
         .input('fCobOtr', sql.TinyInt,       flag(f.FlagCobOtros))
+        .input('fDem',    sql.TinyInt,       flag(f.FlagDemoras))
         .query(`INSERT INTO Empresa2.DepoSolicitud(
           Id_DepoSol,Fecha,Hora,Turno,TC,ID_OPERADOR,OPERADOR,Serie,CartaPorte,Grupo,Origen,Destino,
-          Prestamo,Talachas,Llantas,Diesel,Casetas,Comidas,Maniobra,Bascula,Pension,Refacciones,Otros,Estadias,
+          Prestamo,Talachas,Llantas,Diesel,Casetas,Comidas,Maniobra,Bascula,Pension,Refacciones,Otros,Estadias,Demoras,
           DesOtros,Monto,Observaciones,WhoCaptura,FechaCaptura,Autorizado,FlagDeposito,FlagEnDeposito,
-          FlagCobCaseta,FlagCobMan,FlagCobPen,FlagCobEsta,FlagCobOtros
+          FlagCobCaseta,FlagCobMan,FlagCobPen,FlagCobEsta,FlagCobOtros,FlagDemoras
         ) VALUES(
           @id,@fecha,@hora,@turno,@tc,@idOp,@operador,@serie,@cp,@grupo,@origen,@destino,
-          @prestamo,@tal,@lla,@die,@cas,@com,@man,@bas,@pen,@ref,@otros,@esta,
+          @prestamo,@tal,@lla,@die,@cas,@com,@man,@bas,@pen,@ref,@otros,@esta,@dem,
           @desOtros,@monto,@obs,@who,@fechaCap,@aut,@fDep,@fEnDep,
-          @fCobCas,@fCobMan,@fCobPen,@fCobEst,@fCobOtr
+          @fCobCas,@fCobMan,@fCobPen,@fCobEst,@fCobOtr,@fDem
         )`);
     } else {
       await pool.request()
@@ -578,6 +580,7 @@ router.post('/depositos/guardar', requierePermiso('cartaporte.editar'), async (r
         .input('ref',     sql.Decimal(8,2),  num(f.Refacciones))
         .input('otros',   sql.Decimal(8,2),  num(f.Otros))
         .input('esta',    sql.Decimal(8,2),  num(f.Estadias))
+        .input('dem',     sql.Decimal(8,2),  num(f.Demoras))
         .input('desOtros',sql.VarChar(255),  f.DesOtros||null)
         .input('monto',   sql.Decimal(10,2), monto)
         .input('obs',     sql.VarChar(499),  f.Observaciones||null)
@@ -588,13 +591,14 @@ router.post('/depositos/guardar', requierePermiso('cartaporte.editar'), async (r
         .input('fCobPen', sql.TinyInt,       flag(f.FlagCobPen))
         .input('fCobEst', sql.TinyInt,       flag(f.FlagCobEsta))
         .input('fCobOtr', sql.TinyInt,       flag(f.FlagCobOtros))
+        .input('fDem',    sql.TinyInt,       flag(f.FlagDemoras))
         .query(`UPDATE Empresa2.DepoSolicitud SET
           Fecha=@fecha,Hora=@hora,Turno=@turno,TC=@tc,ID_OPERADOR=@idOp,OPERADOR=@operador,
           Grupo=@grupo,Origen=@origen,Destino=@destino,
           Prestamo=@prestamo,Talachas=@tal,Llantas=@lla,Diesel=@die,Casetas=@cas,Comidas=@com,
-          Maniobra=@man,Bascula=@bas,Pension=@pen,Refacciones=@ref,Otros=@otros,Estadias=@esta,
+          Maniobra=@man,Bascula=@bas,Pension=@pen,Refacciones=@ref,Otros=@otros,Estadias=@esta,Demoras=@dem,
           DesOtros=@desOtros,Monto=@monto,Observaciones=@obs,WhoModifica=@whoMod,FechaUltMod=@fechaMod,
-          FlagCobCaseta=@fCobCas,FlagCobMan=@fCobMan,FlagCobPen=@fCobPen,FlagCobEsta=@fCobEst,FlagCobOtros=@fCobOtr
+          FlagCobCaseta=@fCobCas,FlagCobMan=@fCobMan,FlagCobPen=@fCobPen,FlagCobEsta=@fCobEst,FlagCobOtros=@fCobOtr,FlagDemoras=@fDem
           WHERE Id_DepoSol=@id`);
     }
     res.json({ ok: true });
@@ -663,7 +667,7 @@ router.post('/guardar', requierePermiso('cartaporte.editar'), async (req, res) =
         .input('domD',     sql.VarChar(80),  f.DomDescarga||null)
         .input('cFlete',   sql.Decimal(9,2), num(f.CostoFlete))
         .input('cMan',     sql.Decimal(9,2), num(f.CostoManiobras))
-        .input('cDem',     sql.Decimal(9,2), num(f.CostoDemoras))
+        .input('cRenta',   sql.Decimal(9,2), num(f.CostoRenta))
         .input('cAuto',    sql.Decimal(9,2), num(f.CostoAutopistas))
         .input('cDob',     sql.Decimal(9,2), num(f.CostoDobOpe))
         .input('cDis',     sql.Decimal(9,2), num(f.CostoDisel))
@@ -722,7 +726,7 @@ router.post('/guardar', requierePermiso('cartaporte.editar'), async (req, res) =
           NoPedidoCliente,NoRainde,Id_Tarifa,DesFlete,
           Id_Camion,NoCamion,NoPlacas,NoCaja,NoCaja2,Id_Operador,Operador,
           Id_DomCarga,DomCarga,Id_DomDescarga1,DomDescarga,
-          CostoFlete,CostoManiobras,CostoDemoras,CostoAutopistas,CostoDobOpe,CostoDisel,
+          CostoFlete,CostoManiobras,CostoRenta,CostoAutopistas,CostoDobOpe,CostoDisel,
           NoParadas,CostoParada,CostosOtros,DesOtrosCostos,CargoExtraTrans,
           Kilometros,KilometrosTar,RetenKilo,c_Moneda,TipoCambio,
           FlagCobMan,FlagCobDem,FlagCobAuto,FlagCobDO,FlagConDis,FlagCobParada,FlagCobOtros,FlagCobCE,
@@ -738,7 +742,7 @@ router.post('/guardar', requierePermiso('cartaporte.editar'), async (req, res) =
           @booking,@noRainde,@idTar,@desFlete,
           @idCam,@noCam,@placa,@noCaja,@noCaja2,@idOp,@oper,
           @idDomC,@domC,@idDomD,@domD,
-          @cFlete,@cMan,@cDem,@cAuto,@cDob,@cDis,
+          @cFlete,@cMan,@cRenta,@cAuto,@cDob,@cDis,
           @noPar,@cPar,@cOtros,@desOtros,@cExtra,
           @km,@kmTar,@retenK,@moneda,@tc,
           @fCobMan,@fCobDem,@fCobAut,@fCobDO,@fConDis,@fCobPar,@fCobOtr,@fCobCE,
@@ -780,7 +784,7 @@ router.post('/guardar', requierePermiso('cartaporte.editar'), async (req, res) =
         .input('domD',     sql.VarChar(80),  f.DomDescarga||null)
         .input('cFlete',   sql.Decimal(9,2), num(f.CostoFlete))
         .input('cMan',     sql.Decimal(9,2), num(f.CostoManiobras))
-        .input('cDem',     sql.Decimal(9,2), num(f.CostoDemoras))
+        .input('cRenta',   sql.Decimal(9,2), num(f.CostoRenta))
         .input('cAuto',    sql.Decimal(9,2), num(f.CostoAutopistas))
         .input('cDob',     sql.Decimal(9,2), num(f.CostoDobOpe))
         .input('cDis',     sql.Decimal(9,2), num(f.CostoDisel))
@@ -843,7 +847,7 @@ router.post('/guardar', requierePermiso('cartaporte.editar'), async (req, res) =
           Id_Camion=@idCam,NoCamion=@noCam,NoPlacas=@placa,NoCaja=@noCaja,NoCaja2=@noCaja2,
           Id_Operador=@idOp,Operador=@oper,Id_DomCarga=@idDomC,DomCarga=@domC,
           Id_DomDescarga1=@idDomD,DomDescarga=@domD,
-          CostoFlete=@cFlete,CostoManiobras=@cMan,CostoDemoras=@cDem,CostoAutopistas=@cAuto,
+          CostoFlete=@cFlete,CostoManiobras=@cMan,CostoRenta=@cRenta,CostoAutopistas=@cAuto,
           CostoDobOpe=@cDob,CostoDisel=@cDis,NoParadas=@noPar,CostoParada=@cPar,
           CostosOtros=@cOtros,DesOtrosCostos=@desOtros,CargoExtraTrans=@cExtra,
           Kilometros=@km,KilometrosTar=@kmTar,RetenKilo=@retenK,c_Moneda=@moneda,TipoCambio=@tc,
