@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getPool, sql } = require('../config/db');
 const { browseQuery } = require('../config/browse');
+const { requierePermiso } = require('../middleware/permisos');
 
 // La clave real de una factura es el par (SerieFac, Id_NoFactura) — la tabla
 // Empresa2.Factura NO tiene ningún índice/PK, y SerieFac normalmente viene
@@ -350,7 +351,7 @@ router.get('/lookup/cartaporte-validar', async (req, res) => {
 });
 
 // ── AGREGAR CARTA PORTE COMO PARTIDA (punto 3) ────────────────────────────────
-router.post('/partida/agregar', async (req, res) => {
+router.post('/partida/agregar', requierePermiso('facturas.editar'), async (req, res) => {
   const f = req.body;
   const serie = trim(f.serie), cp = trim(f.cartaporte);
   if (!serie || !cp) return res.status(400).json({ error: 'Debe indicar Serie y Carta Porte.' });
@@ -552,7 +553,7 @@ router.post('/partida/agregar', async (req, res) => {
 });
 
 // ── ACTUALIZAR CABECERA (resumen / incluir CP / descripción / observaciones) ─
-router.post('/cabecera/actualizar', async (req, res) => {
+router.post('/cabecera/actualizar', requierePermiso('facturas.editar'), async (req, res) => {
   const idNoFactura = parseInt(req.body.idNoFactura);
   const serieFac = req.body.serieFac;
   if (!idNoFactura) return res.status(400).json({ error: 'Factura inválida.' });
@@ -601,7 +602,7 @@ router.post('/cabecera/actualizar', async (req, res) => {
 });
 
 // ── ELIMINAR LÍNEA (punto 7) ──────────────────────────────────────────────────
-router.post('/partida/eliminar', async (req, res) => {
+router.post('/partida/eliminar', requierePermiso('facturas.editar'), async (req, res) => {
   const idNoFactura = parseInt(req.body.idNoFactura);
   const idNoDetaFac = parseInt(req.body.idNoDetaFac);
   const serieFac = req.body.serieFac;
@@ -627,7 +628,7 @@ router.post('/partida/eliminar', async (req, res) => {
 });
 
 // ── TOGGLE FLAG COBRABLE POR LÍNEA (punto 6) ──────────────────────────────────
-router.post('/detalle/toggle-flag', async (req, res) => {
+router.post('/detalle/toggle-flag', requierePermiso('facturas.editar'), async (req, res) => {
   const idNoFactura = parseInt(req.body.idNoFactura);
   const idNoDetaFac = parseInt(req.body.idNoDetaFac);
   const serieFac = req.body.serieFac;
@@ -707,7 +708,7 @@ router.post('/detalle/toggle-flag', async (req, res) => {
 function ISNULLtoBool(v) { return v === 1 || v === true; }
 
 // ── CANCELAR FACTURA RECIÉN CREADA SIN CONFIRMAR (punto 4) ───────────────────
-router.post('/cabecera/cancelar-sin-confirmar', async (req, res) => {
+router.post('/cabecera/cancelar-sin-confirmar', requierePermiso('facturas.editar'), async (req, res) => {
   const idNoFactura = parseInt(req.body.idNoFactura);
   const serieFac = req.body.serieFac;
   if (!idNoFactura) return res.json({ ok: true }); // nada que revertir (no se había insertado cabecera)

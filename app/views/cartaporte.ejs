@@ -27,7 +27,9 @@
         <div class="col-auto ms-auto btn-action-group">
           <button class="btn btn-sm btn-primary" id="btnEditar" data-requires-selection disabled onclick="openEdit()"><i class="bi bi-pencil"></i> Editar</button>
           <button class="btn btn-sm btn-outline-primary" data-requires-selection disabled onclick="openVisualizar()"><i class="bi bi-eye"></i> Visualizar</button>
+          <% if (tienePermiso('cartaporte.btn_timbrar')) { %>
           <button class="btn btn-sm btn-warning" id="btnTimbrar" disabled onclick="openTimbrar()"><i class="bi bi-file-earmark-check"></i> Timbrar</button>
+          <% } %>
         </div>
       </div>
     </div>

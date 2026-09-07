@@ -1,0 +1,200 @@
+<%- include('partials/header', { titulo: 'Seguridad' }) %>
+<%- include('partials/sidebar') %>
+<div id="page-content">
+  <div class="d-flex align-items-center mb-3">
+    <button class="btn btn-sm btn-outline-secondary me-3 d-md-none" id="sidebarToggle"><i class="bi bi-list fs-5"></i></button>
+    <h4 class="mb-0 fw-bold flex-grow-1">Seguridad — Grupos y Permisos</h4>
+  </div>
+  <div class="card border-0 shadow-sm mb-3 barra-filtros"><div class="card-body py-2">
+    <div class="row align-items-center g-2">
+      <div class="col-auto"><select id="searchCol" class="form-select form-select-sm">
+        <option value="Nombre">Nombre</option><option value="Descripcion">Descripción</option>
+      </select></div>
+      <div class="col col-md-4"><input type="text" id="searchInput" class="form-control form-select-sm" placeholder="Buscar..."></div>
+      <div class="col-auto ms-auto btn-action-group">
+        <button class="btn btn-sm btn-success" onclick="openAdd()"><i class="bi bi-plus-lg"></i> Nuevo Grupo</button>
+        <button class="btn btn-sm btn-primary" data-requires-selection disabled onclick="openEdit()"><i class="bi bi-pencil"></i> Editar</button>
+        <button class="btn btn-sm btn-danger" data-requires-selection disabled onclick="confirmDelete()"><i class="bi bi-trash"></i> Eliminar</button>
+      </div>
+    </div>
+  </div></div>
+  <div class="card border-0 shadow-sm"><div class="card-body p-0">
+    <div class="table-responsive"><table class="table table-hover table-sm mb-0">
+      <thead class="thead-tlc"><tr>
+        <th data-sort="Id_Grupo" style="width:70px">ID <span class="sort-icon"></span></th>
+        <th data-sort="Nombre">Nombre <span class="sort-icon"></span></th>
+        <th data-sort="Descripcion">Descripción <span class="sort-icon"></span></th>
+        <th style="width:100px">Admin</th>
+        <th style="width:100px">Estado</th>
+      </tr></thead>
+      <tbody id="tableBody"></tbody>
+    </table></div>
+  </div>
+  <div class="card-footer bg-white d-flex align-items-center justify-content-between py-2">
+    <span class="page-info" id="pageInfo"></span>
+    <div id="pagination">
+      <button class="btn btn-sm btn-outline-secondary" data-action="prev"><i class="bi bi-chevron-left"></i> Anterior</button>
+      <button class="btn btn-sm btn-outline-secondary" data-action="next">Siguiente <i class="bi bi-chevron-right"></i></button>
+    </div>
+  </div></div>
+</div>
+
+<!-- Modal Grupo -->
+<div class="modal fade" id="frmModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-lg">
+  <div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title" id="frmTitle">Grupo</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body" style="max-height:75vh;overflow-y:auto">
+      <div id="frmError" class="alert alert-danger d-none py-2 small"></div>
+      <ul class="nav nav-tabs mb-3" id="grpTabs">
+        <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tabDatos">Datos</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabPermisos">Permisos</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabUsuarios">Usuarios</a></li>
+      </ul>
+      <div class="tab-content">
+        <div class="tab-pane fade show active" id="tabDatos">
+          <div class="row g-3">
+            <div class="col-md-3"><label class="form-label fw-semibold">ID</label><input type="text" id="f_Id_Grupo" class="form-control bg-light" readonly></div>
+            <div class="col-md-9"><label class="form-label fw-semibold">Nombre <span class="text-danger">*</span></label><input type="text" id="f_Nombre" class="form-control" maxlength="60"></div>
+            <div class="col-md-12"><label class="form-label fw-semibold">Descripción</label><input type="text" id="f_Descripcion" class="form-control" maxlength="200"></div>
+            <div class="col-md-6 d-flex align-items-center">
+              <div class="form-check"><input type="checkbox" id="f_EsAdmin" class="form-check-input"><label class="form-check-label fw-semibold" for="f_EsAdmin">Administrador (acceso total, sin marcar permisos)</label></div>
+            </div>
+            <div class="col-md-6 d-flex align-items-center">
+              <div class="form-check"><input type="checkbox" id="f_Activo" class="form-check-input" checked><label class="form-check-label fw-semibold" for="f_Activo">Activo</label></div>
+            </div>
+          </div>
+        </div>
+        <div class="tab-pane fade" id="tabPermisos">
+          <div id="permisosBox" class="small text-muted">Cargando permisos...</div>
+        </div>
+        <div class="tab-pane fade" id="tabUsuarios">
+          <input type="text" id="usrFiltro" class="form-control form-control-sm mb-2" placeholder="Buscar usuario...">
+          <div id="usuariosBox" class="small text-muted" style="max-height:320px;overflow-y:auto">Cargando usuarios...</div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" data-bs-dismiss="modal"><i class="bi bi-x-lg"></i> Cancelar</button>
+      <button class="btn btn-primary" onclick="guardar()"><i class="bi bi-floppy"></i> Guardar</button>
+    </div>
+  </div>
+</div></div>
+
+<%- include('partials/footer') %>
+<script>
+const browse=initBrowse({searchInput:document.getElementById('searchInput'),searchColumn:document.getElementById('searchCol'),tableBody:document.getElementById('tableBody'),paginationEl:document.getElementById('pagination'),infoEl:document.getElementById('pageInfo'),fetchUrl:'/seguridad/data'});
+let _mode='add';const modal=new bootstrap.Modal(document.getElementById('frmModal'));
+let _permisosCatalogo=null, _usuariosCatalogo=null;
+
+function trimClaves(){return Array.from(document.querySelectorAll('#permisosBox input[type=checkbox]:checked')).map(el=>el.dataset.clave);}
+function trimUsuarios(){return Array.from(document.querySelectorAll('#usuariosBox input[type=checkbox]:checked')).map(el=>parseInt(el.dataset.id));}
+
+function renderPermisos(clavesSeleccionadas){
+  const porModulo={};
+  _permisosCatalogo.forEach(p=>{ (porModulo[p.Modulo]=porModulo[p.Modulo]||[]).push(p); });
+  const sel=new Set(clavesSeleccionadas||[]);
+  document.getElementById('permisosBox').innerHTML=Object.keys(porModulo).sort().map(mod=>`
+    <div class="mb-2">
+      <div class="fw-semibold small text-uppercase text-muted border-bottom mb-1">${mod}</div>
+      ${porModulo[mod].map(p=>`
+        <div class="form-check">
+          <input type="checkbox" class="form-check-input" data-clave="${p.Clave}" id="perm_${p.Clave}" ${sel.has(p.Clave)?'checked':''}>
+          <label class="form-check-label" for="perm_${p.Clave}">${p.Descripcion}</label>
+        </div>`).join('')}
+    </div>`).join('');
+}
+
+function renderUsuarios(idsSeleccionados){
+  const sel=new Set(idsSeleccionados||[]);
+  const filtro=(document.getElementById('usrFiltro').value||'').toLowerCase();
+  const filtrados=_usuariosCatalogo.filter(u=>!filtro || (u.nombre+' '+u.apellido+' '+u.serie).toLowerCase().includes(filtro));
+  document.getElementById('usuariosBox').innerHTML=filtrados.map(u=>`
+    <div class="form-check">
+      <input type="checkbox" class="form-check-input" data-id="${u.id}" id="usr_${u.id}" ${sel.has(u.id)?'checked':''}>
+      <label class="form-check-label" for="usr_${u.id}">${u.nombre} ${u.apellido} <span class="text-muted small">(${u.serie||'—'})</span></label>
+    </div>`).join('') || '<div class="text-muted small">Sin resultados.</div>';
+}
+document.getElementById('usrFiltro').addEventListener('input', debounce(()=>renderUsuarios(trimUsuarios()), 200));
+
+async function cargarCatalogos(){
+  if(!_permisosCatalogo){
+    const d=await fetch('/seguridad/permisos-catalogo').then(r=>r.json());
+    _permisosCatalogo=d.permisos||[];
+  }
+  if(!_usuariosCatalogo){
+    const d=await fetch('/seguridad/usuarios-catalogo').then(r=>r.json());
+    _usuariosCatalogo=d.usuarios||[];
+  }
+}
+
+function clearForm(){
+  document.getElementById('f_Id_Grupo').value='';
+  document.getElementById('f_Nombre').value='';
+  document.getElementById('f_Descripcion').value='';
+  document.getElementById('f_EsAdmin').checked=false;
+  document.getElementById('f_Activo').checked=true;
+  document.getElementById('usrFiltro').value='';
+}
+
+async function openAdd(){
+  _mode='add'; clearForm();
+  document.getElementById('frmTitle').textContent='Nuevo Grupo';
+  document.getElementById('frmError').classList.add('d-none');
+  await cargarCatalogos();
+  renderPermisos([]);
+  renderUsuarios([]);
+  modal.show();
+}
+
+async function openEdit(){
+  if(!window._selectedRow) return;
+  _mode='edit'; clearForm();
+  document.getElementById('frmTitle').textContent='Editar Grupo #'+window._selectedRow.Id_Grupo;
+  document.getElementById('frmError').classList.add('d-none');
+  await cargarCatalogos();
+  const d=await fetch('/seguridad/grupo/'+window._selectedRow.Id_Grupo).then(r=>r.json());
+  if(d.error){ showErr(d.error); return; }
+  document.getElementById('f_Id_Grupo').value=d.grupo.Id_Grupo;
+  document.getElementById('f_Nombre').value=(d.grupo.Nombre||'').trim();
+  document.getElementById('f_Descripcion').value=(d.grupo.Descripcion||'').trim();
+  document.getElementById('f_EsAdmin').checked=d.grupo.EsAdmin==1;
+  document.getElementById('f_Activo').checked=d.grupo.Activo==1;
+  renderPermisos(d.claves);
+  renderUsuarios(d.idsUsuarios);
+  modal.show();
+}
+
+function showErr(msg){const errEl=document.getElementById('frmError');errEl.textContent=msg;errEl.classList.remove('d-none');}
+
+async function guardar(){
+  const nombre=document.getElementById('f_Nombre').value.trim();
+  if(!nombre){ showErr('El nombre del grupo es requerido.'); return; }
+  document.getElementById('frmError').classList.add('d-none');
+  const body={
+    Id_Grupo:document.getElementById('f_Id_Grupo').value||null,
+    Nombre:nombre,
+    Descripcion:document.getElementById('f_Descripcion').value.trim(),
+    EsAdmin:document.getElementById('f_EsAdmin').checked?1:0,
+    Activo:document.getElementById('f_Activo').checked?1:0,
+    _mode,
+  };
+  const r=await fetch('/seguridad/guardar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
+  if(r.error){ showErr(r.error); return; }
+  const idGrupo=r.idGrupo;
+
+  const rp=await fetch('/seguridad/permisos/guardar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idGrupo, claves:trimClaves()})}).then(r=>r.json());
+  if(rp.error){ showErr(rp.error); return; }
+
+  const ru=await fetch('/seguridad/usuarios/guardar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idGrupo, idsUsuarios:trimUsuarios()})}).then(r=>r.json());
+  if(ru.error){ showErr(ru.error); return; }
+
+  modal.hide(); browse.load();
+}
+
+function confirmDelete(){
+  if(!window._selectedRow) return;
+  if(!confirm(`¿Eliminar el grupo "${window._selectedRow.Nombre}"? Se quitará de todos los usuarios que lo tengan asignado.`)) return;
+  fetch('/seguridad/eliminar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({Id_Grupo:window._selectedRow.Id_Grupo})})
+    .then(r=>r.json()).then(d=>{ if(d.error){ alert(d.error); return; } browse.load(); });
+}
+</script>

@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
 const path = require('path');
+const { tienePermiso, requierePermiso } = require('./app/middleware/permisos');
 
 const app = express();
 
@@ -23,6 +24,8 @@ app.use((req, res, next) => {
   res.locals.anio     = req.session.anio     || null;
   res.locals.central  = req.session.central  || null;
   res.locals.serie    = req.session.usuario ? req.session.usuario.serie : null;
+  res.locals.isAdmin  = req.session.usuario ? !!req.session.usuario.isAdmin : false;
+  res.locals.tienePermiso = clave => tienePermiso(req, clave);
   next();
 });
 
@@ -42,8 +45,9 @@ app.use(requireAuth);
 app.get('/', (req, res) => res.redirect('/dashboard'));
 app.get('/dashboard', (req, res) => res.render('dashboard', { usuario: req.session.usuario, modulo: 'dashboard' }));
 
-app.use('/cartaporte',  require('./app/routes/cartaporte'));
-app.use('/facturas',    require('./app/routes/facturas'));
+app.use('/cartaporte',  requierePermiso('cartaporte.ver'), require('./app/routes/cartaporte'));
+app.use('/facturas',    requierePermiso('facturas.ver'),   require('./app/routes/facturas'));
+app.use('/seguridad',   requierePermiso('seguridad.administrar'), require('./app/routes/seguridad'));
 app.use('/centrales',   require('./app/routes/centrales'));
 app.use('/ciudades',    require('./app/routes/ciudades'));
 app.use('/colonias',    require('./app/routes/colonias'));

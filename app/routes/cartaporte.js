@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getPool, sql } = require('../config/db');
 const { getSatDb } = require('../config/sat-db');
+const { requierePermiso } = require('../middleware/permisos');
 
 const SEARCH_COLS = new Set(['CartaPorte','NombreComunCli','Status','DesFlete','RealizoPedido']);
 const SORT_COLS   = new Set(['CartaPorte','FechaPedido','FehcaCarga','NombreComunCli','DesFlete','Status','RealizoPedido']);
@@ -390,7 +391,7 @@ router.get('/mercancias', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.post('/mercancias/guardar', async (req, res) => {
+router.post('/mercancias/guardar', requierePermiso('cartaporte.editar'), async (req, res) => {
   const f = req.body;
   try {
     const pool = await getPool();
@@ -448,7 +449,7 @@ router.post('/mercancias/guardar', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.post('/mercancias/eliminar', async (req, res) => {
+router.post('/mercancias/eliminar', requierePermiso('cartaporte.editar'), async (req, res) => {
   try {
     const pool = await getPool();
     await pool.request()
@@ -475,7 +476,7 @@ router.get('/depositos', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.post('/depositos/guardar', async (req, res) => {
+router.post('/depositos/guardar', requierePermiso('cartaporte.editar'), async (req, res) => {
   const f = req.body;
   try {
     const pool = await getPool();
@@ -600,7 +601,7 @@ router.post('/depositos/guardar', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.post('/depositos/eliminar', async (req, res) => {
+router.post('/depositos/eliminar', requierePermiso('cartaporte.editar'), async (req, res) => {
   try {
     const pool = await getPool();
     await pool.request()
@@ -611,7 +612,7 @@ router.post('/depositos/eliminar', async (req, res) => {
 });
 
 // ── GUARDAR CartaPorte ────────────────────────────────────────────────────────
-router.post('/guardar', async (req, res) => {
+router.post('/guardar', requierePermiso('cartaporte.editar'), async (req, res) => {
   const f = req.body;
   const hoy = new Date().toISOString().slice(0,10);
   const num  = v => (v === '' || v == null) ? null : parseFloat(v);
@@ -864,7 +865,7 @@ router.post('/guardar', async (req, res) => {
 });
 
 // ── ELIMINAR CartaPorte ───────────────────────────────────────────────────────
-router.post('/eliminar', async (req, res) => {
+router.post('/eliminar', requierePermiso('cartaporte.editar'), async (req, res) => {
   try {
     const pool = await getPool();
     await pool.request()

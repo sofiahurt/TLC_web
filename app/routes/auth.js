@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { getPool, sql } = require('../config/db');
+const { cargarPermisos } = require('../middleware/permisos');
 
 // Login page
 router.get('/login', (req, res) => {
@@ -24,11 +25,19 @@ router.post('/login', async (req, res) => {
     if (!user || user.PASSWORD.trim().toUpperCase() !== password.toUpperCase()) {
       return res.render('login', { error: 'Usuario o contraseña incorrectos' });
     }
+    let permisos = { isAdmin: false, permisos: [] };
+    try {
+      permisos = await cargarPermisos(pool, user.ID_USUARIOWEB);
+    } catch (permErr) {
+      console.error('No se pudieron cargar permisos, se inicia sesión sin permisos:', permErr);
+    }
     req.session.usuario = {
       id: user.ID_USUARIOWEB,
       nombre: user.NOMBRE.trim(),
       apellido: user.APELLIDO ? user.APELLIDO.trim() : '',
-      serie: user.SERIE ? user.SERIE.trim() : ''
+      serie: user.SERIE ? user.SERIE.trim() : '',
+      isAdmin: permisos.isAdmin,
+      permisos: permisos.permisos,
     };
     res.redirect('/seleccionar-anio');
   } catch (err) {
