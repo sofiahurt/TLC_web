@@ -61,53 +61,91 @@
         <div id="frmWarning" class="alert alert-warning d-none py-2 small"></div>
 
         <!-- Cabecera -->
-        <div class="row g-2 mb-2 align-items-end">
-          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Serie</label>
-            <input type="text" id="f_SerieFac" class="form-control form-control-sm" maxlength="20"></div>
-          <div class="col-md-1"><label class="form-label fw-semibold small mb-1">No.</label>
-            <input type="text" id="f_Id_NoFactura" class="form-control form-control-sm bg-light" readonly></div>
-          <div class="col-md-5">
-            <label class="form-label fw-semibold small mb-1">Cliente <span class="text-danger">*</span></label>
-            <div class="input-group input-group-sm">
-              <input type="hidden" id="f_Id_Cliente">
-              <input type="text" id="f_NombreCom_disp" class="form-control form-control-sm" placeholder="Seleccionar cliente..." readonly>
-              <button class="btn btn-outline-secondary btn-sm" type="button" onclick="openLookupCliente()"><i class="bi bi-search"></i></button>
+        <div class="row g-2 mb-2">
+          <div class="col-md-9">
+            <div class="row g-2 align-items-end">
+              <div class="col-md-1"><label class="form-label fw-semibold small mb-1">Serie</label>
+                <input type="text" id="f_SerieFac" class="form-control form-control-sm" maxlength="20"></div>
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">No.</label>
+                <input type="text" id="f_Id_NoFactura" class="form-control form-control-sm bg-light" readonly></div>
+              <div class="col-md-7">
+                <label class="form-label fw-semibold small mb-1">Cliente <span class="text-danger">*</span></label>
+                <div class="input-group input-group-sm">
+                  <input type="hidden" id="f_Id_Cliente">
+                  <input type="text" id="f_NombreCom_disp" class="form-control form-control-sm" placeholder="Seleccionar cliente..." readonly>
+                  <button class="btn btn-outline-secondary btn-sm" type="button" onclick="openLookupCliente()"><i class="bi bi-search"></i></button>
+                </div>
+              </div>
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">RFC</label>
+                <input type="text" id="f_RFC" class="form-control form-control-sm bg-light" readonly></div>
+            </div>
+            <div class="row g-2 mt-1 align-items-center">
+              <div class="col-md-5 d-flex gap-3">
+                <div class="form-check"><input type="checkbox" id="f_FlagResFac" class="form-check-input" onchange="onToggleResumen()"><label class="form-check-label small" for="f_FlagResFac">Un Concepto</label></div>
+                <div class="form-check"><input type="checkbox" id="f_IncluirCP" class="form-check-input" onchange="onCabeceraFieldChange()"><label class="form-check-label small" for="f_IncluirCP">Incluir CP</label></div>
+              </div>
+              <div class="col-md-4"><label class="form-label small mb-1">Ref. Cliente</label><input type="text" id="f_RefCliente" class="form-control form-control-sm bg-light" readonly></div>
+              <div class="col-md-3"><label class="form-label small mb-1">Status</label><input type="text" id="f_Status" class="form-control form-control-sm bg-light" readonly></div>
+            </div>
+            <div class="row g-2 mt-1" id="rowDescripcionResumen">
+              <div class="col-md-12"><label class="form-label small mb-1">Descripción (Un Concepto)</label>
+                <input type="text" id="f_Descripcion" class="form-control form-control-sm" maxlength="254" disabled onchange="onCabeceraFieldChange()"></div>
+            </div>
+            <div class="row g-2 mt-1">
+              <div class="col-md-12"><label class="form-label small mb-1">Observaciones</label>
+                <textarea id="f_Observaciones" class="form-control form-control-sm" rows="2" maxlength="1000" onchange="onCabeceraFieldChange()"></textarea>
+              </div>
+            </div>
+            <div class="row g-2 mt-1 align-items-end">
+              <div class="col-md-3">
+                <label class="form-label small mb-1">Serie CP</label>
+                <select id="cp_Serie" class="form-select form-select-sm" disabled>
+                  <% (typeof centrales !== 'undefined' ? centrales : []).forEach(c => { const cc=(c.Central||'').trim(); %>
+                    <option value="<%= cc %>" <%= cc===central ? 'selected' : '' %>><%= cc %> - <%= c.Descripcion %></option>
+                  <% }) %>
+                </select>
+              </div>
+              <div class="col-md-5">
+                <button class="btn btn-sm btn-primary" onclick="openLookupCP()"><i class="bi bi-search"></i> Buscar Carta Porte...</button>
+              </div>
             </div>
           </div>
-          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">RFC</label>
-            <input type="text" id="f_RFC" class="form-control form-control-sm bg-light" readonly></div>
-          <div class="col-md-2">
-            <div class="form-check"><input type="checkbox" id="f_FlagResFac" class="form-check-input" onchange="onToggleResumen()"><label class="form-check-label small" for="f_FlagResFac">Un Concepto</label></div>
-            <div class="form-check"><input type="checkbox" id="f_IncluirCP" class="form-check-input" onchange="onCabeceraFieldChange()"><label class="form-check-label small" for="f_IncluirCP">Incluir CP</label></div>
-          </div>
-        </div>
-        <div class="row g-2 mb-2 d-none" id="rowDescripcionResumen">
-          <div class="col-md-12"><label class="form-label small mb-1">Descripción (Un Concepto)</label>
-            <input type="text" id="f_Descripcion" class="form-control form-control-sm" maxlength="254" onchange="onCabeceraFieldChange()"></div>
-        </div>
-        <div class="row g-2 mb-3">
-          <div class="col-md-2"><label class="form-label small mb-1">Moneda</label><input type="text" id="f_MonFactura" class="form-control form-control-sm bg-light" readonly></div>
-          <div class="col-md-2"><label class="form-label small mb-1">Ref. Cliente</label><input type="text" id="f_RefCliente" class="form-control form-control-sm bg-light" readonly></div>
-          <div class="col-md-2"><label class="form-label small mb-1">Forma de pago</label><input type="text" id="f_c_FormaPago" class="form-control form-control-sm bg-light" readonly></div>
-          <div class="col-md-2"><label class="form-label small mb-1">Método de pago</label><input type="text" id="f_ClaveMP" class="form-control form-control-sm bg-light" readonly></div>
-          <div class="col-md-3"><label class="form-label small mb-1">Uso CFDI</label><input type="text" id="f_c_UsoCFDI" class="form-control form-control-sm bg-light" readonly></div>
-          <div class="col-md-1"><label class="form-label small mb-1">Status</label><input type="text" id="f_Status" class="form-control form-control-sm bg-light" readonly></div>
-        </div>
 
-        <hr>
-
-        <!-- Agregar Carta Porte como partida -->
-        <div class="row g-2 mb-2 align-items-end">
-          <div class="col-md-2">
-            <label class="form-label small mb-1">Serie CP</label>
-            <select id="cp_Serie" class="form-select form-select-sm" disabled>
-              <% (typeof centrales !== 'undefined' ? centrales : []).forEach(c => { const cc=(c.Central||'').trim(); %>
-                <option value="<%= cc %>" <%= cc===central ? 'selected' : '' %>><%= cc %> - <%= c.Descripcion %></option>
-              <% }) %>
-            </select>
-          </div>
-          <div class="col-md-4">
-            <button class="btn btn-sm btn-primary" onclick="openLookupCP()"><i class="bi bi-search"></i> Buscar Carta Porte...</button>
+          <!-- Columna fiscal: Fecha + catálogos SAT (lupa), alineados en una sola columna -->
+          <div class="col-md-3">
+            <label class="form-label fw-semibold small mb-1">Fecha</label>
+            <div class="input-group input-group-sm mb-2">
+              <input type="date" id="f_Fecha" class="form-control form-control-sm" onchange="onCabeceraFieldChange()">
+            </div>
+            <label class="form-label small mb-1">Forma de pago</label>
+            <div class="input-group input-group-sm mb-2">
+              <input type="hidden" id="f_c_FormaPago">
+              <input type="text" id="f_c_FormaPago_disp" class="form-control form-control-sm bg-light" placeholder="Seleccionar..." readonly>
+              <button class="btn btn-outline-secondary btn-sm sat-lupa-btn" type="button" onclick="openLookupSat('formaPago')"><i class="bi bi-search"></i></button>
+            </div>
+            <label class="form-label small mb-1">Método de pago</label>
+            <div class="input-group input-group-sm mb-2">
+              <input type="hidden" id="f_ClaveMP">
+              <input type="hidden" id="f_MetodoPago">
+              <input type="text" id="f_ClaveMP_disp" class="form-control form-control-sm bg-light" placeholder="Seleccionar..." readonly>
+              <button class="btn btn-outline-secondary btn-sm sat-lupa-btn" type="button" onclick="openLookupSat('metodoPago')"><i class="bi bi-search"></i></button>
+            </div>
+            <label class="form-label small mb-1">Uso CFDI</label>
+            <div class="input-group input-group-sm mb-2">
+              <input type="hidden" id="f_c_UsoCFDI">
+              <input type="text" id="f_c_UsoCFDI_disp" class="form-control form-control-sm bg-light" placeholder="Seleccionar..." readonly>
+              <button class="btn btn-outline-secondary btn-sm sat-lupa-btn" type="button" onclick="openLookupSat('usoCfdi')"><i class="bi bi-search"></i></button>
+            </div>
+            <label class="form-label small mb-1">Moneda</label>
+            <div class="input-group input-group-sm mb-2">
+              <input type="hidden" id="f_MonFactura">
+              <input type="text" id="f_MonFactura_disp" class="form-control form-control-sm bg-light" placeholder="Seleccionar..." readonly>
+              <button class="btn btn-outline-secondary btn-sm sat-lupa-btn" type="button" onclick="openLookupSat('moneda')"><i class="bi bi-search"></i></button>
+            </div>
+            <label class="form-label small mb-1">Tipo de cambio</label>
+            <div class="input-group input-group-sm mb-2">
+              <input type="number" id="f_TipoCambio" class="form-control form-control-sm" step="0.01" min="0" onchange="onCabeceraFieldChange()">
+            </div>
           </div>
         </div>
 
@@ -137,10 +175,7 @@
         </div>
 
         <div class="row g-2 mt-2">
-          <div class="col-md-12"><label class="form-label small mb-1">Observaciones</label>
-            <textarea id="f_Observaciones" class="form-control form-control-sm" rows="2" maxlength="1000" onchange="onCabeceraFieldChange()"></textarea>
-          </div>
-          <div class="col-md-12 small text-muted mt-1">Facturó: <strong><%= usuario.nombre.trim() %> <%= usuario.apellido ? usuario.apellido.trim() : '' %></strong></div>
+          <div class="col-md-12 small text-muted">Facturó: <strong><%= usuario.nombre.trim() %> <%= usuario.apellido ? usuario.apellido.trim() : '' %></strong></div>
         </div>
       </div>
       <div class="modal-footer">
@@ -205,6 +240,22 @@
     </div>
   </div>
 </div>
+
+<!-- Lookup SAT (modal compartido para Moneda / Forma de Pago / Método de Pago / Uso CFDI) -->
+<div class="modal fade modal-lookup" id="lookupSat" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-lg">
+  <div class="modal-content">
+    <div class="modal-header py-2"><h6 class="modal-title" id="satLkTitle">Seleccionar</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <input type="text" id="satLkQ" class="form-control form-control-sm mb-2" placeholder="Buscar por clave o descripción...">
+      <table class="table table-hover table-sm"><thead class="table-secondary"><tr><th style="width:100px">Clave</th><th>Descripción</th></tr></thead>
+      <tbody id="satLkBody"></tbody></table>
+      <div class="d-flex justify-content-between align-items-center">
+        <span id="satLkInfo" class="small text-muted"></span>
+        <div><button class="btn btn-sm btn-outline-secondary" id="satLkPrev">‹</button> <button class="btn btn-sm btn-outline-secondary" id="satLkNext">›</button></div>
+      </div>
+    </div>
+  </div>
+</div></div>
 
 <%- include('partials/footer') %>
 <script>
@@ -275,6 +326,8 @@ function hideError(){errEl.classList.add('d-none');}
 function showWarning(msg){warnEl.textContent=msg;warnEl.classList.remove('d-none');}
 function hideWarning(){warnEl.classList.add('d-none');}
 
+function hoyISO(){return new Date().toISOString().slice(0,10);}
+
 function clearForm(){
   _factura={idNoFactura:null, confirmada:false, cliente:null};
   document.getElementById('f_Id_NoFactura').value='';
@@ -282,17 +335,26 @@ function clearForm(){
   document.getElementById('f_Id_Cliente').value='';
   document.getElementById('f_NombreCom_disp').value='';
   document.getElementById('f_RFC').value='';
+  document.getElementById('f_Fecha').value=hoyISO();
+  document.getElementById('f_Fecha').readOnly=false;
+  document.querySelectorAll('.sat-lupa-btn').forEach(b=>b.disabled=false);
   document.getElementById('f_MonFactura').value='';
+  document.getElementById('f_MonFactura_disp').value='';
+  document.getElementById('f_TipoCambio').value='';
   document.getElementById('f_RefCliente').value='';
   document.getElementById('f_c_FormaPago').value='';
+  document.getElementById('f_c_FormaPago_disp').value='';
   document.getElementById('f_ClaveMP').value='';
+  document.getElementById('f_MetodoPago').value='';
+  document.getElementById('f_ClaveMP_disp').value='';
   document.getElementById('f_c_UsoCFDI').value='';
+  document.getElementById('f_c_UsoCFDI_disp').value='';
   document.getElementById('f_Status').value='EMITIDA';
   document.getElementById('f_FlagResFac').checked=false;
   document.getElementById('f_IncluirCP').checked=false;
   document.getElementById('f_Descripcion').value='';
+  document.getElementById('f_Descripcion').disabled=true;
   document.getElementById('f_Observaciones').value='';
-  document.getElementById('rowDescripcionResumen').classList.add('d-none');
   document.getElementById('detBody').innerHTML='';
   pintarTotales({SubTotal:0,IVA:0,Retencion:0,TOTAL:0});
   hideError(); hideWarning();
@@ -337,24 +399,31 @@ function cargarFactura(idNoFactura, serieFac){
     document.getElementById('f_NombreCom_disp').value=(c.NombreCom||'').trim();
     document.getElementById('f_NombreCom_disp').readOnly=true;
     document.getElementById('f_RFC').value=(c.RFC||'').trim();
-    document.getElementById('f_MonFactura').value=(c.MonFactura||'').trim();
+    const yaTimbrada=!!(c.UUID||'').trim();
+    document.getElementById('f_Fecha').value=(c.FechaFactura||'').toString().slice(0,10);
+    document.getElementById('f_Fecha').readOnly=yaTimbrada;
+    document.querySelectorAll('.sat-lupa-btn').forEach(b=>b.disabled=yaTimbrada);
+    setSatField('f_MonFactura','f_MonFactura_disp','moneda',(c.MonFactura||'').trim());
+    document.getElementById('f_TipoCambio').value=c.TipoCambio||0;
+    document.getElementById('f_TipoCambio').readOnly=yaTimbrada;
     document.getElementById('f_RefCliente').value=(c.RefCliente||'').trim();
-    document.getElementById('f_c_FormaPago').value=(c.c_FormaPago||'').trim();
-    document.getElementById('f_ClaveMP').value=(c.ClaveMP||'').trim();
-    document.getElementById('f_c_UsoCFDI').value=(c.c_UsoCFDI||'').trim();
+    setSatField('f_c_FormaPago','f_c_FormaPago_disp','formaPago',(c.c_FormaPago||'').trim());
+    document.getElementById('f_MetodoPago').value=(c.MetodoPago||'').trim();
+    setSatField('f_ClaveMP','f_ClaveMP_disp','metodoPago',(c.ClaveMP||'').trim());
+    setSatField('f_c_UsoCFDI','f_c_UsoCFDI_disp','usoCfdi',(c.c_UsoCFDI||'').trim());
     document.getElementById('f_Status').value=(c.Status||'').trim();
     document.getElementById('f_FlagResFac').checked=c.FlagResFac==1;
     document.getElementById('f_IncluirCP').checked=c.IncluirCP==1;
     document.getElementById('f_Descripcion').value=(c.Descripcion||'').trim();
+    document.getElementById('f_Descripcion').disabled=c.FlagResFac!=1;
     document.getElementById('f_Observaciones').value=(c.Observaciones||'').trim();
-    document.getElementById('rowDescripcionResumen').classList.toggle('d-none', c.FlagResFac!=1);
     pintarDetalle(d.lineas);
     pintarTotales(c);
   });
 }
 
 function onToggleResumen(){
-  document.getElementById('rowDescripcionResumen').classList.toggle('d-none', !document.getElementById('f_FlagResFac').checked);
+  document.getElementById('f_Descripcion').disabled=!document.getElementById('f_FlagResFac').checked;
   onCabeceraFieldChange();
 }
 
@@ -368,6 +437,13 @@ function onCabeceraFieldChange(){
     incluirCP:document.getElementById('f_IncluirCP').checked?1:0,
     descripcion:document.getElementById('f_Descripcion').value.trim(),
     observaciones:document.getElementById('f_Observaciones').value.trim(),
+    fecha:document.getElementById('f_Fecha').value,
+    monFactura:document.getElementById('f_MonFactura').value.trim(),
+    tipoCambio:document.getElementById('f_TipoCambio').value,
+    c_FormaPago:document.getElementById('f_c_FormaPago').value.trim(),
+    ClaveMP:document.getElementById('f_ClaveMP').value.trim(),
+    MetodoPago:document.getElementById('f_MetodoPago').value.trim(),
+    c_UsoCFDI:document.getElementById('f_c_UsoCFDI').value.trim(),
   };
   fetch('/facturas/cabecera/actualizar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
     .then(r=>r.json()).then(d=>{
@@ -450,10 +526,12 @@ document.getElementById('lkCliBody').addEventListener('click',e=>{
     document.getElementById('f_Id_Cliente').value=idCliente;
     document.getElementById('f_NombreCom_disp').value=d.NOMBRECOMUN||d.NOMBRECOM;
     document.getElementById('f_RFC').value=d.RFC;
-    document.getElementById('f_c_FormaPago').value=d.c_FormaPago;
-    document.getElementById('f_ClaveMP').value=d.ClaveMP;
-    document.getElementById('f_c_UsoCFDI').value=d.c_UsoCFDI;
-    document.getElementById('f_MonFactura').value='MXN';
+    setSatField('f_c_FormaPago','f_c_FormaPago_disp','formaPago',d.c_FormaPago);
+    document.getElementById('f_MetodoPago').value=d.MetodoPago||'';
+    setSatField('f_ClaveMP','f_ClaveMP_disp','metodoPago',d.ClaveMP);
+    setSatField('f_c_UsoCFDI','f_c_UsoCFDI_disp','usoCfdi',d.c_UsoCFDI);
+    setSatField('f_MonFactura','f_MonFactura_disp','moneda','MXN');
+    document.getElementById('f_TipoCambio').value=0;
     window._cliProdServ={clave:d.C_CLAVEPRODSERV, desc:d.DESCRIPCION_PRO};
   });
 });
@@ -467,12 +545,14 @@ function agregarPartida(serie, cp){
     idNoFactura:_factura.idNoFactura||'', idCliente,
     serie, cartaporte:cp,
     serieFac:document.getElementById('f_SerieFac').value.trim(),
+    fecha:document.getElementById('f_Fecha').value,
     flagResFac:document.getElementById('f_FlagResFac').checked?1:0,
     incluirCP:document.getElementById('f_IncluirCP').checked?1:0,
     descripcion:document.getElementById('f_Descripcion').value.trim(),
     observaciones:document.getElementById('f_Observaciones').value.trim(),
     c_FormaPago:document.getElementById('f_c_FormaPago').value.trim(),
     ClaveMP:document.getElementById('f_ClaveMP').value.trim(),
+    MetodoPago:document.getElementById('f_MetodoPago').value.trim(),
     c_UsoCFDI:document.getElementById('f_c_UsoCFDI').value.trim(),
     claveProdServ:(window._cliProdServ&&window._cliProdServ.clave)||'',
     descripcionProdServ:(window._cliProdServ&&window._cliProdServ.desc)||'',
@@ -567,5 +647,48 @@ function onCerrarModal(){
       .then(()=>browse.load());
   }
   return true;
+}
+
+// ── Lookup SAT (Moneda / Forma de Pago / Método de Pago / Uso CFDI) ────────
+const _satLkCfg={
+  moneda:{title:'Moneda',url:'/clientes/lookup/sat/moneda',onSelect:(clave,desc)=>{document.getElementById('f_MonFactura').value=clave;document.getElementById('f_MonFactura_disp').value=`${clave} - ${desc}`;onCabeceraFieldChange();}},
+  formaPago:{title:'Forma de Pago',url:'/clientes/lookup/sat/forma-pago',onSelect:(clave,desc)=>{document.getElementById('f_c_FormaPago').value=clave;document.getElementById('f_c_FormaPago_disp').value=`${clave} - ${desc}`;onCabeceraFieldChange();}},
+  metodoPago:{title:'Método de Pago',url:'/clientes/lookup/sat/metodo-pago',onSelect:(clave,desc)=>{document.getElementById('f_ClaveMP').value=clave;document.getElementById('f_MetodoPago').value=desc;document.getElementById('f_ClaveMP_disp').value=`${clave} - ${desc}`;onCabeceraFieldChange();}},
+  usoCfdi:{title:'Uso CFDI',url:'/clientes/lookup/sat/uso-cfdi',onSelect:(clave,desc)=>{document.getElementById('f_c_UsoCFDI').value=clave;document.getElementById('f_c_UsoCFDI_disp').value=`${clave} - ${desc}`;onCabeceraFieldChange();}}
+};
+let _satLkModal=null,_satLkPage=1,_satLkCur=null;
+function openLookupSat(type){
+  _satLkCur=_satLkCfg[type];_satLkPage=1;
+  document.getElementById('satLkTitle').textContent=_satLkCur.title;
+  document.getElementById('satLkQ').value='';
+  loadSatLk();
+  if(!_satLkModal)_satLkModal=new bootstrap.Modal(document.getElementById('lookupSat'));
+  _satLkModal.show();
+}
+function loadSatLk(){
+  fetch(`${_satLkCur.url}?q=${encodeURIComponent(document.getElementById('satLkQ').value)}&page=${_satLkPage}`).then(r=>r.json()).then(d=>{
+    document.getElementById('satLkBody').innerHTML=d.rows.map(r=>`<tr data-clave="${r.clave}" data-desc="${(r.descripcion||'').replace(/"/g,'&quot;')}" style="cursor:pointer"><td>${r.clave}</td><td>${r.descripcion||''}</td></tr>`).join('');
+    document.getElementById('satLkInfo').textContent=`Pág ${d.page}/${d.totalPages}`;
+    document.getElementById('satLkPrev').disabled=d.page<=1;
+    document.getElementById('satLkNext').disabled=d.page>=d.totalPages;
+  });
+}
+document.getElementById('satLkQ').addEventListener('input',debounce(()=>{_satLkPage=1;loadSatLk();},300));
+document.getElementById('satLkPrev').addEventListener('click',()=>{if(_satLkPage>1){_satLkPage--;loadSatLk();}});
+document.getElementById('satLkNext').addEventListener('click',()=>{_satLkPage++;loadSatLk();});
+document.getElementById('satLkBody').addEventListener('click',e=>{
+  const row=e.target.closest('tr[data-clave]');if(!row)return;
+  _satLkCur.onSelect(row.dataset.clave,row.dataset.desc);
+  _satLkModal.hide();
+});
+// Resuelve una clave ya guardada a su "clave - descripción" para mostrarla en el campo _disp
+function setSatField(hiddenId,dispId,type,clave){
+  document.getElementById(hiddenId).value=clave;
+  if(!clave){document.getElementById(dispId).value='';return;}
+  document.getElementById(dispId).value=clave;
+  fetch(`${_satLkCfg[type].url}?q=${encodeURIComponent(clave)}&page=1`).then(r=>r.json()).then(d=>{
+    const m=d.rows.find(r=>r.clave===clave);
+    if(m)document.getElementById(dispId).value=`${clave} - ${m.descripcion}`;
+  });
 }
 </script>

@@ -430,7 +430,7 @@ router.post('/partida/agregar', async (req, res) => {
 
         await reqSerieFac(new sql.Request(tx), serieFac)
           .input('id', sql.Decimal(9), idNoFactura)
-          .input('fecha', sql.Date, hoy())
+          .input('fecha', sql.Date, trim(f.fecha) || hoy())
           .input('hora', sql.VarChar(8), new Date().toTimeString().slice(0,8))
           .input('idCli', sql.Decimal(7), idCliente)
           .input('nombreCom', sql.VarChar(150), trim(cli.NOMBRECOMUN) || trim(cli.NOMBRECOM))
@@ -560,16 +560,38 @@ router.post('/cabecera/actualizar', async (req, res) => {
     const pool = await getPool();
     const result = await withTransaction(pool, async (tx) => {
       const facRes = await reqSerieFac(new sql.Request(tx), serieFac).input('id', sql.Decimal(9), idNoFactura)
-        .query(`SELECT Id_NoFactura FROM Empresa2.Factura WHERE Id_NoFactura=@id AND ${SERIEFAC_EQ}`);
+        .query(`SELECT Id_NoFactura, UUID FROM Empresa2.Factura WHERE Id_NoFactura=@id AND ${SERIEFAC_EQ}`);
       if (!facRes.recordset[0]) throw Object.assign(new Error('Factura no encontrada.'), { status: 404 });
-
-      await reqSerieFac(new sql.Request(tx), serieFac)
+      // La fecha y los catálogos fiscales solo se pueden corregir mientras la
+      // factura no esté timbrada; una vez con UUID deben coincidir siempre
+      // con lo que ya se timbró en el CFDI real.
+      const yaTimbrada = !!trim(facRes.recordset[0].UUID);
+      const nuevaFecha = !yaTimbrada && trim(req.body.fecha);
+      let extraSet = '';
+      const r2 = reqSerieFac(new sql.Request(tx), serieFac)
         .input('id', sql.Decimal(9), idNoFactura)
         .input('flagres', sql.Int, req.body.flagResFac ? 1 : 0)
         .input('incluircp', sql.Int, req.body.incluirCP ? 1 : 0)
         .input('descripcion', sql.VarChar(254), trim(req.body.descripcion) || null)
         .input('observaciones', sql.VarChar(1000), trim(req.body.observaciones) || null)
-        .query(`UPDATE Empresa2.Factura SET FlagResFac=@flagres, IncluirCP=@incluircp, Descripcion=@descripcion, Observaciones=@observaciones
+        .input('fecha', sql.Date, nuevaFecha || null);
+      if (nuevaFecha) extraSet += ', FechaFactura=@fecha';
+      if (!yaTimbrada) {
+        const tieneTipoCambio = trim(req.body.tipoCambio) !== '';
+        r2.input('mon', sql.VarChar(4), trim(req.body.monFactura) || null)
+          .input('tc', sql.Decimal(7, 2), tieneTipoCambio ? num(req.body.tipoCambio) : null)
+          .input('cformapago', sql.VarChar(4), trim(req.body.c_FormaPago) || null)
+          .input('clavemp', sql.VarChar(3), trim(req.body.ClaveMP) || null)
+          .input('metodopago', sql.VarChar(60), trim(req.body.MetodoPago) || null)
+          .input('cusocfdi', sql.VarChar(5), trim(req.body.c_UsoCFDI) || null);
+        if (trim(req.body.monFactura))   extraSet += ', MonFactura=@mon';
+        if (tieneTipoCambio)              extraSet += ', TipoCambio=@tc';
+        if (trim(req.body.c_FormaPago))  extraSet += ', c_FormaPago=@cformapago';
+        if (trim(req.body.ClaveMP))      extraSet += ', ClaveMP=@clavemp';
+        if (trim(req.body.MetodoPago))   extraSet += ', MetodoPago=@metodopago';
+        if (trim(req.body.c_UsoCFDI))    extraSet += ', c_UsoCFDI=@cusocfdi';
+      }
+      await r2.query(`UPDATE Empresa2.Factura SET FlagResFac=@flagres, IncluirCP=@incluircp, Descripcion=@descripcion, Observaciones=@observaciones${extraSet}
                 WHERE Id_NoFactura=@id AND ${SERIEFAC_EQ}`);
 
       return await recalcularCabecera(tx, idNoFactura, serieFac);

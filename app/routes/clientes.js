@@ -8,8 +8,9 @@ const { browseQuery } = require('../config/browse');
 let _satDb = null;
 const _satCache = {};
 
-function getSatCatalog(table, claveCol) {
-  if (!_satCache[table]) {
+function getSatCatalog(table, claveCol, descCol) {
+  const cacheKey = `${table}:${claveCol}:${descCol}`;
+  if (!_satCache[cacheKey]) {
     if (!_satDb) {
       const Database = require('better-sqlite3');
       _satDb = new Database(
@@ -17,18 +18,18 @@ function getSatCatalog(table, claveCol) {
         { readonly: true }
       );
     }
-    _satCache[table] = _satDb
-      .prepare(`SELECT ${claveCol} AS clave, descripcion FROM ${table} ORDER BY clave`)
+    _satCache[cacheKey] = _satDb
+      .prepare(`SELECT ${claveCol} AS clave, "${descCol}" AS descripcion FROM ${table} ORDER BY clave`)
       .all();
   }
-  return _satCache[table];
+  return _satCache[cacheKey];
 }
 
-function satLookupHandler(table, claveCol) {
+function satLookupHandler(table, claveCol, descCol = 'descripcion') {
   return (req, res) => {
     const q = (req.query.q || '').trim().toLowerCase();
     const page = Math.max(1, parseInt(req.query.page) || 1);
-    const all = getSatCatalog(table, claveCol);
+    const all = getSatCatalog(table, claveCol, descCol);
     const filtered = q
       ? all.filter(r => r.clave.toLowerCase().includes(q) || r.descripcion.toLowerCase().includes(q))
       : all;
@@ -110,6 +111,7 @@ router.get('/lookup/sat/regimen-fiscal', satLookupHandler('sat_regimenfiscal', '
 router.get('/lookup/sat/forma-pago',     satLookupHandler('sat_formas_pago',   'c_FormaPago'));
 router.get('/lookup/sat/uso-cfdi',       satLookupHandler('sat_usoCDFI',       'c_usocfdi'));
 router.get('/lookup/sat/metodo-pago',    satLookupHandler('sat_metodo_pago',   'c_metodopago'));
+router.get('/lookup/sat/moneda',         satLookupHandler('SAT_Moneda',        'c_Moneda', 'Descripción'));
 
 router.post('/guardar', async (req, res) => {
   const f = req.body;
