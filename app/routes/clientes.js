@@ -112,6 +112,9 @@ router.get('/lookup/sat/forma-pago',     satLookupHandler('sat_formas_pago',   '
 router.get('/lookup/sat/uso-cfdi',       satLookupHandler('sat_usoCDFI',       'c_usocfdi'));
 router.get('/lookup/sat/metodo-pago',    satLookupHandler('sat_metodo_pago',   'c_metodopago'));
 router.get('/lookup/sat/moneda',         satLookupHandler('SAT_Moneda',        'c_Moneda', 'Descripción'));
+router.get('/lookup/sat/tipo-relacion',  satLookupHandler('sat_TipoRelacion',  'c_TipoRelacion', 'Descripción'));
+router.get('/lookup/sat/unidad',         satLookupHandler('sat_Unidad',        'c_claveunidad',  'nombre'));
+router.get('/lookup/sat/prodserv',       satLookupHandler('sat_ProdServ',      'c_claveprodserv','descripcion'));
 
 router.post('/guardar', async (req, res) => {
   const f = req.body;

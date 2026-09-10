@@ -50,6 +50,8 @@ router.get('/data', async (req, res) => {
     const fmtDate = v => { if (!v) return ''; const iso = v instanceof Date ? v.toISOString().slice(0,10) : String(v).trim().slice(0,10); return iso.length >= 10 ? `${iso.slice(8,10)}/${iso.slice(5,7)}/${iso.slice(0,4)}` : iso; };
     const rows = dataRes.recordset.map(r => {
       const timbrada = fmt(r.Status).toUpperCase() === 'TRASLADO' && !!fmt(r.UUID);
+      const statusUp = fmt(r.Status).toUpperCase();
+      const canceladaConAcuse = (statusUp === 'CANCELADO' || statusUp === 'CANCELAD0') && !!fmt(r.UUID);
       const qs = `serie=${encodeURIComponent(fmt(r.Serie))}&cartaporte=${encodeURIComponent(fmt(r.CartaPorte))}`;
       return `<tr data-id="${fmt(r.CartaPorte)}">
         <td data-field="Serie"         data-value="${fmt(r.Serie)}">${fmt(r.Serie)}</td>
@@ -64,6 +66,9 @@ router.get('/data', async (req, res) => {
           ? `<a href="/cfdi/xml?${qs}" class="btn btn-sm btn-outline-secondary py-0 px-1" title="Descargar XML" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-code"></i></a>`
           : `<button class="btn btn-sm btn-outline-secondary py-0 px-1" disabled title="Solo disponible una vez timbrada"><i class="bi bi-file-earmark-code"></i></button>`}</td>
         <td class="text-center"><a href="/cfdi/pdf?${qs}" target="_blank" class="btn btn-sm btn-outline-secondary py-0 px-1" title="Ver/descargar PDF" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-pdf"></i></a></td>
+        <td class="text-center">${canceladaConAcuse
+          ? `<a href="/cfdi/acuse-cartaporte?${qs}" target="_blank" class="btn btn-sm btn-outline-danger py-0 px-1" title="Ver/descargar Acuse de Cancelación" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-x"></i></a>`
+          : `<button class="btn btn-sm btn-outline-secondary py-0 px-1" disabled title="Solo disponible si se canceló ante el SAT"><i class="bi bi-file-earmark-x"></i></button>`}</td>
         <td data-field="Id_Pedido"     data-value="${r.Id_Pedido||''}" style="display:none"></td>
         <td data-field="UUID"          data-value="${fmt(r.UUID)}" style="display:none"></td>
       </tr>`;

@@ -74,7 +74,11 @@ function initBrowse(options) {
   function load() {
     const q = searchInput ? searchInput.value : '';
     const col = searchColumn ? searchColumn.value : '';
-    const url = `${fetchUrl}?page=${currentPage}&q=${encodeURIComponent(q)}&col=${encodeURIComponent(col)}&sort=${currentSort}&dir=${currentDir}`;
+    // fetchUrl puede ser un string fijo o una función () => string (para
+    // módulos con filtro dinámico, ej. pestañas NC/ND en Notas de Crédito).
+    const base = typeof fetchUrl === 'function' ? fetchUrl() : fetchUrl;
+    const sep = base.includes('?') ? '&' : '?';
+    const url = `${base}${sep}page=${currentPage}&q=${encodeURIComponent(q)}&col=${encodeURIComponent(col)}&sort=${currentSort}&dir=${currentDir}`;
     fetch(url)
       .then(r => r.json())
       .then(data => {

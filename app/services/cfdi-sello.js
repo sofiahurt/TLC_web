@@ -29,16 +29,16 @@ function fmt(v) { return v ? String(v).trim() : ''; }
  *   número de certificado del CSD usado (para persistirlo de inmediato, antes
  *   de siquiera intentar el timbrado — no depende de que el PAC responda).
  */
-async function sellarXML(xmlString, serie, nombreBase, pool) {
-  // 1. Empresa — varios centrales comparten la misma razón social/CSD (ver
-  // config/empresa-serie.js), por eso se resuelve la serie fiscal primero.
+// Resuelve la Empresa (por serie fiscal) y carga su CSD desde disco. Extraído
+// de sellarXML para que la cancelación fiscal (cfdi-pac.js: cancelarConPAC)
+// también pueda obtener el Credential sin necesidad de sellar nada.
+async function cargarCSD(serie, pool) {
   const empRes = await pool.request()
     .input('serie', sql.VarChar(10), serieFiscal(serie))
     .query(`SELECT * FROM dbo.Empresas WHERE LTRIM(RTRIM(SERIE)) = @serie`);
   if (!empRes.recordset[0]) throw new Error(`Empresa no encontrada para serie "${serie}"`);
   const emp = empRes.recordset[0];
 
-  // 2. Rutas del CSD
   const cerPath  = fmt(emp.CERTIFICADOCER);
   const keyPath  = fmt(emp.CERTIFICADOKEY);
   const password = fmt(emp.PASSWORDKEY);
@@ -47,13 +47,19 @@ async function sellarXML(xmlString, serie, nombreBase, pool) {
   if (!fs.existsSync(cerPath)) throw new Error(`Archivo .cer no encontrado: ${cerPath}`);
   if (!fs.existsSync(keyPath)) throw new Error(`Archivo .key no encontrado: ${keyPath}`);
 
-  // 3. Cargar CSD
   let csd;
   try {
     csd = Credential.openFiles(cerPath, keyPath, password);
   } catch (e) {
     throw new Error(`Error al cargar el CSD (revise archivos y contraseña): ${e.message}`);
   }
+  return { csd, emp };
+}
+
+async function sellarXML(xmlString, serie, nombreBase, pool) {
+  // 1-3. Empresa + CSD — varios centrales comparten la misma razón social/CSD
+  // (ver config/empresa-serie.js), por eso se resuelve la serie fiscal primero.
+  const { csd, emp } = await cargarCSD(serie, pool);
 
   // 4. Datos del certificado — se conocen de antemano (vienen del CSD, no de la
   // firma) y DEBEN estar ya inyectados en el XML antes de calcular la cadena
@@ -104,4 +110,4 @@ async function sellarXML(xmlString, serie, nombreBase, pool) {
   return { xml: signed, noCertificado };
 }
 
-module.exports = { sellarXML };
+module.exports = { sellarXML, cargarCSD };

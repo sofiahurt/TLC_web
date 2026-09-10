@@ -1,0 +1,749 @@
+<%- include('partials/header', { titulo: 'Notas de Crédito/Débito' }) %>
+<%- include('partials/sidebar') %>
+<div id="page-content">
+  <div class="d-flex align-items-center mb-3">
+    <button class="btn btn-sm btn-outline-secondary me-3 d-md-none" id="sidebarToggle"><i class="bi bi-list fs-5"></i></button>
+    <h4 class="mb-0 fw-bold flex-grow-1">Notas de Crédito / Débito</h4>
+  </div>
+
+  <ul class="nav nav-tabs mb-2" id="tipoTabs">
+    <li class="nav-item"><a class="nav-link active" data-tipo="NC" href="#" onclick="return switchTipo(this)">Notas de Crédito</a></li>
+    <li class="nav-item"><a class="nav-link" data-tipo="ND" href="#" onclick="return switchTipo(this)">Notas de Débito</a></li>
+  </ul>
+
+  <div class="card border-0 shadow-sm mb-3 barra-filtros"><div class="card-body py-2">
+    <div class="row align-items-center g-2">
+      <div class="col-auto"><select id="searchCol" class="form-select form-select-sm">
+        <option value="Id_NotaCredito">No.</option><option value="NombreCom">Cliente</option><option value="Status">Status</option>
+      </select></div>
+      <div class="col col-md-4"><input type="text" id="searchInput" class="form-control form-select-sm" placeholder="Buscar..."></div>
+      <div class="col-auto ms-auto btn-action-group">
+        <button class="btn btn-sm btn-success" onclick="openAdd()"><i class="bi bi-plus-lg"></i> Nueva Nota</button>
+        <button class="btn btn-sm btn-primary" data-requires-selection disabled onclick="openEdit()"><i class="bi bi-eye"></i> Ver / Editar</button>
+        <% if (tienePermiso('notacred.btn_timbrar')) { %>
+        <button class="btn btn-sm btn-warning" id="btnTimbrarNC" disabled onclick="openTimbrarNC()"><i class="bi bi-file-earmark-check"></i> Timbrar</button>
+        <% } %>
+        <% if (tienePermiso('notacred.btn_cancelar')) { %>
+        <button class="btn btn-sm btn-danger" id="btnCancelarNC" data-requires-selection disabled onclick="confirmCancelarNC()"><i class="bi bi-x-circle"></i> Cancelar</button>
+        <% } %>
+      </div>
+    </div>
+  </div></div>
+
+  <div class="card border-0 shadow-sm"><div class="card-body p-0">
+    <div class="table-responsive"><table class="table table-hover table-sm mb-0">
+      <thead class="thead-tlc"><tr>
+        <th style="width:60px">Tipo</th>
+        <th data-sort="Serie" style="width:70px">Serie <span class="sort-icon"></span></th>
+        <th data-sort="Id_NotaCredito" style="width:80px">No. <span class="sort-icon"></span></th>
+        <th data-sort="Fecha" style="width:100px">Fecha <span class="sort-icon"></span></th>
+        <th data-sort="NombreCom">Cliente <span class="sort-icon"></span></th>
+        <th class="text-end" style="width:110px">Subtotal</th>
+        <th class="text-end" style="width:110px">Total</th>
+        <th data-sort="Status" style="width:110px">Status <span class="sort-icon"></span></th>
+        <th style="width:50px">XML</th>
+        <th style="width:50px">PDF</th>
+        <th style="width:50px">Acuse</th>
+      </tr></thead>
+      <tbody id="tableBody"></tbody>
+    </table></div>
+  </div>
+  <div class="card-footer bg-white d-flex align-items-center justify-content-between py-2">
+    <span class="page-info" id="pageInfo"></span>
+    <div id="pagination">
+      <button class="btn btn-sm btn-outline-secondary" data-action="prev"><i class="bi bi-chevron-left"></i> Anterior</button>
+      <button class="btn btn-sm btn-outline-secondary" data-action="next">Siguiente <i class="bi bi-chevron-right"></i></button>
+    </div>
+  </div></div>
+</div>
+
+<!-- ═══════════════ MODAL NOTA ═══════════════ -->
+<div class="modal fade" id="frmModal" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="frmTitle">Nueva Nota</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" onclick="return onCerrarModal()"></button>
+      </div>
+      <div class="modal-body">
+        <div id="frmError" class="alert alert-danger d-none py-2 small"></div>
+        <div id="frmWarning" class="alert alert-warning d-none py-2 small"></div>
+
+        <div class="row g-2 mb-2">
+          <div class="col-md-9">
+            <div class="row g-2 align-items-end">
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Tipo</label>
+                <select id="f_Tipo" class="form-select form-select-sm" onchange="onTipoChange()">
+                  <option value="NC">NC - Nota de Crédito</option>
+                  <option value="ND">ND - Nota de Débito</option>
+                </select>
+              </div>
+              <div class="col-md-1"><label class="form-label fw-semibold small mb-1">Serie</label>
+                <input type="text" id="f_Serie" class="form-control form-control-sm" maxlength="10"></div>
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">No.</label>
+                <input type="text" id="f_Id_NotaCredito" class="form-control form-control-sm bg-light" readonly></div>
+              <div class="col-md-5">
+                <label class="form-label fw-semibold small mb-1">Cliente <span class="text-danger">*</span></label>
+                <div class="input-group input-group-sm">
+                  <input type="hidden" id="f_Id_Cliente">
+                  <input type="text" id="f_NombreCom_disp" class="form-control form-control-sm" placeholder="Seleccionar cliente..." readonly>
+                  <button class="btn btn-outline-secondary btn-sm" type="button" onclick="openLookupCliente()"><i class="bi bi-search"></i></button>
+                </div>
+              </div>
+              <div class="col-md-2"><label class="form-label fw-semibold small mb-1">RFC</label>
+                <input type="text" id="f_RFC" class="form-control form-control-sm bg-light" readonly></div>
+            </div>
+            <div class="row g-2 mt-1 align-items-end">
+              <div class="col-md-2 pb-1">
+                <div class="form-check"><input type="checkbox" id="f_EsResumen" class="form-check-input" onchange="onToggleResumen()"><label class="form-check-label small" for="f_EsResumen">Un Concepto</label></div>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small mb-1">Clave Prod/Serv (SAT)</label>
+                <div class="input-group input-group-sm">
+                  <input type="hidden" id="f_c_ClaveProdServ">
+                  <input type="text" id="f_c_ClaveProdServ_disp" class="form-control form-control-sm" placeholder="Seleccionar..." readonly>
+                  <button class="btn btn-outline-secondary btn-sm sat-lupa-btn" type="button" onclick="openLookupSat('claveProdServ')"><i class="bi bi-search"></i></button>
+                </div>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label small mb-1">Clave Unidad (SAT)</label>
+                <div class="input-group input-group-sm">
+                  <input type="hidden" id="f_c_ClaveUnidad">
+                  <input type="text" id="f_c_ClaveUnidad_disp" class="form-control form-control-sm" placeholder="Seleccionar..." readonly>
+                  <button class="btn btn-outline-secondary btn-sm sat-lupa-btn" type="button" onclick="openLookupSat('claveUnidad')"><i class="bi bi-search"></i></button>
+                </div>
+              </div>
+              <div class="col-md-3"><label class="form-label small mb-1">Status</label><input type="text" id="f_Status" class="form-control form-control-sm bg-light" readonly></div>
+            </div>
+            <div class="row g-2 mt-1">
+              <div class="col-md-12">
+                <label class="form-label small mb-1">Descripción del concepto</label>
+                <input type="text" id="f_Descripcion" class="form-control form-control-sm" maxlength="100" onchange="onCabeceraFieldChange()">
+              </div>
+            </div>
+            <div class="row g-2 mt-1">
+              <div class="col-md-6">
+                <button class="btn btn-sm btn-primary" onclick="openLookupDocumento()"><i class="bi bi-search"></i> Buscar Factura o Nota de Débito...</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-md-3">
+            <label class="form-label fw-semibold small mb-1">Fecha</label>
+            <div class="input-group input-group-sm mb-2">
+              <input type="date" id="f_Fecha" class="form-control form-control-sm" onchange="onCabeceraFieldChange()">
+            </div>
+            <label class="form-label small mb-1">Forma de pago</label>
+            <div class="input-group input-group-sm mb-2">
+              <input type="hidden" id="f_c_FormaPago">
+              <input type="text" id="f_c_FormaPago_disp" class="form-control form-control-sm bg-light" placeholder="Seleccionar..." readonly>
+              <button class="btn btn-outline-secondary btn-sm sat-lupa-btn" type="button" onclick="openLookupSat('formaPago')"><i class="bi bi-search"></i></button>
+            </div>
+            <label class="form-label small mb-1">Método de pago</label>
+            <div class="input-group input-group-sm mb-2">
+              <input type="hidden" id="f_ClaveMP">
+              <input type="text" id="f_ClaveMP_disp" class="form-control form-control-sm bg-light" placeholder="Seleccionar..." readonly>
+              <button class="btn btn-outline-secondary btn-sm sat-lupa-btn" type="button" onclick="openLookupSat('metodoPago')"><i class="bi bi-search"></i></button>
+            </div>
+            <label class="form-label small mb-1">Uso CFDI</label>
+            <div class="input-group input-group-sm mb-2">
+              <input type="hidden" id="f_c_UsoCFDI">
+              <input type="text" id="f_c_UsoCFDI_disp" class="form-control form-control-sm bg-light" placeholder="Seleccionar..." readonly>
+              <button class="btn btn-outline-secondary btn-sm sat-lupa-btn" type="button" onclick="openLookupSat('usoCfdi')"><i class="bi bi-search"></i></button>
+            </div>
+            <label class="form-label small mb-1">Tipo de Relación</label>
+            <div class="input-group input-group-sm mb-2">
+              <input type="hidden" id="f_c_TipoRelacion">
+              <input type="text" id="f_c_TipoRelacion_disp" class="form-control form-control-sm bg-light" placeholder="Seleccionar..." readonly>
+              <button class="btn btn-outline-secondary btn-sm sat-lupa-btn" type="button" onclick="openLookupSat('tipoRelacion')"><i class="bi bi-search"></i></button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Detalle -->
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered align-middle" id="tblDetalle" style="font-size:.78rem">
+            <thead class="table-light">
+              <tr>
+                <th>Referencia</th><th>Descripción</th>
+                <th class="text-end">Saldo disp.</th><th class="text-end">Subtotal</th><th class="text-end">IVA</th><th class="text-end">Reten</th><th class="text-end">Aplicado</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="detBody"></tbody>
+            <tfoot>
+              <tr class="fw-bold table-light">
+                <td colspan="3" class="text-end">Totales:</td>
+                <td class="text-end" id="totSub">0.00</td>
+                <td class="text-end" id="totIva">0.00</td>
+                <td class="text-end" id="totRet">0.00</td>
+                <td class="text-end" id="totApl">0.00</td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        <div class="row g-2 mt-2">
+          <div class="col-md-12 small text-muted">Realizó: <strong><%= usuario.nombre.trim() %> <%= usuario.apellido ? usuario.apellido.trim() : '' %></strong></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal" onclick="return onCerrarModal()"><i class="bi bi-x-lg"></i> Cerrar</button>
+        <button class="btn btn-primary" onclick="grabarNota()"><i class="bi bi-check2"></i> Grabar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Lookup Cliente -->
+<div class="modal fade modal-lookup" id="lookupCliente" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-lg">
+  <div class="modal-content">
+    <div class="modal-header py-2"><h6 class="modal-title">Seleccionar Cliente</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <input type="text" id="lkCliQ" class="form-control form-control-sm mb-2" placeholder="Buscar cliente...">
+      <table class="table table-hover table-sm"><thead class="table-secondary"><tr><th>ID</th><th>Nombre</th><th>RFC</th></tr></thead>
+      <tbody id="lkCliBody"></tbody></table>
+      <div class="d-flex justify-content-between align-items-center">
+        <span id="lkCliInfo" class="small text-muted"></span>
+        <div><button class="btn btn-sm btn-outline-secondary" id="lkCliPrev">‹</button> <button class="btn btn-sm btn-outline-secondary" id="lkCliNext">›</button></div>
+      </div>
+    </div>
+  </div>
+</div></div>
+
+<!-- Lookup Factura / Nota de Débito (2 pestañas) -->
+<div class="modal fade modal-lookup" id="lookupDoc" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-lg">
+  <div class="modal-content">
+    <div class="modal-header py-2"><h6 class="modal-title">Seleccionar Factura o Nota de Débito</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <ul class="nav nav-tabs mb-2" id="docLkTabs">
+        <li class="nav-item"><a class="nav-link active" data-doc="factura" href="#" onclick="return docLkSwitchTab(this)">Facturas</a></li>
+        <li class="nav-item"><a class="nav-link" data-doc="nd" href="#" onclick="return docLkSwitchTab(this)">Notas de Débito</a></li>
+      </ul>
+      <input type="text" id="docLkQ" class="form-control form-control-sm mb-2" placeholder="Buscar por folio...">
+      <table class="table table-hover table-sm"><thead class="table-secondary"><tr><th>Folio</th><th>Fecha</th><th class="text-end">Saldo</th><th>Status</th></tr></thead>
+      <tbody id="docLkBody"></tbody></table>
+      <div class="d-flex justify-content-between align-items-center">
+        <span id="docLkInfo" class="small text-muted"></span>
+        <div><button class="btn btn-sm btn-outline-secondary" id="docLkPrev">‹</button> <button class="btn btn-sm btn-outline-secondary" id="docLkNext">›</button></div>
+      </div>
+    </div>
+  </div>
+</div></div>
+
+<!-- Lookup SAT (Forma de Pago / Método de Pago / Uso CFDI / Tipo de Relación) -->
+<div class="modal fade modal-lookup" id="lookupSat" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-lg">
+  <div class="modal-content">
+    <div class="modal-header py-2"><h6 class="modal-title" id="satLkTitle">Seleccionar</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <input type="text" id="satLkQ" class="form-control form-control-sm mb-2" placeholder="Buscar por clave o descripción...">
+      <table class="table table-hover table-sm"><thead class="table-secondary"><tr><th style="width:100px">Clave</th><th>Descripción</th></tr></thead>
+      <tbody id="satLkBody"></tbody></table>
+      <div class="d-flex justify-content-between align-items-center">
+        <span id="satLkInfo" class="small text-muted"></span>
+        <div><button class="btn btn-sm btn-outline-secondary" id="satLkPrev">‹</button> <button class="btn btn-sm btn-outline-secondary" id="satLkNext">›</button></div>
+      </div>
+    </div>
+  </div>
+</div></div>
+
+<!-- ═══════════════ MODAL TIMBRAR ═══════════════ -->
+<div class="modal fade" id="timbraNCModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title"><i class="bi bi-file-earmark-check me-2 text-warning"></i>Timbrar Nota</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="timbraNCBody"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-warning btn-sm" id="btnConfirmTimbrarNC" onclick="ejecutarTimbradoNC()">
+          <i class="bi bi-file-earmark-check me-1"></i>Confirmar timbrado
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ MODAL CANCELAR (fiscal) ═══════════════ -->
+<div class="modal fade" id="cancelarNCModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title"><i class="bi bi-x-circle me-2 text-danger"></i>Cancelar Nota (timbrada)</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="cancelarNCError" class="alert alert-danger d-none py-2 small"></div>
+        <label class="form-label small mb-1">Motivo de cancelación</label>
+        <select id="cancMotivo" class="form-select form-select-sm mb-2" onchange="onCambiaMotivo()">
+          <option value="01">01 - Comprobante emitido con errores con relación</option>
+          <option value="02" selected>02 - Comprobante emitido con errores sin relación</option>
+          <option value="03">03 - No se llevó a cabo la operación</option>
+          <option value="04">04 - Operación nominativa relacionada en factura global</option>
+        </select>
+        <div id="rowFolioSustitucion" class="d-none">
+          <label class="form-label small mb-1">UUID que sustituye</label>
+          <input type="text" id="cancFolioSustitucion" class="form-control form-control-sm" maxlength="40">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cerrar</button>
+        <button type="button" class="btn btn-danger btn-sm" id="btnConfirmCancelarNC" onclick="ejecutarCancelacionFiscal()">
+          <i class="bi bi-x-circle me-1"></i>Confirmar cancelación
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<%- include('partials/footer') %>
+<script>
+let _tipoActivo='NC';
+function switchTipo(a){
+  _tipoActivo=a.dataset.tipo;
+  document.querySelectorAll('#tipoTabs .nav-link').forEach(x=>x.classList.toggle('active', x===a));
+  browse.load();
+  return false;
+}
+const browse=initBrowse({searchInput:document.getElementById('searchInput'),searchColumn:document.getElementById('searchCol'),tableBody:document.getElementById('tableBody'),paginationEl:document.getElementById('pagination'),infoEl:document.getElementById('pageInfo'),fetchUrl:()=>'/notacred/data?tipo='+_tipoActivo,defaultSort:'Id_NotaCredito',defaultDir:'desc'});
+
+let _mode='add';const modal=new bootstrap.Modal(document.getElementById('frmModal'));
+let _nota={idNotaCredito:null, serie:'', tipo:'NC', confirmada:false, cliente:null};
+
+function hoyISO(){return new Date().toISOString().slice(0,10);}
+function fmtN(v){return (parseFloat(v)||0).toFixed(2);}
+function showError(msg){const e=document.getElementById('frmError');e.textContent=msg;e.classList.remove('d-none');}
+function hideError(){document.getElementById('frmError').classList.add('d-none');}
+function showWarning(msg){const e=document.getElementById('frmWarning');e.textContent=msg;e.classList.remove('d-none');}
+function hideWarning(){document.getElementById('frmWarning').classList.add('d-none');}
+
+function clearForm(){
+  _nota={idNotaCredito:null, serie:'', tipo:_tipoActivo, confirmada:false, cliente:null};
+  document.getElementById('f_Tipo').value=_tipoActivo;
+  document.getElementById('f_Tipo').disabled=false;
+  document.getElementById('f_Serie').value='';
+  document.getElementById('f_Serie').readOnly=false;
+  document.getElementById('f_Id_NotaCredito').value='';
+  document.getElementById('f_Id_Cliente').value='';
+  document.getElementById('f_NombreCom_disp').value='';
+  document.getElementById('f_NombreCom_disp').readOnly=false;
+  document.getElementById('f_RFC').value='';
+  document.getElementById('f_Status').value='EMITIDA';
+  document.getElementById('f_EsResumen').checked=(_tipoActivo==='NC');
+  document.getElementById('f_Fecha').disabled=false;
+  document.getElementById('f_Fecha').value=hoyISO();
+  document.querySelectorAll('.sat-lupa-btn').forEach(b=>b.disabled=false);
+  // Defaults confirmados con el usuario (mismos que DEFAULTS_TIPO en
+  // notacred.js): FormaPago=99, ClaveMP=PPD, UsoCFDI=G03 para ambos tipos;
+  // TipoRelacion depende del tipo -- NC=1, ND=2 (catálogo sat_TipoRelacion).
+  setSatField('f_c_FormaPago','f_c_FormaPago_disp','formaPago','99');
+  setSatField('f_ClaveMP','f_ClaveMP_disp','metodoPago','PPD');
+  setSatField('f_c_UsoCFDI','f_c_UsoCFDI_disp','usoCfdi','G03');
+  setSatField('f_c_TipoRelacion','f_c_TipoRelacion_disp','tipoRelacion',_tipoActivo==='ND'?'2':'1');
+  // Mismos defaults que DEFAULTS_TIPO en notacred.js (78101802/E48/texto fijo)
+  // -- se resuelven vía el mismo lookup para mostrar la descripción real.
+  setSatField('f_c_ClaveProdServ','f_c_ClaveProdServ_disp','claveProdServ','78101802');
+  setSatField('f_c_ClaveUnidad','f_c_ClaveUnidad_disp','claveUnidad','E48');
+  document.getElementById('f_Descripcion').value='SERVICIO DE TRASLADO DE MERCANCIA VIA TRANSPORTE';
+  document.getElementById('f_Descripcion').disabled=false;
+  document.getElementById('detBody').innerHTML='';
+  onToggleResumen();
+  pintarTotales({Subtotal:0,IVA:0,Retencion:0,ImporteTotal:0});
+  hideError(); hideWarning();
+}
+
+function refrescarNumeroConsecutivo(){
+  if(_nota.idNotaCredito) return;
+  const tipo=document.getElementById('f_Tipo').value;
+  const serie=document.getElementById('f_Serie').value.trim();
+  fetch('/notacred/lookup/numero-consecutivo?tipo='+tipo+'&serie='+encodeURIComponent(serie)).then(r=>r.json()).then(d=>{
+    if(d.next!=null) document.getElementById('f_Id_NotaCredito').value=d.next;
+  });
+}
+document.getElementById('f_Serie').addEventListener('input',debounce(refrescarNumeroConsecutivo,300));
+
+function onTipoChange(){
+  const tipo=document.getElementById('f_Tipo').value;
+  document.getElementById('frmTitle').textContent='Nueva Nota de '+(tipo==='NC'?'Crédito':'Débito');
+  // El default de Tipo de Relación depende del tipo (NC=1, ND=2) -- solo se
+  // reajusta antes de crear el documento (el select ya está bloqueado
+  // después, igual que Serie).
+  setSatField('f_c_TipoRelacion','f_c_TipoRelacion_disp','tipoRelacion',tipo==='ND'?'2':'1');
+  refrescarNumeroConsecutivo();
+}
+
+function openAdd(){
+  clearForm();
+  document.getElementById('frmTitle').textContent='Nueva Nota de '+(_tipoActivo==='NC'?'Crédito':'Débito');
+  refrescarNumeroConsecutivo();
+  modal.show();
+}
+
+function openEdit(){
+  if(!window._selectedRow) return;
+  clearForm();
+  const tipo=window._selectedRow.Tipo||_tipoActivo;
+  document.getElementById('frmTitle').textContent=(tipo==='NC'?'Nota de Crédito':'Nota de Débito')+' #'+window._selectedRow.Id_NotaCredito;
+  cargarNota(tipo, window._selectedRow.Serie||'', parseInt(window._selectedRow.Id_NotaCredito));
+  modal.show();
+}
+
+function cargarNota(tipo, serie, id){
+  fetch(`/notacred/get?tipo=${tipo}&serie=${encodeURIComponent(serie)}&id=${id}`).then(r=>r.json()).then(d=>{
+    if(d.error){showError(d.error);return;}
+    const c=d.cabecera;
+    _nota={idNotaCredito:c.Id_NotaCredito, serie:(c.Serie||'').trim(), tipo:tipo, confirmada:true, cliente:c.Id_Cliente};
+    document.getElementById('f_Tipo').value=tipo;
+    document.getElementById('f_Tipo').disabled=true;
+    document.getElementById('f_Serie').value=(c.Serie||'').trim();
+    document.getElementById('f_Serie').readOnly=true;
+    document.getElementById('f_Id_NotaCredito').value=c.Id_NotaCredito;
+    document.getElementById('f_Id_Cliente').value=c.Id_Cliente;
+    document.getElementById('f_NombreCom_disp').value=(c.NombreCom||'').trim();
+    document.getElementById('f_NombreCom_disp').readOnly=true;
+    document.getElementById('f_RFC').value='';
+    document.getElementById('f_Status').value=(c.Status||'').trim();
+    const yaTimbrada=!!(c.UUID||'').trim();
+    document.getElementById('f_EsResumen').checked=c.FlagResNota==1;
+    document.getElementById('f_Fecha').value=(c.Fecha||'').toString().slice(0,10);
+    document.getElementById('f_Fecha').disabled=yaTimbrada;
+    document.querySelectorAll('.sat-lupa-btn').forEach(b=>b.disabled=yaTimbrada);
+    setSatField('f_c_FormaPago','f_c_FormaPago_disp','formaPago',(c.c_FormaPago||'').trim());
+    setSatField('f_ClaveMP','f_ClaveMP_disp','metodoPago',(c.ClaveMP||'').trim());
+    setSatField('f_c_UsoCFDI','f_c_UsoCFDI_disp','usoCfdi',(c.c_UsoCFDI||'').trim());
+    setSatField('f_c_TipoRelacion','f_c_TipoRelacion_disp','tipoRelacion',(c.c_TipoRelacion||'').trim());
+    setSatField('f_c_ClaveProdServ','f_c_ClaveProdServ_disp','claveProdServ',(c.c_ClaveProdServ||'').trim());
+    setSatField('f_c_ClaveUnidad','f_c_ClaveUnidad_disp','claveUnidad',(c.c_ClaveUnidad||'').trim());
+    document.getElementById('f_Descripcion').value=(c.Descripcion||'').trim();
+    document.getElementById('f_Descripcion').disabled=yaTimbrada;
+    onToggleResumen();
+    pintarDetalle(d.lineas);
+    pintarTotales(c);
+  });
+}
+
+function onToggleResumen(){
+  onCabeceraFieldChange();
+}
+
+function onCabeceraFieldChange(){
+  if(!_nota.idNotaCredito) return;
+  const body={
+    tipo:_nota.tipo, serie:_nota.serie, idNotaCredito:_nota.idNotaCredito,
+    esResumen:document.getElementById('f_EsResumen').checked?1:0,
+    fecha:document.getElementById('f_Fecha').value,
+    c_FormaPago:document.getElementById('f_c_FormaPago').value.trim(),
+    ClaveMP:document.getElementById('f_ClaveMP').value.trim(),
+    c_UsoCFDI:document.getElementById('f_c_UsoCFDI').value.trim(),
+    c_TipoRelacion:document.getElementById('f_c_TipoRelacion').value.trim(),
+    c_ClaveProdServ:document.getElementById('f_c_ClaveProdServ').value.trim(),
+    c_ClaveUnidad:document.getElementById('f_c_ClaveUnidad').value.trim(),
+    descripcion:document.getElementById('f_Descripcion').value.trim(),
+  };
+  fetch('/notacred/cabecera/actualizar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+    .then(r=>r.json()).then(d=>{ if(d.error){showError(d.error);return;} pintarTotales(d.totales); });
+}
+
+function pintarTotales(c){
+  document.getElementById('totSub').textContent=fmtN(c.Subtotal);
+  document.getElementById('totIva').textContent=fmtN(c.IVA);
+  document.getElementById('totRet').textContent=fmtN(c.Retencion);
+  document.getElementById('totApl').textContent=fmtN(c.ImporteTotal);
+}
+
+function filaDetalleHtml(l){
+  const ref = Number(l.ID_NOFACTURA)>0 ? ('Factura #'+l.ID_NOFACTURA) : ('ND #'+l.Id_NotaDebito);
+  const desc=(l.DESNOTACREDITO||'').trim().replace(/"/g,'&quot;');
+  return `<tr data-idd="${l.ID_NOTASCREDDETA}">
+    <td>${ref}</td>
+    <td><input type="text" class="form-control form-control-sm py-0" maxlength="1000" value="${desc}" placeholder="Descripción de esta línea..." onchange="ajustarDescripcionLinea(${l.ID_NOTASCREDDETA}, this.value)"></td>
+    <td class="text-end">${fmtN(l.TOTALFAC - l.PAGOSREALFAC - l.NOTASCREDITOFAC)}</td>
+    <td class="text-end"><input type="number" class="form-control form-control-sm text-end py-0" style="width:90px;display:inline-block" step="0.01" min="0" value="${fmtN(l.SUBTOTAL)}" onchange="ajustarImporteLinea(${l.ID_NOTASCREDDETA}, this.value)"></td>
+    <td class="text-end">${fmtN(l.IVA)}</td>
+    <td class="text-end">${fmtN(l.RETENCION)}</td>
+    <td class="text-end">${fmtN(l.IMPORTEAPLICA)}</td>
+    <td class="text-center"><button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="eliminarLinea(${l.ID_NOTASCREDDETA})"><i class="bi bi-trash"></i></button></td>
+  </tr>`;
+}
+function pintarDetalle(lineas){ document.getElementById('detBody').innerHTML=lineas.map(filaDetalleHtml).join(''); }
+
+function ajustarDescripcionLinea(idDeta, descripcion){
+  if(!_nota.idNotaCredito) return;
+  hideError();
+  fetch('/notacred/linea/actualizar-descripcion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    tipo:_nota.tipo, serie:_nota.serie, idNotaCredito:_nota.idNotaCredito, idDeta, descripcion,
+  })}).then(r=>r.json()).then(d=>{ if(d.error){showError(d.error);return;} });
+}
+
+function ajustarImporteLinea(idDeta, subtotal){
+  if(!_nota.idNotaCredito) return;
+  hideError();
+  fetch('/notacred/linea/actualizar-importe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    tipo:_nota.tipo, serie:_nota.serie, idNotaCredito:_nota.idNotaCredito, idDeta, subtotal,
+  })}).then(r=>r.json()).then(d=>{
+    if(d.error){showError(d.error);return;}
+    hideWarning();
+    if(d.limitado) showWarning('El importe se limito al saldo disponible: '+fmtN(d.saldoDisponible));
+    cargarNota(_nota.tipo, _nota.serie, _nota.idNotaCredito);
+  });
+}
+
+function eliminarLinea(idDeta){
+  if(!_nota.idNotaCredito) return;
+  fetch('/notacred/partida/eliminar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    tipo:_nota.tipo, serie:_nota.serie, idNotaCredito:_nota.idNotaCredito, idDeta,
+  })}).then(r=>r.json()).then(d=>{
+    if(d.error){showError(d.error);return;}
+    cargarNota(_nota.tipo, _nota.serie, _nota.idNotaCredito);
+  });
+}
+
+// ── Lookup Cliente ──────────────────────────────────────────────────────
+let lkCliPage=1;const lkCliModal=new bootstrap.Modal(document.getElementById('lookupCliente'));
+function openLookupCliente(){
+  if(_nota.idNotaCredito){showError('No se puede cambiar el cliente de una nota que ya tiene líneas.');return;}
+  lkCliPage=1;document.getElementById('lkCliQ').value='';loadLkCli();lkCliModal.show();
+}
+function loadLkCli(){fetch(`/clientes/lookup?q=${encodeURIComponent(document.getElementById('lkCliQ').value)}&page=${lkCliPage}`).then(r=>r.json()).then(d=>{
+  document.getElementById('lkCliBody').innerHTML=d.rows.map(r=>`<tr data-id="${r.ID_CLIENTE}" style="cursor:pointer"><td>${r.ID_CLIENTE}</td><td>${(r.NOMBRECOMUN||'').trim()}</td><td>${(r.RFC||'').trim()}</td></tr>`).join('');
+  document.getElementById('lkCliInfo').textContent=`Pág ${d.page}/${d.totalPages}`;
+  document.getElementById('lkCliPrev').disabled=d.page<=1;document.getElementById('lkCliNext').disabled=d.page>=d.totalPages;
+});}
+document.getElementById('lkCliQ').addEventListener('input',debounce(()=>{lkCliPage=1;loadLkCli();},300));
+document.getElementById('lkCliPrev').addEventListener('click',()=>{if(lkCliPage>1){lkCliPage--;loadLkCli();}});
+document.getElementById('lkCliNext').addEventListener('click',()=>{lkCliPage++;loadLkCli();});
+document.getElementById('lkCliBody').addEventListener('click',e=>{
+  const row=e.target.closest('tr[data-id]');if(!row)return;
+  const idCliente=row.dataset.id;
+  lkCliModal.hide();
+  fetch('/notacred/lookup/cliente-defaults?idCliente='+idCliente).then(r=>r.json()).then(d=>{
+    if(d.error){showError(d.error);return;}
+    _nota.cliente=idCliente;
+    document.getElementById('f_Id_Cliente').value=idCliente;
+    document.getElementById('f_NombreCom_disp').value=d.NOMBRECOMUN||d.NOMBRECOM;
+    document.getElementById('f_RFC').value=d.RFC;
+  });
+});
+
+// ── Lookup Factura / ND (2 pestañas) ───────────────────────────────────
+let docLkPage=1, docLkTipo='factura'; const docLkModal=new bootstrap.Modal(document.getElementById('lookupDoc'));
+function openLookupDocumento(){
+  const idCliente=document.getElementById('f_Id_Cliente').value;
+  if(!idCliente){showError('Seleccione primero un cliente.');return;}
+  hideError();
+  docLkPage=1; docLkTipo='factura';
+  document.querySelectorAll('#docLkTabs .nav-link').forEach(a=>a.classList.toggle('active', a.dataset.doc===docLkTipo));
+  document.getElementById('docLkQ').value='';
+  loadDocLk();
+  docLkModal.show();
+}
+function docLkSwitchTab(a){
+  docLkTipo=a.dataset.doc; docLkPage=1;
+  document.querySelectorAll('#docLkTabs .nav-link').forEach(x=>x.classList.toggle('active', x===a));
+  loadDocLk();
+  return false;
+}
+function loadDocLk(){
+  const idCliente=document.getElementById('f_Id_Cliente').value;
+  const q=document.getElementById('docLkQ').value;
+  const url = docLkTipo==='factura' ? '/notacred/lookup/facturas' : '/notacred/lookup/notasdebito';
+  fetch(`${url}?idCliente=${idCliente}&q=${encodeURIComponent(q)}&page=${docLkPage}`).then(r=>r.json()).then(d=>{
+    document.getElementById('docLkBody').innerHTML=d.rows.map(r=>{
+      const folio = docLkTipo==='factura' ? r.Id_NoFactura : r.Id_NotaDebito;
+      const fecha = docLkTipo==='factura' ? r.FechaFactura : r.Fecha;
+      const saldo = docLkTipo==='factura' ? r.Saldo : r.ImporteTotal;
+      const serieRef = docLkTipo==='factura' ? (r.SerieFac||'') : (r.SerieND||'');
+      return `<tr data-folio="${folio}" data-serie="${serieRef}" style="cursor:pointer"><td>${folio}</td><td>${fecha}</td><td class="text-end">${fmtN(saldo)}</td><td>${r.Status||''}</td></tr>`;
+    }).join('');
+    document.getElementById('docLkInfo').textContent=`Pág ${d.page}/${d.totalPages} — ${d.total} registros`;
+    document.getElementById('docLkPrev').disabled=d.page<=1;
+    document.getElementById('docLkNext').disabled=d.page>=d.totalPages;
+  });
+}
+document.getElementById('docLkQ').addEventListener('input',debounce(()=>{docLkPage=1;loadDocLk();},300));
+document.getElementById('docLkPrev').addEventListener('click',()=>{if(docLkPage>1){docLkPage--;loadDocLk();}});
+document.getElementById('docLkNext').addEventListener('click',()=>{docLkPage++;loadDocLk();});
+document.getElementById('docLkBody').addEventListener('click',e=>{
+  const row=e.target.closest('tr[data-folio]'); if(!row) return;
+  docLkModal.hide();
+  agregarLinea(docLkTipo, row.dataset.folio, row.dataset.serie);
+});
+
+function agregarLinea(tipoDoc, folio, serieRef){
+  hideError();
+  const idCliente=document.getElementById('f_Id_Cliente').value;
+  const tipoForm=document.getElementById('f_Tipo').value;
+  const body={
+    tipo:tipoForm, idNotaCredito:_nota.idNotaCredito||'', serieCab:document.getElementById('f_Serie').value.trim(),
+    idCliente, esResumen:document.getElementById('f_EsResumen').checked?1:0,
+    c_FormaPago:document.getElementById('f_c_FormaPago').value.trim(),
+    ClaveMP:document.getElementById('f_ClaveMP').value.trim(),
+    c_UsoCFDI:document.getElementById('f_c_UsoCFDI').value.trim(),
+    c_TipoRelacion:document.getElementById('f_c_TipoRelacion').value.trim(),
+    c_ClaveProdServ:document.getElementById('f_c_ClaveProdServ').value.trim(),
+    c_ClaveUnidad:document.getElementById('f_c_ClaveUnidad').value.trim(),
+    Descripcion:document.getElementById('f_Descripcion').value.trim(),
+  };
+  if(tipoDoc==='factura'){ body.idNoFactura=folio; body.serieFacRef=serieRef; }
+  else { body.idNotaDebito=folio; body.serieND=serieRef; }
+  fetch('/notacred/partida/agregar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+    .then(r=>r.json()).then(d=>{
+      if(d.error){showError(d.error);return;}
+      _nota.idNotaCredito=d.idNotaCredito;
+      _nota.serie=d.serie||'';
+      _nota.tipo=tipoForm;
+      document.getElementById('f_Id_NotaCredito').value=d.idNotaCredito;
+      document.getElementById('f_Tipo').disabled=true;
+      document.getElementById('f_Serie').readOnly=true;
+      document.getElementById('f_NombreCom_disp').readOnly=true;
+      cargarNota(_nota.tipo, d.serie||'', d.idNotaCredito);
+    });
+}
+
+function grabarNota(){
+  if(!_nota.idNotaCredito){showError('Agregue al menos una línea antes de grabar.');return;}
+  fetch('/notacred/cabecera/grabar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    tipo:_nota.tipo, serie:_nota.serie, idNotaCredito:_nota.idNotaCredito,
+  })}).then(r=>r.json()).then(d=>{
+    if(d.error){showError(d.error);return;}
+    _nota.confirmada=true;
+    modal.hide();
+    browse.load();
+  });
+}
+
+function onCerrarModal(){
+  if(_nota.idNotaCredito && !_nota.confirmada){
+    fetch('/notacred/cabecera/cancelar-sin-confirmar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      tipo:_nota.tipo, serie:_nota.serie, idNotaCredito:_nota.idNotaCredito,
+    })}).then(()=>browse.load());
+  }
+  return true;
+}
+
+function confirmCancelarNC(){
+  if(!window._selectedRow) return;
+  const yaTimbrada=!!(window._selectedRow.UUID||'').trim();
+  if(yaTimbrada){
+    document.getElementById('cancelarNCError').classList.add('d-none');
+    onCambiaMotivo();
+    new bootstrap.Modal(document.getElementById('cancelarNCModal')).show();
+    return;
+  }
+  if(!confirm('¿Cancelar esta nota? Esta acción revierte su efecto sobre el saldo de las facturas relacionadas.')) return;
+  fetch('/notacred/cancelar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    tipo:window._selectedRow.Tipo||_tipoActivo, serie:window._selectedRow.Serie||'', idNotaCredito:window._selectedRow.Id_NotaCredito,
+  })}).then(r=>r.json()).then(d=>{ if(d.error){alert(d.error);return;} browse.load(); });
+}
+function onCambiaMotivo(){
+  document.getElementById('rowFolioSustitucion').classList.toggle('d-none', document.getElementById('cancMotivo').value!=='01');
+}
+function ejecutarCancelacionFiscal(){
+  const motivo=document.getElementById('cancMotivo').value;
+  const folioSustitucion=motivo==='01'?document.getElementById('cancFolioSustitucion').value.trim():'';
+  if(motivo==='01' && !folioSustitucion){
+    const e=document.getElementById('cancelarNCError'); e.textContent='Debe indicar el UUID que sustituye.'; e.classList.remove('d-none'); return;
+  }
+  const btn=document.getElementById('btnConfirmCancelarNC');
+  btn.disabled=true; btn.innerHTML='<span class="spinner-border spinner-border-sm me-1"></span>Procesando...';
+  fetch('/cfdi/cancelar-notacredito',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    tipo:window._selectedRow.Tipo||_tipoActivo, serie:window._selectedRow.Serie||'', idNotaCredito:window._selectedRow.Id_NotaCredito,
+    motivo, folioSustitucion,
+  })}).then(r=>r.json()).then(d=>{
+    btn.disabled=false; btn.innerHTML='<i class="bi bi-x-circle me-1"></i>Confirmar cancelación';
+    if(d.error || !d.ok){
+      const e=document.getElementById('cancelarNCError'); e.textContent=d.error||'El PAC rechazó la cancelación.'; e.classList.remove('d-none'); return;
+    }
+    bootstrap.Modal.getInstance(document.getElementById('cancelarNCModal')).hide();
+    browse.load();
+  });
+}
+
+// ── Timbrar ─────────────────────────────────────────────────────────────
+document.addEventListener('click', function(e){
+  const row=e.target.closest('tr[data-id]');
+  if(!row || e.target.closest('.modal-lookup')) return;
+  const btnTi=document.getElementById('btnTimbrarNC');
+  const btnCa=document.getElementById('btnCancelarNC');
+  const yaTimbrada=!!(window._selectedRow?.UUID||'').trim();
+  const status=(window._selectedRow?.Status||'').trim().toUpperCase();
+  if(btnTi) btnTi.disabled = yaTimbrada || status==='CANCELADO';
+  if(btnCa) btnCa.disabled = status==='CANCELADO';
+});
+function openTimbrarNC(){
+  if(!window._selectedRow) return;
+  const { Id_NotaCredito, Serie, Tipo } = window._selectedRow;
+  document.getElementById('timbraNCBody').innerHTML = `<p>¿Timbrar la Nota #${Id_NotaCredito}?</p>`;
+  const btn=document.getElementById('btnConfirmTimbrarNC');
+  btn.disabled=false; btn.style.display=''; btn.innerHTML='<i class="bi bi-file-earmark-check me-1"></i>Confirmar timbrado';
+  new bootstrap.Modal(document.getElementById('timbraNCModal')).show();
+}
+function ejecutarTimbradoNC(){
+  if(!window._selectedRow) return;
+  const { Id_NotaCredito, Serie, Tipo } = window._selectedRow;
+  const btn=document.getElementById('btnConfirmTimbrarNC');
+  btn.disabled=true; btn.innerHTML='<span class="spinner-border spinner-border-sm me-1"></span>Procesando...';
+  fetch('/cfdi/timbrar-notacredito',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    tipo:Tipo||_tipoActivo, serie:Serie||'', idNotaCredito:Id_NotaCredito,
+  })}).then(r=>r.json()).then(d=>{
+    btn.style.display='none';
+    if(d.ok){
+      document.getElementById('timbraNCBody').innerHTML=`<div class="alert alert-success mb-0"><i class="bi bi-check-circle-fill me-2"></i><strong>${d.mensaje}</strong></div>`;
+      if(!d.testFel){
+        if(window._selectedRow) window._selectedRow.UUID=d.pacResult?.uuid||'x';
+        const btnTiOk=document.getElementById('btnTimbrarNC'); if(btnTiOk) btnTiOk.disabled=true;
+        browse.load();
+      }
+    } else {
+      btn.disabled=false; btn.style.display='';
+      document.getElementById('timbraNCBody').innerHTML=`<div class="alert alert-danger mb-0">${d.error||'Error al timbrar'}</div>`;
+    }
+  });
+}
+
+// ── Lookup SAT (Forma de Pago / Método de Pago / Uso CFDI / Tipo de Relación) ─
+const _satLkCfg={
+  formaPago:{title:'Forma de Pago',url:'/clientes/lookup/sat/forma-pago',onSelect:(clave,desc)=>{document.getElementById('f_c_FormaPago').value=clave;document.getElementById('f_c_FormaPago_disp').value=`${clave} - ${desc}`;onCabeceraFieldChange();}},
+  metodoPago:{title:'Método de Pago',url:'/clientes/lookup/sat/metodo-pago',onSelect:(clave,desc)=>{document.getElementById('f_ClaveMP').value=clave;document.getElementById('f_ClaveMP_disp').value=`${clave} - ${desc}`;onCabeceraFieldChange();}},
+  usoCfdi:{title:'Uso CFDI',url:'/clientes/lookup/sat/uso-cfdi',onSelect:(clave,desc)=>{document.getElementById('f_c_UsoCFDI').value=clave;document.getElementById('f_c_UsoCFDI_disp').value=`${clave} - ${desc}`;onCabeceraFieldChange();}},
+  tipoRelacion:{title:'Tipo de Relación',url:'/clientes/lookup/sat/tipo-relacion',onSelect:(clave,desc)=>{document.getElementById('f_c_TipoRelacion').value=clave;document.getElementById('f_c_TipoRelacion_disp').value=`${clave} - ${desc}`;onCabeceraFieldChange();}},
+  claveProdServ:{title:'Clave Producto/Servicio',url:'/clientes/lookup/sat/prodserv',onSelect:(clave,desc)=>{document.getElementById('f_c_ClaveProdServ').value=clave;document.getElementById('f_c_ClaveProdServ_disp').value=`${clave} - ${desc}`;onCabeceraFieldChange();}},
+  claveUnidad:{title:'Clave Unidad',url:'/clientes/lookup/sat/unidad',onSelect:(clave,desc)=>{document.getElementById('f_c_ClaveUnidad').value=clave;document.getElementById('f_c_ClaveUnidad_disp').value=`${clave} - ${desc}`;onCabeceraFieldChange();}},
+};
+let _satLkModal=null,_satLkPage=1,_satLkCur=null;
+function openLookupSat(type){
+  _satLkCur=_satLkCfg[type];_satLkPage=1;
+  document.getElementById('satLkTitle').textContent=_satLkCur.title;
+  document.getElementById('satLkQ').value='';
+  loadSatLk();
+  if(!_satLkModal)_satLkModal=new bootstrap.Modal(document.getElementById('lookupSat'));
+  _satLkModal.show();
+}
+function loadSatLk(){
+  fetch(`${_satLkCur.url}?q=${encodeURIComponent(document.getElementById('satLkQ').value)}&page=${_satLkPage}`).then(r=>r.json()).then(d=>{
+    document.getElementById('satLkBody').innerHTML=d.rows.map(r=>`<tr data-clave="${r.clave}" data-desc="${(r.descripcion||'').replace(/"/g,'&quot;')}" style="cursor:pointer"><td>${r.clave}</td><td>${r.descripcion||''}</td></tr>`).join('');
+    document.getElementById('satLkInfo').textContent=`Pág ${d.page}/${d.totalPages}`;
+    document.getElementById('satLkPrev').disabled=d.page<=1;
+    document.getElementById('satLkNext').disabled=d.page>=d.totalPages;
+  });
+}
+document.getElementById('satLkQ').addEventListener('input',debounce(()=>{_satLkPage=1;loadSatLk();},300));
+document.getElementById('satLkPrev').addEventListener('click',()=>{if(_satLkPage>1){_satLkPage--;loadSatLk();}});
+document.getElementById('satLkNext').addEventListener('click',()=>{_satLkPage++;loadSatLk();});
+document.getElementById('satLkBody').addEventListener('click',e=>{
+  const row=e.target.closest('tr[data-clave]');if(!row)return;
+  _satLkCur.onSelect(row.dataset.clave,row.dataset.desc);
+  _satLkModal.hide();
+});
+function setSatField(hiddenId,dispId,type,clave){
+  document.getElementById(hiddenId).value=clave;
+  if(!clave){document.getElementById(dispId).value='';return;}
+  document.getElementById(dispId).value=clave;
+  fetch(`${_satLkCfg[type].url}?q=${encodeURIComponent(clave)}&page=1`).then(r=>r.json()).then(d=>{
+    const m=d.rows.find(r=>r.clave===clave);
+    if(m)document.getElementById(dispId).value=`${clave} - ${m.descripcion}`;
+  });
+}
+</script>

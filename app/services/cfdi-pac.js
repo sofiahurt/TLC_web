@@ -43,8 +43,11 @@
 
 const https = require('https');
 const http  = require('http');
+const fs    = require('fs');
 const { URL } = require('url');
 const { DOMParser, XMLSerializer } = require('@xmldom/xmldom');
+const { sql } = require('../config/db');
+const { serieFiscal } = require('../config/empresa-serie');
 
 require('dotenv').config({ path: require('path').join(__dirname, '../../.env') });
 
@@ -381,4 +384,149 @@ async function timbrarConPAC(xmlFirmado, { url, usuario }) {
   };
 }
 
-module.exports = { timbrarConPAC };
+// ── Sobre SOAP para cancelar (CSD original en DER + contraseña) ────────────
+// Confirmado por WSDL (Timbrador Xpress): operación cancelar(apikey, keyCSD,
+// cerCSD, passCSD, uuid, rfcEmisor, rfcReceptor, total, motivo, folioSustitucion)
+// -> RespuestaCancelar. A diferencia de cancelarPEM (que espera la llave ya
+// desencriptada en PEM y falló con "No se pudo generar el PFX" -- probado
+// contra el sandbox real), esta manda el .cer/.key ORIGINALES tal cual vienen
+// de SAT (DER, la llave aún encriptada) en base64, más su contraseña -- el
+// mismo material crudo que ya usa cargarCSD()/sellarXML(), sin reconvertir.
+function armarSobreSOAPCancelarCSD(usuario, { keyCSD, cerCSD, passCSD, uuid, rfcEmisor, rfcReceptor, total, motivo, folioSustitucion }) {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/" SOAP-ENV:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+  <SOAP-ENV:Body>
+    <ns1:cancelar xmlns:ns1="${SOAP_NAMESPACE}">
+      <apikey xsi:type="xsd:string">${usuario}</apikey>
+      <keyCSD xsi:type="xsd:string"><![CDATA[${cdata(keyCSD)}]]></keyCSD>
+      <cerCSD xsi:type="xsd:string"><![CDATA[${cdata(cerCSD)}]]></cerCSD>
+      <passCSD xsi:type="xsd:string">${passCSD}</passCSD>
+      <uuid xsi:type="xsd:string">${uuid}</uuid>
+      <rfcEmisor xsi:type="xsd:string">${rfcEmisor}</rfcEmisor>
+      <rfcReceptor xsi:type="xsd:string">${rfcReceptor}</rfcReceptor>
+      <total xsi:type="xsd:string">${total}</total>
+      <motivo xsi:type="xsd:string">${motivo}</motivo>
+      <folioSustitucion xsi:type="xsd:string">${folioSustitucion || ''}</folioSustitucion>
+    </ns1:cancelar>
+  </SOAP-ENV:Body>
+</SOAP-ENV:Envelope>`;
+}
+
+/**
+ * Cancela un CFDI ya timbrado ante el PAC (operación cancelar del WSDL de
+ * Timbrador Xpress -- CSD original en DER+base64, no PEM). A diferencia de
+ * timbrarConPAC, NO recibe un XML firmado -- recibe las rutas del .cer/.key
+ * tal cual (mismo material que usa cargarCSD()) y los datos sueltos del CFDI.
+ *
+ * Contrato CONFIRMADO contra el sandbox real (2026-09-10, UUID de prueba
+ * cancelado con éxito, acuse SAT firmado recibido): a diferencia de timbrar
+ * (éxito = code 200), cancelar responde éxito con code="201" y status=
+ * "success" -- se usa status como señal principal por ser explícita, con el
+ * code como respaldo. El intento inicial con la operación cancelarPEM (CSD
+ * ya desencriptado en PEM) fue rechazado por el PAC ("No se pudo generar el
+ * PFX"); esta operación (DER+contraseña, el material crudo tal cual lo usa
+ * cargarCSD/sellarXML) sí funciona.
+ *
+ * @param {{cerPath: string, keyPath: string, password: string}} archivosCSD Rutas/contraseña del CSD (dbo.Empresas.CERTIFICADOCER/KEY/PASSWORDKEY)
+ * @param {{url: string, usuario: string}} conexion
+ * @param {{uuid: string, rfcEmisor: string, rfcReceptor: string, total: string|number, motivo: string, folioSustitucion?: string}} datos
+ * @returns {Promise<{exito: boolean, codigoRespuesta: string|null, status: string|null, mensajeError: string|null, acuseXml: string|null}>}
+ */
+async function cancelarConPAC({ cerPath, keyPath, password }, { url, usuario }, datos) {
+  if (!url)     throw new Error('Falta la URL de conexión al PAC');
+  if (!usuario) throw new Error('Falta la credencial (USUARIO) de conexión al PAC');
+  const keyCSD = fs.readFileSync(keyPath).toString('base64');
+  const cerCSD = fs.readFileSync(cerPath).toString('base64');
+  const sobre = armarSobreSOAPCancelarCSD(usuario, { keyCSD, cerCSD, passCSD: password, ...datos });
+
+  const vacio = { exito: false, codigoRespuesta: null, status: null, mensajeError: null };
+
+  let respuesta;
+  try {
+    respuesta = await postSOAP(url, sobre, `urn:ServicioTimbradoWS#cancelar`);
+  } catch (err) {
+    return { ...vacio, mensajeError: `Error de comunicación con el PAC: ${err.message}` };
+  }
+
+  if (respuesta.statusCode < 200 || respuesta.statusCode >= 300) {
+    let mensaje = `El PAC respondió HTTP ${respuesta.statusCode}`;
+    try {
+      const doc = new DOMParser({ errorHandler: () => {} }).parseFromString(respuesta.body, 'text/xml');
+      const faultString = textDe(doc, 'faultstring') || textDe(doc, 'Reason') || textDe(doc, 'Text');
+      if (faultString) mensaje = faultString;
+    } catch (e) { /* cuerpo no era XML */ }
+    return { ...vacio, mensajeError: mensaje };
+  }
+
+  let doc;
+  try {
+    doc = new DOMParser({ errorHandler: (level, msg) => { if (level === 'error') throw new Error(msg); } })
+      .parseFromString(respuesta.body, 'text/xml');
+  } catch (err) {
+    return { ...vacio, mensajeError: `Respuesta del PAC no es XML válido: ${err.message}` };
+  }
+
+  const code    = textDe(doc, 'code')    || textDe(doc, 'Code');
+  const message = textDe(doc, 'message') || textDe(doc, 'Message');
+  const status  = textDe(doc, 'status')  || textDe(doc, 'Status');
+  const dataTexto = textDe(doc, 'data')  || textDe(doc, 'Data');
+
+  // Confirmado contra el sandbox real: cancelar usa code=201 (NO 200, ese es
+  // solo para timbrar) con status="success" -- se usa status como señal
+  // principal de éxito por ser explícita, con el code como respaldo.
+  const esExito = status === 'success' || code === '201';
+  if (!esExito) {
+    return { ...vacio, codigoRespuesta: code, status, mensajeError: message || 'El PAC rechazó la cancelación sin mensaje de error' };
+  }
+
+  // El acuse de cancelación (XML firmado por el SAT, con EstatusUUID) viene
+  // embebido como JSON escapado dentro de "data" -- se extrae para poder
+  // guardarlo en disco como evidencia fiscal (mismo criterio que el XML
+  // timbrado: el archivo en disco es la fuente de verdad, no la BD).
+  let acuseXml = null;
+  if (dataTexto) {
+    try {
+      const parsed = JSON.parse(dataTexto);
+      if (parsed && parsed.acuse) acuseXml = parsed.acuse;
+    } catch (e) { /* si no es el JSON esperado, se omite sin tronar */ }
+  }
+
+  return { exito: true, codigoRespuesta: code, status, mensajeError: null, acuseXml };
+}
+
+// ── Resolución de conexión al PAC (sandbox vs. producción) ─────────────────
+// Movido tal cual desde app/routes/cfdi.js para que servicios nuevos
+// (app/services/cfdi-cancelacion.js) puedan reutilizarlo sin crear una
+// dependencia circular ruta→servicio→ruta. Comportamiento sin cambios.
+
+// El PAC (URL) es el mismo para todas las Empresas/series — solo cambia entre
+// prueba y producción, y eso sale de .env, no de dbo.Empresas.
+function urlPACGlobal(testFel) {
+  const url = ((testFel ? process.env.PAC_URL_PRUEBA : process.env.PAC_URL_PRODUCCION) || '').trim();
+  if (!url) throw new Error(`URL del PAC no configurada en .env (PAC_URL_${testFel ? 'PRUEBA' : 'PRODUCCION'})`);
+  return url.replace(/\?wsdl$/i, '');
+}
+
+// Resuelve credencial/URL del PAC para una Serie según el flag TESTFEL de su
+// Empresa. dbo.Empresas.USUARIO solo tiene la credencial de PRODUCCIÓN; no
+// existe un usuario de prueba ahí, por eso en modo prueba se toma de .env.
+// Varios centrales comparten la misma razón social/CSD (ver config/empresa-serie.js).
+async function resolverConexionPAC(pool, serie) {
+  const empRes = await pool.request()
+    .input('serie', sql.VarChar(10), serieFiscal(serie))
+    .query(`SELECT TESTFEL, USUARIO FROM dbo.Empresas WHERE LTRIM(RTRIM(SERIE)) = @serie`);
+  const emp = empRes.recordset[0];
+  if (!emp) throw new Error(`No se encontró configuración de Empresa para la serie "${serie}"`);
+
+  const testFel = !!parseInt(emp.TESTFEL) || false;
+  const url     = urlPACGlobal(testFel);
+  const usuario = testFel ? (process.env.PAC_USUARIO_PRUEBA || '').trim() : (emp.USUARIO || '').trim();
+
+  if (!usuario) throw new Error(testFel
+    ? 'No hay credencial de prueba configurada (PAC_USUARIO_PRUEBA en .env)'
+    : `La Empresa de la serie "${serie}" no tiene USUARIO (credencial del PAC) configurado`);
+
+  return { url, usuario, testFel };
+}
+
+module.exports = { timbrarConPAC, cancelarConPAC, resolverConexionPAC, urlPACGlobal };

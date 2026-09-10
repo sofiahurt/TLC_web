@@ -30,6 +30,9 @@
           <% if (tienePermiso('cartaporte.btn_timbrar')) { %>
           <button class="btn btn-sm btn-warning" id="btnTimbrar" disabled onclick="openTimbrar()"><i class="bi bi-file-earmark-check"></i> Timbrar</button>
           <% } %>
+          <% if (tienePermiso('cartaporte.btn_cancelar')) { %>
+          <button class="btn btn-sm btn-danger" id="btnCancelarCP" data-requires-selection disabled onclick="confirmCancelarCP()"><i class="bi bi-x-circle"></i> Cancelar</button>
+          <% } %>
         </div>
       </div>
     </div>
@@ -52,6 +55,7 @@
               <th data-sort="RealizoPedido" style="width:110px">Realizó <span class="sort-icon"></span></th>
               <th style="width:50px">XML</th>
               <th style="width:50px">PDF</th>
+              <th style="width:50px">Acuse</th>
             </tr>
           </thead>
           <tbody id="tableBody"></tbody>
@@ -636,6 +640,38 @@
   </div>
 </div>
 
+<!-- ═══════════════════ MODAL CANCELAR (fiscal, solo si ya tiene folio) ═════ -->
+<div class="modal fade" id="cancelarCPModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title"><i class="bi bi-x-circle me-2 text-danger"></i>Cancelar Carta Porte (timbrada)</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="cancelarCPError" class="alert alert-danger d-none py-2 small"></div>
+        <label class="form-label small mb-1">Motivo de cancelación</label>
+        <select id="cpCancMotivo" class="form-select form-select-sm mb-2" onchange="onCambiaMotivoCP()">
+          <option value="01">01 - Comprobante emitido con errores con relación</option>
+          <option value="02" selected>02 - Comprobante emitido con errores sin relación</option>
+          <option value="03">03 - No se llevó a cabo la operación</option>
+          <option value="04">04 - Operación nominativa relacionada en factura global</option>
+        </select>
+        <div id="cpRowFolioSustitucion" class="d-none">
+          <label class="form-label small mb-1">UUID que sustituye</label>
+          <input type="text" id="cpCancFolioSustitucion" class="form-control form-control-sm" maxlength="40">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cerrar</button>
+        <button type="button" class="btn btn-danger btn-sm" id="btnConfirmCancelarCP" onclick="ejecutarCancelacionCP()">
+          <i class="bi bi-x-circle me-1"></i>Confirmar cancelación
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <%- include('partials/footer') %>
 <script>
 // ── ESTADO ────────────────────────────────────────────────────────────────────
@@ -658,6 +694,7 @@ const mercModal   = new bootstrap.Modal(document.getElementById('mercModal'));
 const depoModal   = new bootstrap.Modal(document.getElementById('depoModal'));
 const lkModal     = new bootstrap.Modal(document.getElementById('lkModal'));
 const timbraModal = new bootstrap.Modal(document.getElementById('timbraModal'));
+const cancelarCPModal = new bootstrap.Modal(document.getElementById('cancelarCPModal'));
 
 // Con modales apilados (ej. depoModal sobre frmModal), el focus-trap de Bootstrap
 // hace que ESC cierre el modal de abajo en vez del que está encima. Todos los
@@ -721,10 +758,14 @@ document.addEventListener('click', function(e) {
   const btnEd = document.getElementById('btnEditar');
   const btnEl = document.getElementById('btnEliminar');
   const btnTi = document.getElementById('btnTimbrar');
+  const btnCa = document.getElementById('btnCancelarCP');
   if (btnEd) btnEd.disabled = isFact;
   if (btnEl) btnEl.disabled = isFact;
   // Timbrar: solo habilitado cuando Status = EMITIDO
   if (btnTi) btnTi.disabled = (status !== 'emitido');
+  // Cancelar: deshabilitado si ya está facturado o ya cancelado (incluye el
+  // typo legado 'cancelad0').
+  if (btnCa) btnCa.disabled = isFact || status === 'cancelado' || status === 'cancelad0';
 });
 
 // ── OPEN MODAL ────────────────────────────────────────────────────────────────
@@ -818,6 +859,50 @@ function ejecutarTimbrado() {
     btn.disabled = false;
     btn.innerHTML = '<i class="bi bi-file-earmark-check me-1"></i>Confirmar timbrado';
     document.getElementById('timbraBody').innerHTML = '<div class="alert alert-danger mb-0">Error de comunicación con el servidor.</div>';
+  });
+}
+
+// ── CANCELAR ────────────────────────────────────────────────────────────────
+function confirmCancelarCP() {
+  if (!window._selectedRow) return;
+  const yaTimbrada = !!(window._selectedRow.UUID || '').trim();
+  if (yaTimbrada) {
+    document.getElementById('cancelarCPError').classList.add('d-none');
+    onCambiaMotivoCP();
+    cancelarCPModal.show();
+    return;
+  }
+  if (!confirm(`¿Cancelar la Carta Porte "${window._selectedRow.CartaPorte}"? Esta acción no se puede deshacer.`)) return;
+  fetch('/cfdi/cancelar-cartaporte', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ serie: window._selectedRow.Serie, cartaporte: window._selectedRow.CartaPorte })
+  }).then(r => r.json()).then(d => {
+    if (d.error) { alert(d.error); return; }
+    browse.load();
+  });
+}
+function onCambiaMotivoCP() {
+  document.getElementById('cpRowFolioSustitucion').classList.toggle('d-none', document.getElementById('cpCancMotivo').value !== '01');
+}
+function ejecutarCancelacionCP() {
+  if (!window._selectedRow) return;
+  const motivo = document.getElementById('cpCancMotivo').value;
+  const folioSustitucion = motivo === '01' ? document.getElementById('cpCancFolioSustitucion').value.trim() : '';
+  if (motivo === '01' && !folioSustitucion) {
+    const e = document.getElementById('cancelarCPError'); e.textContent = 'Debe indicar el UUID que sustituye.'; e.classList.remove('d-none'); return;
+  }
+  const btn = document.getElementById('btnConfirmCancelarCP');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Procesando...';
+  fetch('/cfdi/cancelar-cartaporte', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ serie: window._selectedRow.Serie, cartaporte: window._selectedRow.CartaPorte, motivo, folioSustitucion })
+  }).then(r => r.json()).then(d => {
+    btn.disabled = false; btn.innerHTML = '<i class="bi bi-x-circle me-1"></i>Confirmar cancelación';
+    if (d.error || !d.ok) {
+      const e = document.getElementById('cancelarCPError'); e.textContent = d.error || 'El PAC rechazó la cancelación.'; e.classList.remove('d-none'); return;
+    }
+    cancelarCPModal.hide();
+    browse.load();
   });
 }
 

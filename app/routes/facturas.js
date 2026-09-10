@@ -270,7 +270,9 @@ router.get('/data', async (req, res) => {
     });
     const fmt = v => v == null ? '' : (v instanceof Date ? v.toISOString().slice(0,10) : String(v).trim());
     const fmtN = v => v == null ? '0.00' : Number(v).toFixed(2);
-    const rows = data.rows.map(r => `<tr data-id="${r.Id_NoFactura}">
+    const rows = data.rows.map(r => {
+      const canceladaConAcuse = fmt(r.Status).toUpperCase() === 'CANCELADA' && !!fmt(r.UUID);
+      return `<tr data-id="${r.Id_NoFactura}">
       <td data-field="SerieFac" data-value="${fmt(r.SerieFac)}">${fmt(r.SerieFac)}</td>
       <td data-field="Id_NoFactura" data-value="${r.Id_NoFactura}">${r.Id_NoFactura}</td>
       <td data-field="FechaFactura" data-value="${fmt(r.FechaFactura)}">${fmt(r.FechaFactura)}</td>
@@ -285,9 +287,13 @@ router.get('/data', async (req, res) => {
         ? `<a href="/cfdi/xml-factura?idNoFactura=${r.Id_NoFactura}&serieFac=${encodeURIComponent(fmt(r.SerieFac))}" class="btn btn-sm btn-outline-secondary py-0 px-1" title="Descargar XML" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-code"></i></a>`
         : `<button class="btn btn-sm btn-outline-secondary py-0 px-1" disabled title="Solo disponible una vez timbrada"><i class="bi bi-file-earmark-code"></i></button>`}</td>
       <td class="text-center"><a href="/cfdi/pdf-factura?idNoFactura=${r.Id_NoFactura}&serieFac=${encodeURIComponent(fmt(r.SerieFac))}" target="_blank" class="btn btn-sm btn-outline-secondary py-0 px-1" title="Ver/descargar PDF" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-pdf"></i></a></td>
+      <td class="text-center">${canceladaConAcuse
+        ? `<a href="/cfdi/acuse-factura?idNoFactura=${r.Id_NoFactura}&serieFac=${encodeURIComponent(fmt(r.SerieFac))}" target="_blank" class="btn btn-sm btn-outline-danger py-0 px-1" title="Ver/descargar Acuse de Cancelación" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-x"></i></a>`
+        : `<button class="btn btn-sm btn-outline-secondary py-0 px-1" disabled title="Solo disponible si se canceló ante el SAT"><i class="bi bi-file-earmark-x"></i></button>`}</td>
       <td data-field="Id_Cliente" data-value="${r.Id_Cliente||''}" style="display:none"></td>
       <td data-field="UUID" data-value="${fmt(r.UUID)}" style="display:none"></td>
-    </tr>`).join('');
+    </tr>`;
+    }).join('');
     res.json({ rows, page: data.page, totalPages: data.totalPages, total: data.total });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -749,3 +755,7 @@ router.post('/cabecera/cancelar-sin-confirmar', requierePermiso('facturas.editar
 });
 
 module.exports = router;
+// Reexpuesto para que app/routes/cfdi.js pueda liberar Cartas Porte de vuelta
+// a EMITIDO al cancelar una Factura (POST /cfdi/cancelar-factura), sin
+// reimplementar la lógica de "0 líneas no-canceladas -> EMITIDO".
+module.exports.recalcularImporteFacCP = recalcularImporteFacCP;

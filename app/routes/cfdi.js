@@ -7,43 +7,19 @@ const router   = express.Router();
 const { getPool, sql } = require('../config/db');
 const { buildCFDITraslado } = require('../services/cfdi-traslado');
 const { buildCFDIFactura } = require('../services/cfdi-factura');
-const { sellarXML } = require('../services/cfdi-sello');
-const { timbrarConPAC } = require('../services/cfdi-pac');
+const { buildCFDINotaCredito } = require('../services/cfdi-notacredito');
+const { sellarXML, cargarCSD } = require('../services/cfdi-sello');
+const { timbrarConPAC, resolverConexionPAC } = require('../services/cfdi-pac');
+const { ejecutarCancelacionFiscal } = require('../services/cfdi-cancelacion');
 const { descontarTimbre } = require('../services/timbre-consumo');
 const { generarPDFBuffer } = require('../services/cfdi-pdf');
 const { generarPDFBufferFactura } = require('../services/factura-pdf');
+const { generarPDFBufferNotaCredito } = require('../services/notacred-pdf');
+const { generarPDFBufferAcuse } = require('../services/cfdi-acuse-pdf');
+const { revertirEfectoSaldo } = require('../routes/notacred');
+const { recalcularImporteFacCP } = require('../routes/facturas');
+const { requierePermiso } = require('../middleware/permisos');
 const { RUTA_XML } = require('../config/storage');
-const { serieFiscal } = require('../config/empresa-serie');
-
-// El PAC (URL) es el mismo para todas las Empresas/series — solo cambia entre
-// prueba y producción, y eso sale de .env, no de dbo.Empresas.
-function urlPACGlobal(testFel) {
-  const url = ((testFel ? process.env.PAC_URL_PRUEBA : process.env.PAC_URL_PRODUCCION) || '').trim();
-  if (!url) throw new Error(`URL del PAC no configurada en .env (PAC_URL_${testFel ? 'PRUEBA' : 'PRODUCCION'})`);
-  return url.replace(/\?wsdl$/i, '');
-}
-
-// Resuelve credencial/URL del PAC para una Serie según el flag TESTFEL de su
-// Empresa. dbo.Empresas.USUARIO solo tiene la credencial de PRODUCCIÓN; no
-// existe un usuario de prueba ahí, por eso en modo prueba se toma de .env.
-// Varios centrales comparten la misma razón social/CSD (ver config/empresa-serie.js).
-async function resolverConexionPAC(pool, serie) {
-  const empRes = await pool.request()
-    .input('serie', sql.VarChar(10), serieFiscal(serie))
-    .query(`SELECT TESTFEL, USUARIO FROM dbo.Empresas WHERE LTRIM(RTRIM(SERIE)) = @serie`);
-  const emp = empRes.recordset[0];
-  if (!emp) throw new Error(`No se encontró configuración de Empresa para la serie "${serie}"`);
-
-  const testFel = !!parseInt(emp.TESTFEL) || false;
-  const url     = urlPACGlobal(testFel);
-  const usuario = testFel ? (process.env.PAC_USUARIO_PRUEBA || '').trim() : (emp.USUARIO || '').trim();
-
-  if (!usuario) throw new Error(testFel
-    ? 'No hay credencial de prueba configurada (PAC_USUARIO_PRUEBA en .env)'
-    : `La Empresa de la serie "${serie}" no tiene USUARIO (credencial del PAC) configurado`);
-
-  return { url, usuario, testFel };
-}
 
 // ── PREVIEW (debug) ──────────────────────────────────────────────────────────
 // GET /cfdi/preview?serie=CUI&cartaporte=CUI0000517
@@ -170,7 +146,7 @@ router.get('/validar', async (req, res) => {
 
 // ── TIMBRAR ──────────────────────────────────────────────────────────────────
 // POST /cfdi/timbrar  { serie, cartaporte }
-router.post('/timbrar', async (req, res) => {
+router.post('/timbrar', requierePermiso('cartaporte.btn_timbrar'), async (req, res) => {
   try {
     const serie      = (req.body.serie      || '').trim();
     const cartaporte = (req.body.cartaporte || '').trim();
@@ -261,7 +237,7 @@ router.post('/timbrar', async (req, res) => {
 
 // ── TIMBRAR FACTURA ────────────────────────────────────────────────────────
 // POST /cfdi/timbrar-factura  { idNoFactura, serieFac }
-router.post('/timbrar-factura', async (req, res) => {
+router.post('/timbrar-factura', requierePermiso('facturas.btn_timbrar'), async (req, res) => {
   try {
     const idNoFactura = parseInt(req.body.idNoFactura);
     if (!idNoFactura) return res.status(400).json({ ok: false, error: 'Falta idNoFactura' });
@@ -355,6 +331,321 @@ router.post('/timbrar-factura', async (req, res) => {
   }
 });
 
+// ── TIMBRAR NOTA DE CRÉDITO/DÉBITO ────────────────────────────────────────────
+// POST /cfdi/timbrar-notacredito { tipo, serie, idNotaCredito }
+router.post('/timbrar-notacredito', requierePermiso('notacred.btn_timbrar'), async (req, res) => {
+  try {
+    const tipo = req.body.tipo === 'ND' ? 'ND' : 'NC';
+    const idNotaCredito = parseInt(req.body.idNotaCredito);
+    if (!idNotaCredito) return res.status(400).json({ ok: false, error: 'Falta idNotaCredito' });
+    const serieKey = (req.body.serie == null ? '' : String(req.body.serie)).trim() || null;
+    const NC_EQ = `LTRIM(RTRIM(Tipo))=@tipo AND ISNULL(LTRIM(RTRIM(Serie)),'')=ISNULL(@serie,'')`;
+
+    const pool = await getPool();
+
+    // 0. UUID ya existente (307) + Status (no se timbra una nota cancelada)
+    const prevRes = await pool.request()
+      .input('tipo', sql.VarChar(3), tipo).input('serie', sql.VarChar(10), serieKey).input('id', sql.Decimal(7), idNotaCredito)
+      .query(`SELECT UUID, Status FROM Empresa2.NotaCred WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
+    if (!prevRes.recordset[0]) return res.status(404).json({ ok: false, error: 'Nota no encontrada' });
+    const uuidExistente = (prevRes.recordset[0].UUID || '').trim();
+    if (uuidExistente) return res.status(400).json({ ok: false, error: 'Esta nota ya está timbrada.' });
+    if ((prevRes.recordset[0].Status || '').trim().toUpperCase() === 'CANCELADO') {
+      return res.status(400).json({ ok: false, error: 'Esta nota está cancelada, no puede timbrarse.' });
+    }
+
+    // 1. Resolver a qué PAC conectarse — igual que Factura, usa el central de la sesión activa.
+    const central = (req.session.central || '').trim();
+    const conexion = await resolverConexionPAC(pool, central);
+
+    // 2. Armar XML
+    const { xml } = await buildCFDINotaCredito(tipo, serieKey, idNotaCredito, central, pool);
+
+    // 3. Sellar con CSD y guardar en disco
+    const nombreBase = `NC_${tipo}${serieKey || 'SF'}${idNotaCredito}`;
+    const { xml: xmlSellado, noCertificado } = await sellarXML(xml, central, nombreBase, pool);
+    await pool.request()
+      .input('tipo', sql.VarChar(3), tipo).input('serie', sql.VarChar(10), serieKey).input('id', sql.Decimal(7), idNotaCredito)
+      .input('noCert', sql.VarChar(30), noCertificado || null)
+      .query(`UPDATE Empresa2.NotaCred SET noCertificado=@noCert WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
+
+    // 4. Enviar al PAC y timbrar
+    const pacResult = await timbrarConPAC(xmlSellado, conexion);
+    if (!pacResult.exito) {
+      return res.json({ ok: false, error: pacResult.mensajeError || 'El PAC rechazó el timbrado' });
+    }
+
+    // Reenvío (307) — mismo manejo que Carta Porte/Factura.
+    if (pacResult.reenvio && uuidExistente) {
+      return res.json({ ok: true, mensaje: `Esta nota ya estaba timbrada. UUID: ${uuidExistente}`, pacResult: { ...pacResult, uuid: uuidExistente } });
+    }
+
+    // 5. Persistir UUID/FechaTimbrado/RfcProvCertif. Status se queda tal cual
+    // (EMITIDA) — igual que Factura, no representa "timbrada" (eso es UUID IS NOT NULL).
+    await pool.request()
+      .input('tipo', sql.VarChar(3), tipo).input('serie', sql.VarChar(10), serieKey).input('id', sql.Decimal(7), idNotaCredito)
+      .input('uuid', sql.VarChar(40), pacResult.uuid).input('fecha', sql.VarChar(30), pacResult.fechaTimbrado || null)
+      .input('rfcProv', sql.VarChar(20), pacResult.rfcProvCertif || null)
+      .query(`UPDATE Empresa2.NotaCred SET UUID=@uuid, FechaTimbrado=@fecha, RfcProvCertif=@rfcProv WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
+
+    // 6. Guardar el XML timbrado final.
+    const sufijoArchivo = conexion.testFel ? 'Prueba' : 'Timbrada';
+    fs.mkdirSync(RUTA_XML, { recursive: true });
+    fs.writeFileSync(path.join(RUTA_XML, `${nombreBase}_${sufijoArchivo}.xml`), pacResult.xmlTimbrado, 'utf8');
+    const rutaSellado = path.join(RUTA_XML, `${nombreBase}_sellado.xml`);
+    if (fs.existsSync(rutaSellado)) fs.unlinkSync(rutaSellado);
+
+    // 7. Descuento/bitácora de timbres — solo fuera de modo prueba.
+    if (!conexion.testFel) {
+      await descontarTimbre(pool, { tipo: tipo === 'NC' ? 'NotaCredito' : 'NotaDebito', serie: serieKey, idFacVen: String(idNotaCredito), uuid: pacResult.uuid });
+    }
+
+    res.json({
+      ok: true,
+      mensaje: `Nota timbrada correctamente${conexion.testFel ? ' (modo prueba)' : ''}. UUID: ${pacResult.uuid}`,
+      testFel: conexion.testFel,
+      pacResult,
+    });
+  } catch (err) {
+    console.error('CFDI timbrar-notacredito error:', err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ── CANCELAR NOTA (fiscal, ante el PAC) ──────────────────────────────────────
+// POST /cfdi/cancelar-notacredito { tipo, serie, idNotaCredito, motivo, folioSustitucion }
+router.post('/cancelar-notacredito', requierePermiso('notacred.btn_cancelar'), async (req, res) => {
+  try {
+    const tipo = req.body.tipo === 'ND' ? 'ND' : 'NC';
+    const idNotaCredito = parseInt(req.body.idNotaCredito);
+    if (!idNotaCredito) return res.status(400).json({ ok: false, error: 'Falta idNotaCredito' });
+    const serieKey = (req.body.serie == null ? '' : String(req.body.serie)).trim() || null;
+    const motivo = (req.body.motivo || '02').trim();
+    const folioSustitucion = (req.body.folioSustitucion || '').trim();
+    if (motivo === '01' && !folioSustitucion) {
+      return res.status(400).json({ ok: false, error: 'El motivo 01 requiere el UUID que sustituye.' });
+    }
+    const NC_EQ = `LTRIM(RTRIM(Tipo))=@tipo AND ISNULL(LTRIM(RTRIM(Serie)),'')=ISNULL(@serie,'')`;
+
+    const pool = await getPool();
+    const cabRes = await pool.request()
+      .input('tipo', sql.VarChar(3), tipo).input('serie', sql.VarChar(10), serieKey).input('id', sql.Decimal(7), idNotaCredito)
+      .query(`SELECT * FROM Empresa2.NotaCred WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
+    const nc = cabRes.recordset[0];
+    if (!nc) return res.status(404).json({ ok: false, error: 'Nota no encontrada' });
+    const uuid = (nc.UUID || '').trim();
+    if (!uuid) return res.status(400).json({ ok: false, error: 'Esta nota no está timbrada; use la cancelación normal (sin PAC).' });
+    if ((nc.Status || '').trim().toUpperCase() === 'CANCELADO') return res.status(400).json({ ok: false, error: 'Ya está cancelada.' });
+
+    const central = (req.session.central || '').trim();
+
+    // El receptor de la nota es el emisor de la propia Empresa/CSD -- necesitamos
+    // el RFC del cliente (receptor real del CFDI), no el de la Empresa.
+    const cliRes = await pool.request().input('id', sql.Decimal(18, 0), nc.Id_Cliente).query(`SELECT RFC FROM Empresa2.Clientes WHERE ID_CLIENTE=@id`);
+    const rfcReceptor = (cliRes.recordset[0]?.RFC || '').trim();
+    const { emp } = await cargarCSD(central, pool);
+
+    const cancelacion = await ejecutarCancelacionFiscal(pool, central, {
+      uuid, rfcEmisor: (emp.RFC || '').trim(), rfcReceptor, total: Number(nc.ImporteTotal || 0).toFixed(2), motivo, folioSustitucion,
+    });
+    if (cancelacion.resultado !== 'exito') {
+      return res.json({ ok: false, pendiente: cancelacion.resultado === 'pendiente', error: cancelacion.mensaje });
+    }
+
+    // Solo si el PAC confirma la cancelación se revierte el efecto de saldo y
+    // se marca la nota como cancelada -- en una sola transacción.
+    const tx = new sql.Transaction(pool);
+    await tx.begin();
+    try {
+      await revertirEfectoSaldo(tx, tipo, serieKey, idNotaCredito);
+      await new sql.Request(tx)
+        .input('tipo', sql.VarChar(3), tipo).input('serie', sql.VarChar(10), serieKey).input('id', sql.Decimal(7), idNotaCredito)
+        .query(`UPDATE Empresa2.NotaCred SET Status='CANCELADO' WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
+      await tx.commit();
+    } catch (err) {
+      try { await tx.rollback(); } catch (_) { /* ya cerrada */ }
+      throw err;
+    }
+
+    // Acuse de cancelación (XML firmado por el SAT) -- se guarda en disco
+    // como evidencia fiscal, mismo criterio que el XML timbrado.
+    if (cancelacion.acuseXml) {
+      const nombreBase = `NC_${tipo}${serieKey || 'SF'}${idNotaCredito}`;
+      fs.mkdirSync(RUTA_XML, { recursive: true });
+      fs.writeFileSync(path.join(RUTA_XML, `${nombreBase}_Acuse.xml`), cancelacion.acuseXml, 'utf8');
+    }
+
+    res.json({ ok: true, mensaje: 'Nota cancelada correctamente ante el SAT.', pacResult: cancelacion.pacResult });
+  } catch (err) {
+    console.error('CFDI cancelar-notacredito error:', err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ── CANCELAR CARTA PORTE ──────────────────────────────────────────────────────
+// POST /cfdi/cancelar-cartaporte { serie, cartaporte, motivo?, folioSustitucion?, nota? }
+// Sin folio fiscal (UUID): cancelación interna directa, sin llamar al PAC.
+// Con folio fiscal: exige motivo, cancela ante el PAC primero y solo si eso
+// tiene éxito aplica los efectos en BD -- nunca queda "a medias".
+router.post('/cancelar-cartaporte', requierePermiso('cartaporte.btn_cancelar'), async (req, res) => {
+  try {
+    const serie      = (req.body.serie || '').trim();
+    const cartaporte = (req.body.cartaporte || '').trim();
+    if (!serie || !cartaporte) return res.status(400).json({ ok: false, error: 'Faltan parámetros: serie y cartaporte' });
+    const motivo = (req.body.motivo || '').trim();
+    const folioSustitucion = (req.body.folioSustitucion || '').trim();
+    const nota = (req.body.nota || '').trim();
+
+    const pool = await getPool();
+    const cpRes = await pool.request()
+      .input('serie', sql.VarChar(3), serie).input('cp', sql.VarChar(30), cartaporte)
+      .query(`SELECT * FROM Empresa2.CartaPorte WHERE Serie=@serie AND CartaPorte=@cp`);
+    const cp = cpRes.recordset[0];
+    if (!cp) return res.status(404).json({ ok: false, error: 'Carta Porte no encontrada' });
+
+    const status = (cp.Status || '').trim().toUpperCase();
+    if (status === 'FACTURADO') return res.status(400).json({ ok: false, error: 'El pedido ya fue facturado y no se puede cancelar.' });
+    // 'CANCELAD0' (cero) es un typo real del sistema legado presente en datos
+    // reales -- se sigue detectando en la lectura, pero esta ruta SIEMPRE
+    // escribe 'CANCELADO' correcto, nunca repite el error.
+    if (status === 'CANCELADO' || status === 'CANCELAD0') return res.status(400).json({ ok: false, error: 'El pedido ya fue cancelado.' });
+
+    const uuid = (cp.UUID || '').trim();
+    const quien = [req.session.usuario.nombre, req.session.usuario.apellido].filter(Boolean).join(' ');
+    let acuseXml = null;
+
+    if (uuid) {
+      if (!motivo) return res.status(400).json({ ok: false, error: 'Debe indicar el motivo de cancelación.' });
+      if (motivo === '01' && !folioSustitucion) return res.status(400).json({ ok: false, error: 'El motivo 01 requiere el UUID que sustituye.' });
+
+      const central = (req.session.central || '').trim();
+      const { emp } = await cargarCSD(central, pool);
+      const cliRes = await pool.request().input('id', sql.Decimal(18, 0), cp.Id_Cliente).query(`SELECT RFC FROM Empresa2.Clientes WHERE ID_CLIENTE=@id`);
+      const rfcReceptor = (cliRes.recordset[0]?.RFC || '').trim();
+
+      const cancelacion = await ejecutarCancelacionFiscal(pool, central, {
+        uuid, rfcEmisor: (emp.RFC || '').trim(), rfcReceptor,
+        // El comprobante "T" (Traslado) siempre declara Total="0" fiscal,
+        // independientemente del importe operativo (TOTALMX) -- mismo
+        // criterio ya usado para el QR de Carta Porte.
+        total: '0.00',
+        motivo, folioSustitucion,
+      });
+      if (cancelacion.resultado !== 'exito') {
+        return res.json({ ok: false, pendiente: cancelacion.resultado === 'pendiente', error: cancelacion.mensaje });
+      }
+      acuseXml = cancelacion.acuseXml;
+    }
+
+    await pool.request()
+      .input('serie', sql.VarChar(3), serie).input('cp', sql.VarChar(30), cartaporte)
+      .input('motivo', sql.VarChar(3), motivo || null).input('folioSust', sql.VarChar(52), folioSustitucion || null)
+      .input('nota', sql.VarChar(250), nota || null).input('quien', sql.VarChar(80), quien)
+      .query(`UPDATE Empresa2.CartaPorte SET
+        Status='CANCELADO', SubTotalMX=0, IVAMX=0, RetenMX=0, TOTALMX=0,
+        FechaCancela=GETDATE(), WhoCancela=@quien, c_MotCancela=@motivo, UUIDRelCan=@folioSust, NotaCancelacion=@nota
+        WHERE Serie=@serie AND CartaPorte=@cp`);
+
+    if (acuseXml) {
+      fs.mkdirSync(RUTA_XML, { recursive: true });
+      fs.writeFileSync(path.join(RUTA_XML, `CP_${cartaporte}_Acuse.xml`), acuseXml, 'utf8');
+    }
+
+    res.json({ ok: true, mensaje: uuid ? 'Carta Porte cancelada correctamente ante el SAT.' : 'Carta Porte cancelada.' });
+  } catch (err) {
+    console.error('CFDI cancelar-cartaporte error:', err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ── CANCELAR FACTURA ──────────────────────────────────────────────────────────
+// POST /cfdi/cancelar-factura { idNoFactura, serieFac, motivo?, folioSustitucion?, nota? }
+// Mismo esqueleto que cancelar-cartaporte; efecto extra confirmado con el
+// usuario: libera cada Carta Porte aplicada de vuelta a EMITIDO.
+router.post('/cancelar-factura', requierePermiso('facturas.btn_cancelar'), async (req, res) => {
+  try {
+    const idNoFactura = parseInt(req.body.idNoFactura);
+    if (!idNoFactura) return res.status(400).json({ ok: false, error: 'Falta idNoFactura' });
+    const serieFacKey = (req.body.serieFac == null ? '' : String(req.body.serieFac)).trim() || null;
+    const SERIEFAC_EQ = `ISNULL(LTRIM(RTRIM(SerieFac)),'') = ISNULL(@serieFac,'')`;
+    const motivo = (req.body.motivo || '').trim();
+    const folioSustitucion = (req.body.folioSustitucion || '').trim();
+    const nota = (req.body.nota || '').trim();
+
+    const pool = await getPool();
+    const facRes = await pool.request()
+      .input('id', sql.Decimal(9), idNoFactura).input('serieFac', sql.VarChar(20), serieFacKey)
+      .query(`SELECT * FROM Empresa2.Factura WHERE Id_NoFactura=@id AND ${SERIEFAC_EQ}`);
+    const fac = facRes.recordset[0];
+    if (!fac) return res.status(404).json({ ok: false, error: 'Factura no encontrada' });
+
+    const status = (fac.Status || '').trim().toUpperCase();
+    if (status === 'PAGADA') return res.status(400).json({ ok: false, error: 'La factura ya está pagada y no se puede cancelar.' });
+    if (status === 'CANCELADA') return res.status(400).json({ ok: false, error: 'La factura ya fue cancelada.' });
+
+    const uuid = (fac.UUID || '').trim();
+    const quien = [req.session.usuario.nombre, req.session.usuario.apellido].filter(Boolean).join(' ');
+    let acuseXml = null;
+
+    if (uuid) {
+      if (!motivo) return res.status(400).json({ ok: false, error: 'Debe indicar el motivo de cancelación.' });
+      if (motivo === '01' && !folioSustitucion) return res.status(400).json({ ok: false, error: 'El motivo 01 requiere el UUID que sustituye.' });
+
+      const central = (req.session.central || '').trim();
+      const { emp } = await cargarCSD(central, pool);
+      const cliRes = await pool.request().input('id', sql.Decimal(18, 0), fac.Id_Cliente).query(`SELECT RFC FROM Empresa2.Clientes WHERE ID_CLIENTE=@id`);
+      const rfcReceptor = (cliRes.recordset[0]?.RFC || '').trim();
+
+      const cancelacion = await ejecutarCancelacionFiscal(pool, central, {
+        uuid, rfcEmisor: (emp.RFC || '').trim(), rfcReceptor, total: Number(fac.TOTAL || 0).toFixed(2), motivo, folioSustitucion,
+      });
+      if (cancelacion.resultado !== 'exito') {
+        return res.json({ ok: false, pendiente: cancelacion.resultado === 'pendiente', error: cancelacion.mensaje });
+      }
+      acuseXml = cancelacion.acuseXml;
+    }
+
+    const tx = new sql.Transaction(pool);
+    await tx.begin();
+    try {
+      await new sql.Request(tx)
+        .input('id', sql.Decimal(9), idNoFactura).input('serieFac', sql.VarChar(20), serieFacKey)
+        .input('motivo', sql.VarChar(3), motivo || null).input('folioSust', sql.VarChar(52), folioSustitucion || null)
+        .input('nota', sql.VarChar(150), nota || null).input('quien', sql.VarChar(80), quien)
+        .query(`UPDATE Empresa2.Factura SET
+          Status='CANCELADA', SubTotal=0, IVA=0, Retencion=0, TOTAL=0,
+          FechaCancela=GETDATE(), WhoCancela=@quien, c_MotCancela=@motivo, UUIDRelCan=@folioSust, NotaCancelacion=@nota
+          WHERE Id_NoFactura=@id AND ${SERIEFAC_EQ}`);
+
+      // Libera cada Carta Porte aplicada -- recalcularImporteFacCP detecta
+      // "0 líneas no-canceladas" en cuanto la Factura queda CANCELADA (misma
+      // tx) y regresa la CP a EMITIDO, sin reescribir esa lógica.
+      const lineasRes = await new sql.Request(tx)
+        .input('id', sql.Decimal(9), idNoFactura).input('serieFac', sql.VarChar(20), serieFacKey)
+        .query(`SELECT DISTINCT LTRIM(RTRIM(SERIE)) SERIE, LTRIM(RTRIM(CARTAPORTE)) CARTAPORTE
+                FROM Empresa2.FacDeta WHERE ID_NOFACTURA=@id AND ISNULL(LTRIM(RTRIM(SerieFac)),'')=ISNULL(@serieFac,'')`);
+      for (const linea of lineasRes.recordset) {
+        if (linea.SERIE && linea.CARTAPORTE) await recalcularImporteFacCP(tx, linea.SERIE, linea.CARTAPORTE);
+      }
+      await tx.commit();
+    } catch (err) {
+      try { await tx.rollback(); } catch (_) { /* ya cerrada */ }
+      throw err;
+    }
+
+    if (acuseXml) {
+      const nombreBase = `FAC_${serieFacKey || 'SF'}${idNoFactura}`;
+      fs.mkdirSync(RUTA_XML, { recursive: true });
+      fs.writeFileSync(path.join(RUTA_XML, `${nombreBase}_Acuse.xml`), acuseXml, 'utf8');
+    }
+
+    res.json({ ok: true, mensaje: uuid ? 'Factura cancelada correctamente ante el SAT.' : 'Factura cancelada.' });
+  } catch (err) {
+    console.error('CFDI cancelar-factura error:', err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 // ── PDF (representación impresa) ────────────────────────────────────────────
 // GET /cfdi/pdf?serie=&cartaporte= — disponible con o sin timbre.
 router.get('/pdf', async (req, res) => {
@@ -390,6 +681,85 @@ router.get('/pdf-factura', async (req, res) => {
   } catch (err) {
     console.error('CFDI pdf-factura error:', err);
     res.status(500).send(`Error al generar el PDF: ${err.message}`);
+  }
+});
+
+// ── PDF de Nota de Crédito/Débito ─────────────────────────────────────────────
+// GET /cfdi/pdf-notacredito?tipo=&serie=&idNotaCredito= — disponible con o sin timbre.
+router.get('/pdf-notacredito', async (req, res) => {
+  try {
+    const tipo = req.query.tipo === 'ND' ? 'ND' : 'NC';
+    const idNotaCredito = parseInt(req.query.idNotaCredito);
+    if (!idNotaCredito) return res.status(400).send('Falta el parámetro idNotaCredito');
+    const serie = req.query.serie || '';
+    const central = (req.session.central || '').trim();
+
+    const pool = await getPool();
+    const buffer = await generarPDFBufferNotaCredito(tipo, serie, idNotaCredito, central, pool);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="NC_${tipo}${idNotaCredito}.pdf"`);
+    res.send(buffer);
+  } catch (err) {
+    console.error('CFDI pdf-notacredito error:', err);
+    res.status(500).send(`Error al generar el PDF: ${err.message}`);
+  }
+});
+
+// ── ACUSE DE CANCELACIÓN (PDF) ──────────────────────────────────────────────
+// Solo disponible cuando el documento está cancelado CON folio fiscal (hubo
+// llamada real al PAC/SAT) -- una cancelación interna sin UUID no tiene
+// acuse porque nunca se llamó al PAC.
+
+// GET /cfdi/acuse-cartaporte?serie=&cartaporte=
+router.get('/acuse-cartaporte', async (req, res) => {
+  try {
+    const serie = (req.query.serie || '').trim();
+    const cartaporte = (req.query.cartaporte || '').trim();
+    if (!serie || !cartaporte) return res.status(400).send('Faltan parámetros');
+    const pool = await getPool();
+    const buffer = await generarPDFBufferAcuse('cartaporte', { serie, cartaporte }, pool);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="CP_${cartaporte}_Acuse.pdf"`);
+    res.send(buffer);
+  } catch (err) {
+    console.error('CFDI acuse-cartaporte error:', err);
+    res.status(400).send(`No se pudo generar el acuse: ${err.message}`);
+  }
+});
+
+// GET /cfdi/acuse-factura?idNoFactura=&serieFac=
+router.get('/acuse-factura', async (req, res) => {
+  try {
+    const idNoFactura = parseInt(req.query.idNoFactura);
+    if (!idNoFactura) return res.status(400).send('Falta el parámetro idNoFactura');
+    const serieFac = req.query.serieFac || '';
+    const pool = await getPool();
+    const buffer = await generarPDFBufferAcuse('factura', { idNoFactura, serieFac }, pool);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="FAC_${idNoFactura}_Acuse.pdf"`);
+    res.send(buffer);
+  } catch (err) {
+    console.error('CFDI acuse-factura error:', err);
+    res.status(400).send(`No se pudo generar el acuse: ${err.message}`);
+  }
+});
+
+// GET /cfdi/acuse-notacredito?tipo=&serie=&idNotaCredito=
+router.get('/acuse-notacredito', async (req, res) => {
+  try {
+    const tipo = req.query.tipo === 'ND' ? 'ND' : 'NC';
+    const idNotaCredito = parseInt(req.query.idNotaCredito);
+    if (!idNotaCredito) return res.status(400).send('Falta el parámetro idNotaCredito');
+    const serie = req.query.serie || '';
+    const central = (req.session.central || '').trim();
+    const pool = await getPool();
+    const buffer = await generarPDFBufferAcuse('notacredito', { tipo, serie, idNotaCredito, central }, pool);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="NC_${tipo}${idNotaCredito}_Acuse.pdf"`);
+    res.send(buffer);
+  } catch (err) {
+    console.error('CFDI acuse-notacredito error:', err);
+    res.status(400).send(`No se pudo generar el acuse: ${err.message}`);
   }
 });
 
@@ -454,6 +824,38 @@ router.get('/xml-factura', async (req, res) => {
     res.send(fs.readFileSync(ruta, 'utf8'));
   } catch (err) {
     console.error('CFDI xml-factura error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /cfdi/xml-notacredito?tipo=&serie=&idNotaCredito= — solo disponible una vez timbrada.
+router.get('/xml-notacredito', async (req, res) => {
+  try {
+    const tipo = req.query.tipo === 'ND' ? 'ND' : 'NC';
+    const idNotaCredito = parseInt(req.query.idNotaCredito);
+    if (!idNotaCredito) return res.status(400).json({ error: 'Falta el parámetro idNotaCredito' });
+    const serieKey = (req.query.serie || '').trim() || null;
+    const NC_EQ = `LTRIM(RTRIM(Tipo))=@tipo AND ISNULL(LTRIM(RTRIM(Serie)),'')=ISNULL(@serie,'')`;
+
+    const pool = await getPool();
+    const ncRes = await pool.request()
+      .input('tipo', sql.VarChar(3), tipo).input('serie', sql.VarChar(10), serieKey).input('id', sql.Decimal(7), idNotaCredito)
+      .query(`SELECT UUID FROM Empresa2.NotaCred WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
+    const nc = ncRes.recordset[0];
+    if (!nc) return res.status(404).json({ error: 'Nota no encontrada' });
+    if (!(nc.UUID || '').trim()) return res.status(400).json({ error: 'Esta nota todavía no está timbrada' });
+
+    const nombreBase = `NC_${tipo}${serieKey || 'SF'}${idNotaCredito}`;
+    const rutaTimbrada = path.join(RUTA_XML, `${nombreBase}_Timbrada.xml`);
+    const rutaPrueba   = path.join(RUTA_XML, `${nombreBase}_Prueba.xml`);
+    const ruta = fs.existsSync(rutaTimbrada) ? rutaTimbrada : (fs.existsSync(rutaPrueba) ? rutaPrueba : null);
+    if (!ruta) return res.status(404).json({ error: `No se encontró el archivo XML en ${RUTA_XML}` });
+
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${path.basename(ruta)}"`);
+    res.send(fs.readFileSync(ruta, 'utf8'));
+  } catch (err) {
+    console.error('CFDI xml-notacredito error:', err);
     res.status(500).json({ error: err.message });
   }
 });
