@@ -12,6 +12,15 @@
 // Sobreescribe SIEMPRE (no solo filas en blanco) para corregir también los
 // pocos casos legado detectados como obsoletos (ImporteLetras no coincidía
 // con el TOTAL actual, por cambios posteriores a como quedó guardado).
+//
+// GOTCHA REAL (encontrado en la primera corrida de este script, corregido
+// aquí): (Id_NoFactura, SerieFac) NO es una clave única -- hay 9 pares de
+// folios con SerieFac en blanco que en realidad son DOS FACTURAS DISTINTAS
+// (distinto cliente/UUID/total) colisionando en el mismo número. El UPDATE
+// original, sin más filtro, escribía en AMBAS filas el valor calculado de
+// la que se procesara al final, dejando mal la otra mitad de cada par. Se
+// agrega UUID a la condición para desambiguar (único por fila salvo un caso
+// de duplicado exacto real, donde ambas copias ya comparten el mismo total).
 
 const { getPool, sql } = require('../app/config/db');
 const { importeALetras } = require('../app/services/importe-letras');
@@ -21,7 +30,7 @@ async function main() {
   const tx = new sql.Transaction(pool);
   await tx.begin();
   try {
-    const facturas = await new sql.Request(tx).query(`SELECT Id_NoFactura, SerieFac, TOTAL, MonFactura FROM Empresa2.Factura`);
+    const facturas = await new sql.Request(tx).query(`SELECT Id_NoFactura, SerieFac, UUID, TOTAL, MonFactura FROM Empresa2.Factura`);
     console.log(`Facturas a procesar: ${facturas.recordset.length}`);
     let cambiadas = 0;
     for (const f of facturas.recordset) {
@@ -29,9 +38,11 @@ async function main() {
       const r = await new sql.Request(tx)
         .input('id', sql.Decimal(9), f.Id_NoFactura)
         .input('serieFac', sql.VarChar(20), (f.SerieFac || '').trim() || null)
+        .input('uuid', sql.VarChar(149), (f.UUID || '').trim() || null)
         .input('letras', sql.VarChar(150), letras)
         .query(`UPDATE Empresa2.Factura SET ImporteLetras=@letras
-                WHERE Id_NoFactura=@id AND ISNULL(LTRIM(RTRIM(SerieFac)),'')=ISNULL(@serieFac,'')`);
+                WHERE Id_NoFactura=@id AND ISNULL(LTRIM(RTRIM(SerieFac)),'')=ISNULL(@serieFac,'')
+                  AND ISNULL(LTRIM(RTRIM(UUID)),'')=ISNULL(@uuid,'')`);
       cambiadas += r.rowsAffected[0];
     }
     console.log(`Facturas actualizadas: ${cambiadas}`);
