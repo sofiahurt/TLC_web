@@ -1342,7 +1342,9 @@ function loadDepositos(serie, cp) {
     .then(rows => {
       const body = document.getElementById('depoBody');
       const fmt  = v => v ? v.toString().slice(0,10) : '';
-      const imp  = v => v ? parseFloat(v).toFixed(2) : '';
+      // Solo lectura (celdas de la tabla de depósitos, no un input) -- seguro
+      // agregarle $ y comas.
+      const imp  = v => { if(!v) return ''; const n=parseFloat(v); const signo=n<0?'-':''; return signo+'$'+Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); };
       body.innerHTML = rows.map(r =>
         `<tr ondblclick="editDepo(${r.Id_DepoSol})">
           <td>${fmt(r.Fecha)}</td>

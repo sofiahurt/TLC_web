@@ -49,6 +49,7 @@ app.use('/cartaporte',  requierePermiso('cartaporte.ver'), require('./app/routes
 app.use('/facturas',    requierePermiso('facturas.ver'),   require('./app/routes/facturas'));
 app.use('/notacred',    requierePermiso('notacred.ver'),   require('./app/routes/notacred'));
 app.use('/seguridad',   requierePermiso('seguridad.administrar'), require('./app/routes/seguridad'));
+app.use('/usuarios',    requierePermiso('usuarios.ver'),     require('./app/routes/usuarios'));
 app.use('/centrales',   require('./app/routes/centrales'));
 app.use('/ciudades',    require('./app/routes/ciudades'));
 app.use('/colonias',    require('./app/routes/colonias'));

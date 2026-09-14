@@ -537,7 +537,13 @@ function onCabeceraFieldChange(){
     });
 }
 
-function fmtN(v){return (parseFloat(v)||0).toFixed(2);}
+// Todos los usos de fmtN en esta vista son de solo lectura (texto/tfoot/td),
+// nunca el value de un input editable -- seguro agregarle $ y comas.
+function fmtN(v){
+  const n=parseFloat(v)||0;
+  const signo=n<0?'-':'';
+  return signo+'$'+Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
 
 function pintarTotales(c){
   document.getElementById('totSub').textContent=fmtN(c.SubTotal);

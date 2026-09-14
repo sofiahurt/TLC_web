@@ -44,14 +44,20 @@ async function withTransaction(pool, fn) {
 }
 
 // ── Recalcula subtotal/IVA/retención/total de cabecera sumando las líneas ──
-// Se aplica SIEMPRE, sea resumen o detallado -- FlagResNota solo decide
-// cuántos <cfdi:Concepto> se generan en el XML (uno vs. uno por línea, ver
-// cfdi-notacredito.js), nunca cómo se calculan los importes: el total real
-// siempre está anclado a las facturas/ND referenciadas por cada línea.
+// Aplica solo en modo DETALLADO -- en RESUMEN el importe del CFDI (un solo
+// concepto) se captura manualmente en cabecera vía /cabecera/importe-resumen,
+// independiente de la suma operativa de las líneas (puede haber varias
+// facturas/ND referenciadas cuyo saldo individual no coincide con el monto
+// declarado en el concepto único). En resumen esta función solo re-lee y
+// regresa los valores ya persistidos en NotaCred, sin tocarlos.
 async function recalcularCabecera(tx, tipo, serie, id) {
   const cabRes = await reqNC(new sql.Request(tx), tipo, serie, id)
-    .query(`SELECT 1 AS ok FROM Empresa2.NotaCred WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
-  if (!cabRes.recordset[0]) throw Object.assign(new Error('Nota no encontrada.'), { status: 404 });
+    .query(`SELECT FlagResNota, Subtotal, IVA, Retencion, ImporteTotal FROM Empresa2.NotaCred WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
+  const cab = cabRes.recordset[0];
+  if (!cab) throw Object.assign(new Error('Nota no encontrada.'), { status: 404 });
+  if (Number(cab.FlagResNota) === 1) {
+    return { Subtotal: num(cab.Subtotal), IVA: num(cab.IVA), Retencion: num(cab.Retencion), ImporteTotal: num(cab.ImporteTotal) };
+  }
   const sumRes = await reqNC(new sql.Request(tx), tipo, serie, id).query(
     `SELECT ISNULL(SUM(SUBTOTAL),0) sub, ISNULL(SUM(IVA),0) iva, ISNULL(SUM(RETENCION),0) ret, ISNULL(SUM(IMPORTEAPLICA),0) tot
      FROM Empresa2.NotaCredDeta WHERE ID_NOTACREDITO=@id AND ${NC_EQ}`);
@@ -88,7 +94,13 @@ router.get('/data', async (req, res) => {
       baseParams: { tipoFiltro: tipo },
     });
     const fmt = v => v == null ? '' : (v instanceof Date ? v.toISOString().slice(0, 10) : String(v).trim());
-    const fmtN = v => v == null ? '0.00' : Number(v).toFixed(2);
+    // Solo para texto visible -- data-value siempre lleva el número crudo, sin
+    // formato, así que nada que lea esos atributos se ve afectado.
+    const fmtN = v => {
+      const n = v == null ? 0 : Number(v);
+      const signo = n < 0 ? '-' : '';
+      return signo + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    };
     const rows = data.rows.map(r => {
       const canceladaConAcuse = fmt(r.Status).toUpperCase() === 'CANCELADO' && !!fmt(r.UUID);
       return `<tr data-id="${r.Id_NotaCredito}">
@@ -98,10 +110,14 @@ router.get('/data', async (req, res) => {
       <td data-field="Fecha" data-value="${fmt(r.Fecha)}">${fmt(r.Fecha)}</td>
       <td data-field="NombreCom" data-value="${fmt(r.NombreCom)}">${fmt(r.NombreCom)}</td>
       <td data-field="Subtotal" data-value="${r.Subtotal||0}" class="text-end">${fmtN(r.Subtotal)}</td>
+      <td data-field="IVA" data-value="${r.IVA||0}" class="text-end">${fmtN(r.IVA)}</td>
+      <td data-field="Retencion" data-value="${r.Retencion||0}" class="text-end">${fmtN(r.Retencion)}</td>
       <td data-field="ImporteTotal" data-value="${r.ImporteTotal||0}" class="text-end">${fmtN(r.ImporteTotal)}</td>
       <td data-field="Status" data-value="${fmt(r.Status)}">${fmt(r.Status)}</td>
-      <td class="text-center"><button class="btn btn-sm btn-outline-secondary py-0 px-1" disabled title="Descarga de XML aún no disponible"><i class="bi bi-file-earmark-code"></i></button></td>
-      <td class="text-center"><button class="btn btn-sm btn-outline-secondary py-0 px-1" disabled title="Descarga de PDF aún no disponible"><i class="bi bi-file-earmark-pdf"></i></button></td>
+      <td class="text-center">${fmt(r.UUID)
+        ? `<a href="/cfdi/xml-notacredito?tipo=${tipo}&serie=${encodeURIComponent(fmt(r.Serie))}&idNotaCredito=${r.Id_NotaCredito}" class="btn btn-sm btn-outline-secondary py-0 px-1" title="Descargar XML" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-code"></i></a>`
+        : `<button class="btn btn-sm btn-outline-secondary py-0 px-1" disabled title="Solo disponible una vez timbrada"><i class="bi bi-file-earmark-code"></i></button>`}</td>
+      <td class="text-center"><a href="/cfdi/pdf-notacredito?tipo=${tipo}&serie=${encodeURIComponent(fmt(r.Serie))}&idNotaCredito=${r.Id_NotaCredito}" target="_blank" class="btn btn-sm btn-outline-secondary py-0 px-1" title="Ver/descargar PDF" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-pdf"></i></a></td>
       <td class="text-center">${canceladaConAcuse
         ? `<a href="/cfdi/acuse-notacredito?tipo=${tipo}&serie=${encodeURIComponent(fmt(r.Serie))}&idNotaCredito=${r.Id_NotaCredito}" target="_blank" class="btn btn-sm btn-outline-danger py-0 px-1" title="Ver/descargar Acuse de Cancelación" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-x"></i></a>`
         : `<button class="btn btn-sm btn-outline-secondary py-0 px-1" disabled title="Solo disponible si se canceló ante el SAT"><i class="bi bi-file-earmark-x"></i></button>`}</td>
@@ -136,6 +152,9 @@ router.get('/lookup/numero-consecutivo', async (req, res) => {
 });
 
 // ── Buscar Facturas de un cliente para referenciar como línea ─────────────
+// excluirTipo/excluirSerie/excluirId (opcionales): si vienen, se excluyen las
+// facturas que YA son línea de esa nota -- evita agregar la misma factura dos
+// veces (antes solo se detectaba al fallar el guardado, si acaso).
 router.get('/lookup/facturas', async (req, res) => {
   try {
     const pool = await getPool();
@@ -143,13 +162,23 @@ router.get('/lookup/facturas', async (req, res) => {
     if (!idCliente) return res.json({ rows: [], total: 0, totalPages: 1, page: 1 });
     const q = trim(req.query.q);
     const page = Math.max(1, parseInt(req.query.page) || 1);
+    const excluirId = parseInt(req.query.excluirId) || 0;
     let where = `WHERE Id_Cliente=@idCliente AND LTRIM(RTRIM(ISNULL(Status,'')))<>'CANCELADA' AND LTRIM(RTRIM(ISNULL(Status,'')))<>'PAGADA'`;
+    if (excluirId) {
+      where += ` AND NOT EXISTS (
+        SELECT 1 FROM Empresa2.NotaCredDeta d
+        WHERE d.ID_NOTACREDITO=@excId AND LTRIM(RTRIM(d.TIPO))=@excTipo AND ISNULL(LTRIM(RTRIM(d.SERIE)),'')=ISNULL(@excSerie,'')
+          AND d.ID_NOFACTURA=Factura.Id_NoFactura AND ISNULL(LTRIM(RTRIM(d.SerieFac)),'')=ISNULL(LTRIM(RTRIM(Factura.SerieFac)),'')
+      )`;
+    }
     const cr = pool.request().input('idCliente', sql.Decimal(7), idCliente);
+    if (excluirId) cr.input('excId', sql.Decimal(7), excluirId).input('excTipo', sql.VarChar(3), trim(req.query.excluirTipo)).input('excSerie', sql.VarChar(10), serieKey(req.query.excluirSerie));
     if (q) { where += ` AND (CAST(Id_NoFactura AS VARCHAR(20)) LIKE @q)`; cr.input('q', `%${q}%`); }
     const cnt = await cr.query(`SELECT COUNT(*) total FROM Empresa2.Factura ${where}`);
     const total = cnt.recordset[0].total;
     const offset = (page - 1) * 10;
     const dr = pool.request().input('idCliente', sql.Decimal(7), idCliente);
+    if (excluirId) dr.input('excId', sql.Decimal(7), excluirId).input('excTipo', sql.VarChar(3), trim(req.query.excluirTipo)).input('excSerie', sql.VarChar(10), serieKey(req.query.excluirSerie));
     if (q) dr.input('q', `%${q}%`);
     const data = await dr.query(`SELECT Id_NoFactura, LTRIM(RTRIM(SerieFac)) SerieFac, FechaFactura, TOTAL, PagosReal, NotasCredito, Status, UUID
                                   FROM Empresa2.Factura ${where} ORDER BY Id_NoFactura DESC OFFSET ${offset} ROWS FETCH NEXT 10 ROWS ONLY`);
@@ -166,6 +195,7 @@ router.get('/lookup/facturas', async (req, res) => {
 });
 
 // ── Buscar Notas de Débito previas de un cliente para referenciar ─────────
+// excluirTipo/excluirSerie/excluirId: mismo criterio que /lookup/facturas.
 router.get('/lookup/notasdebito', async (req, res) => {
   try {
     const pool = await getPool();
@@ -173,13 +203,23 @@ router.get('/lookup/notasdebito', async (req, res) => {
     if (!idCliente) return res.json({ rows: [], total: 0, totalPages: 1, page: 1 });
     const q = trim(req.query.q);
     const page = Math.max(1, parseInt(req.query.page) || 1);
+    const excluirId = parseInt(req.query.excluirId) || 0;
     let where = `WHERE LTRIM(RTRIM(Tipo))='ND' AND Id_Cliente=@idCliente AND LTRIM(RTRIM(ISNULL(Status,'')))<>'CANCELADO' AND LTRIM(RTRIM(ISNULL(Status,'')))<>'PAGADA'`;
+    if (excluirId) {
+      where += ` AND NOT EXISTS (
+        SELECT 1 FROM Empresa2.NotaCredDeta d
+        WHERE d.ID_NOTACREDITO=@excId AND LTRIM(RTRIM(d.TIPO))=@excTipo AND ISNULL(LTRIM(RTRIM(d.SERIE)),'')=ISNULL(@excSerie,'')
+          AND d.Id_NotaDebito=NotaCred.Id_NotaCredito AND ISNULL(LTRIM(RTRIM(d.SerieND)),'')=ISNULL(LTRIM(RTRIM(NotaCred.Serie)),'')
+      )`;
+    }
     const cr = pool.request().input('idCliente', sql.Decimal(7), idCliente);
+    if (excluirId) cr.input('excId', sql.Decimal(7), excluirId).input('excTipo', sql.VarChar(3), trim(req.query.excluirTipo)).input('excSerie', sql.VarChar(10), serieKey(req.query.excluirSerie));
     if (q) { where += ` AND (CAST(Id_NotaCredito AS VARCHAR(20)) LIKE @q)`; cr.input('q', `%${q}%`); }
     const cnt = await cr.query(`SELECT COUNT(*) total FROM Empresa2.NotaCred ${where}`);
     const total = cnt.recordset[0].total;
     const offset = (page - 1) * 10;
     const dr = pool.request().input('idCliente', sql.Decimal(7), idCliente);
+    if (excluirId) dr.input('excId', sql.Decimal(7), excluirId).input('excTipo', sql.VarChar(3), trim(req.query.excluirTipo)).input('excSerie', sql.VarChar(10), serieKey(req.query.excluirSerie));
     if (q) dr.input('q', `%${q}%`);
     const data = await dr.query(`SELECT Id_NotaCredito, LTRIM(RTRIM(Serie)) Serie, Fecha, ImporteTotal, Status, UUID
                                   FROM Empresa2.NotaCred ${where} ORDER BY Id_NotaCredito DESC OFFSET ${offset} ROWS FETCH NEXT 10 ROWS ONLY`);
@@ -238,11 +278,19 @@ router.post('/partida/agregar', requierePermiso('notacred.editar'), async (req, 
         if (Number(fac.Id_Cliente) !== idCliente) {
           throw Object.assign(new Error('El cliente de la Factura no coincide con el de la nota.'), { status: 400 });
         }
+        // Pedido/CP: solo informativo (columna PEDIDO, char(30)) -- lista de
+        // folios de Carta Porte que componen esta Factura (FacDeta.CARTAPORTE),
+        // no afecta ningún cálculo. Se omite si la factura no trae ninguno.
+        const cpRes = await new sql.Request(tx)
+          .input('id', sql.Decimal(9), idNoFactura).input('serieFac', sql.VarChar(20), serieFacRef)
+          .query(`SELECT DISTINCT LTRIM(RTRIM(CARTAPORTE)) AS CP FROM Empresa2.FacDeta
+                  WHERE ID_NOFACTURA=@id AND ISNULL(LTRIM(RTRIM(SerieFac)),'')=ISNULL(@serieFac,'') AND LTRIM(RTRIM(ISNULL(CARTAPORTE,'')))<>''`);
+        const pedido = cpRes.recordset.map(r => r.CP).join(', ').slice(0, 30) || null;
         origen = {
           total: num(fac.TOTAL), pagosReal: num(fac.PagosReal), notasCredito: num(fac.NotasCredito),
           subtotal: num(fac.SubTotal), iva: num(fac.IVA), reten: num(fac.Retencion), moneda: trim(fac.MonFactura) || 'MXN',
           uuid: trim(fac.UUID), idPedido: 0, serieRef: serieFacRef, idRef: idNoFactura, anio: null,
-          esFactura: true,
+          esFactura: true, pedido,
         };
       } else {
         const idNotaDebito = parseInt(f.idNotaDebito);
@@ -265,7 +313,7 @@ router.post('/partida/agregar', requierePermiso('notacred.editar'), async (req, 
           total: num(nd.ImporteTotal), pagosReal: 0, notasCredito: 0,
           subtotal: num(nd.Subtotal), iva: num(nd.IVA), reten: num(nd.Retencion), moneda: 'MXN',
           uuid: trim(nd.UUID), serieRef: serieND, idRef: idNotaDebito, anio: null,
-          esFactura: false,
+          esFactura: false, pedido: null, // una ND no compone Cartas Porte propias
         };
       }
 
@@ -286,7 +334,12 @@ router.post('/partida/agregar', requierePermiso('notacred.editar'), async (req, 
         await reqNC(new sql.Request(tx), tipo, serieCab, idNotaCredito)
           .input('fecha', sql.Date, hoy()).input('hora', sql.VarChar(8), new Date().toTimeString().slice(0, 8))
           .input('idCli', sql.Decimal(7), idCliente).input('nombreCom', sql.VarChar(150), trim(cli.recordset[0]?.NOMBRECOMUN) || trim(cli.recordset[0]?.NOMBRECOM))
-          .input('status', sql.VarChar(20), 'EMITIDA')
+          // BORRADOR hasta que /cabecera/grabar la pase a EMITIDA -- si se queda
+          // así, /cabecera/cancelar-sin-confirmar puede detectar que nunca se
+          // grabó y borrarla. Antes se insertaba directo en 'EMITIDA', lo que
+          // dejaba huérfana cualquier nota abandonada sin grabar (verificado en
+          // vivo: cancelar-sin-confirmar nunca borraba nada).
+          .input('status', sql.VarChar(20), 'BORRADOR')
           .input('cformapago', sql.VarChar(4), trim(f.c_FormaPago) || defaults.c_FormaPago)
           .input('clavemp', sql.VarChar(3), trim(f.ClaveMP) || defaults.ClaveMP)
           .input('cusocfdi', sql.VarChar(5), trim(f.c_UsoCFDI) || defaults.c_UsoCFDI)
@@ -307,10 +360,34 @@ router.post('/partida/agregar', requierePermiso('notacred.editar'), async (req, 
       } else {
         const cabRes = await reqNC(new sql.Request(tx), tipo, serieCab, idNotaCredito).query(`SELECT Status FROM Empresa2.NotaCred WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
         if (!cabRes.recordset[0]) throw Object.assign(new Error('Nota no encontrada.'), { status: 400 });
+
+        // Defensa por si el browse de selección quedó desactualizado (ej. dos
+        // pestañas abiertas) -- el mismo documento no puede quedar dos veces
+        // como línea de la misma nota.
+        const dupReq = new sql.Request(tx).input('id', sql.Decimal(7), idNotaCredito);
+        let dupWhere;
+        if (origen.esFactura) {
+          dupReq.input('idnofactura', sql.Decimal(7), origen.idRef).input('seriefac', sql.VarChar(20), origen.serieRef);
+          dupWhere = `ID_NOFACTURA=@idnofactura AND ISNULL(LTRIM(RTRIM(SerieFac)),'')=ISNULL(@seriefac,'')`;
+        } else {
+          dupReq.input('idnd', sql.Decimal(7), origen.idRef).input('seriend', sql.VarChar(20), origen.serieRef);
+          dupWhere = `Id_NotaDebito=@idnd AND ISNULL(LTRIM(RTRIM(SerieND)),'')=ISNULL(@seriend,'')`;
+        }
+        const dupRes = await reqNC(dupReq, tipo, serieCab).query(`SELECT TOP 1 1 AS x FROM Empresa2.NotaCredDeta WHERE ID_NOTACREDITO=@id AND ${NC_EQ} AND ${dupWhere}`);
+        if (dupRes.recordset[0]) {
+          throw Object.assign(new Error(origen.esFactura ? 'Esa Factura ya fue agregada a esta nota.' : 'Esa Nota de Débito ya fue agregada a esta nota.'), { status: 400 });
+        }
       }
 
-      // Importe a aplicar: todo el saldo disponible (el usuario puede ajustarlo después con /linea/actualizar-importe).
+      // Importe a aplicar: todo el saldo disponible (el usuario puede ajustarlo
+      // después con /linea/actualizar-importe si la nota es detallada). Esto
+      // aplica igual en resumen -- ahí es el importe operativo que reduce el
+      // saldo de ESE documento en /cabecera/grabar, independiente del importe
+      // declarado en el concepto único de cabecera (ver /cabecera/importe-resumen).
       const importeAplica = saldo;
+      const subtotalLinea = origen.subtotal;
+      const ivaLinea = origen.iva;
+      const retenLinea = origen.reten;
       const nextDetaRes = await reqNC(new sql.Request(tx), tipo, serieCab, idNotaCredito).query(`SELECT ISNULL(MAX(ID_NOTASCREDDETA),0)+1 AS next FROM Empresa2.NotaCredDeta WHERE ID_NOTACREDITO=@id AND ${NC_EQ}`);
       const idDeta = nextDetaRes.recordset[0].next;
 
@@ -319,23 +396,24 @@ router.post('/partida/agregar', requierePermiso('notacred.editar'), async (req, 
         .input('idcli', sql.Decimal(7), idCliente).input('tipo', sql.VarChar(3), tipo)
         .input('totalfac', sql.Decimal(11,2), origen.total).input('pagosrealfac', sql.Decimal(11,2), origen.pagosReal)
         .input('notascreditofac', sql.Decimal(11,2), origen.notasCredito)
-        .input('reten', sql.Decimal(9,2), origen.reten).input('sub', sql.Decimal(11,2), origen.subtotal)
-        .input('iva', sql.Decimal(9,2), origen.iva).input('importeaplica', sql.Decimal(11,2), importeAplica)
+        .input('reten', sql.Decimal(9,2), retenLinea).input('sub', sql.Decimal(11,2), subtotalLinea)
+        .input('iva', sql.Decimal(9,2), ivaLinea).input('importeaplica', sql.Decimal(11,2), importeAplica)
+        .input('pedido', sql.VarChar(30), origen.pedido || null)
         .input('desc', sql.VarChar(1000), trim(f.descripcionLinea) || null);
       if (origen.esFactura) {
         req2.input('idnofactura', sql.Decimal(7), origen.idRef).input('seriefac', sql.VarChar(20), origen.serieRef)
           .input('uuidfac', sql.VarChar(60), origen.uuid || null).input('idnd', sql.Decimal(7), 0).input('seriend', sql.VarChar(20), null);
       } else {
-        req2.input('idnofactura', sql.Decimal(7), 0).input('seriefac', sql.VarChar(20), null).input('uuidfac', sql.VarChar(60), null)
+        req2.input('idnofactura', sql.Decimal(7), 0).input('seriefac', sql.VarChar(20), null).input('uuidfac', sql.VarChar(60), origen.uuid || null)
           .input('idnd', sql.Decimal(7), origen.idRef).input('seriend', sql.VarChar(20), origen.serieRef);
       }
       await req2.query(`INSERT INTO Empresa2.NotaCredDeta(
         SERIE, ID_NOTACREDITO, ID_NOTASCREDDETA, ID_CLIENTE, TIPO,
-        ID_NOFACTURA, SerieFac, UUIDFac, Id_NotaDebito, SerieND,
+        ID_NOFACTURA, SerieFac, UUIDFac, Id_NotaDebito, SerieND, PEDIDO,
         TOTALFAC, PAGOSREALFAC, NOTASCREDITOFAC, RETENCION, SUBTOTAL, IVA, IMPORTEAPLICA, DESNOTACREDITO
       ) VALUES(
         ISNULL(@serie,''), @id, @idd, @idcli, @tipo,
-        @idnofactura, @seriefac, @uuidfac, @idnd, @seriend,
+        @idnofactura, @seriefac, @uuidfac, @idnd, @seriend, @pedido,
         @totalfac, @pagosrealfac, @notascreditofac, @reten, @sub, @iva, @importeaplica, @desc
       )`);
 
@@ -460,6 +538,57 @@ router.post('/cabecera/actualizar', requierePermiso('notacred.editar'), async (r
       return await recalcularCabecera(tx, tipo, serie, id);
     });
     res.json({ ok: true, totales: result });
+  } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
+});
+
+// ── IMPORTE DE CABECERA EN MODO RESUMEN ───────────────────────────────────
+// En resumen puede haber varias líneas/documentos referenciados, pero el CFDI
+// se timbra con UN SOLO concepto -- su importe se captura aquí directamente
+// sobre NotaCred (no se suma desde NotaCredDeta, ver recalcularCabecera).
+// Solo se recibe el Subtotal; IVA (16%) y Retención (4%) se calculan siempre
+// en automático, Total = Subtotal+IVA-Retención.
+router.post('/cabecera/importe-resumen', requierePermiso('notacred.editar'), async (req, res) => {
+  const { tipo, serie, idNotaCredito, subtotal } = req.body;
+  const id = parseInt(idNotaCredito);
+  if (!id) return res.status(400).json({ error: 'Nota inválida.' });
+  try {
+    const pool = await getPool();
+    const result = await withTransaction(pool, async (tx) => {
+      const cabRes = await reqNC(new sql.Request(tx), tipo, serie, id)
+        .query(`SELECT UUID, FlagResNota FROM Empresa2.NotaCred WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
+      const cab = cabRes.recordset[0];
+      if (!cab) throw Object.assign(new Error('Nota no encontrada.'), { status: 404 });
+      if (Number(cab.FlagResNota) !== 1) throw Object.assign(new Error('Esta nota no está en modo resumen.'), { status: 400 });
+      if (trim(cab.UUID)) throw Object.assign(new Error('La nota ya está timbrada; no se puede modificar el importe.'), { status: 400 });
+
+      // Tope de seguridad: el concepto único declarado no debe exceder la suma
+      // del saldo pendiente de TODOS los documentos referenciados por la nota
+      // (no se exige que coincida exactamente, solo que no la exceda).
+      const lineasRes = await reqNC(new sql.Request(tx), tipo, serie, id)
+        .query(`SELECT TOTALFAC, PAGOSREALFAC, NOTASCREDITOFAC FROM Empresa2.NotaCredDeta WHERE ID_NOTACREDITO=@id AND ${NC_EQ}`);
+      if (!lineasRes.recordset.length) throw Object.assign(new Error('Agregue primero al menos una Factura o Nota de Débito de referencia.'), { status: 400 });
+      const saldoDisponible = Math.round(lineasRes.recordset.reduce((acc, r) =>
+        acc + Math.max(num(r.TOTALFAC) - num(r.PAGOSREALFAC) - num(r.NOTASCREDITOFAC), 0), 0) * 100) / 100;
+
+      const FACTOR_NETO = 1.12; // 1 + IVA(16%) - Retención(4%)
+      let nuevoSub = Math.max(0, num(subtotal));
+      let limitado = false;
+      if (Math.round(nuevoSub * FACTOR_NETO * 100) / 100 > saldoDisponible) {
+        nuevoSub = Math.round((saldoDisponible / FACTOR_NETO) * 100) / 100;
+        limitado = true;
+      }
+      const nuevoIva = Math.round(nuevoSub * 0.16 * 100) / 100;
+      const nuevoRet = Math.round(nuevoSub * 0.04 * 100) / 100;
+      const total = Math.round((nuevoSub + nuevoIva - nuevoRet) * 100) / 100;
+
+      await reqNC(new sql.Request(tx), tipo, serie, id)
+        .input('sub', sql.Decimal(9,2), nuevoSub).input('iva', sql.Decimal(10,2), nuevoIva)
+        .input('ret', sql.Decimal(9,2), nuevoRet).input('tot', sql.Decimal(12,2), total)
+        .query(`UPDATE Empresa2.NotaCred SET Subtotal=@sub, IVA=@iva, Retencion=@ret, ImporteTotal=@tot, SumaPartidas=@tot WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
+
+      return { limitado, saldoDisponible, totales: { Subtotal: nuevoSub, IVA: nuevoIva, Retencion: nuevoRet, ImporteTotal: total } };
+    });
+    res.json({ ok: true, ...result });
   } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
 });
 

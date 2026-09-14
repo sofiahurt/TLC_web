@@ -269,7 +269,12 @@ router.get('/data', async (req, res) => {
       req
     });
     const fmt = v => v == null ? '' : (v instanceof Date ? v.toISOString().slice(0,10) : String(v).trim());
-    const fmtN = v => v == null ? '0.00' : Number(v).toFixed(2);
+    // Solo para texto visible -- data-value siempre lleva el número crudo.
+    const fmtN = v => {
+      const n = v == null ? 0 : Number(v);
+      const signo = n < 0 ? '-' : '';
+      return signo + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    };
     const rows = data.rows.map(r => {
       const canceladaConAcuse = fmt(r.Status).toUpperCase() === 'CANCELADA' && !!fmt(r.UUID);
       return `<tr data-id="${r.Id_NoFactura}">

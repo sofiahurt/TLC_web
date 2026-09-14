@@ -38,7 +38,9 @@
         <th data-sort="Id_NotaCredito" style="width:80px">No. <span class="sort-icon"></span></th>
         <th data-sort="Fecha" style="width:100px">Fecha <span class="sort-icon"></span></th>
         <th data-sort="NombreCom">Cliente <span class="sort-icon"></span></th>
-        <th class="text-end" style="width:110px">Subtotal</th>
+        <th class="text-end" style="width:100px">Subtotal</th>
+        <th class="text-end" style="width:90px">IVA</th>
+        <th class="text-end" style="width:90px">Retención</th>
         <th class="text-end" style="width:110px">Total</th>
         <th data-sort="Status" style="width:110px">Status <span class="sort-icon"></span></th>
         <th style="width:50px">XML</th>
@@ -123,7 +125,7 @@
             </div>
             <div class="row g-2 mt-1">
               <div class="col-md-6">
-                <button class="btn btn-sm btn-primary" onclick="openLookupDocumento()"><i class="bi bi-search"></i> Buscar Factura o Nota de Débito...</button>
+                <button class="btn btn-sm btn-primary" id="btnBuscarDoc" onclick="openLookupDocumento()"><i class="bi bi-search"></i> Buscar Factura o Nota de Débito...</button>
               </div>
             </div>
           </div>
@@ -165,7 +167,7 @@
           <table class="table table-sm table-bordered align-middle" id="tblDetalle" style="font-size:.78rem">
             <thead class="table-light">
               <tr>
-                <th>Referencia</th><th>Descripción</th>
+                <th>Referencia</th><th>UUID</th>
                 <th class="text-end">Saldo disp.</th><th class="text-end">Subtotal</th><th class="text-end">IVA</th><th class="text-end">Reten</th><th class="text-end">Aplicado</th><th></th>
               </tr>
             </thead>
@@ -181,6 +183,25 @@
               </tr>
             </tfoot>
           </table>
+        </div>
+
+        <div class="row g-2 mt-2" id="rowImporteResumen" style="display:none">
+          <div class="col-md-3">
+            <label class="form-label small mb-1">Subtotal (resumen)</label>
+            <input type="number" id="f_SubtotalResumen" class="form-control form-control-sm text-end" step="0.01" min="0" oninput="previewImporteResumen()" onchange="onImporteResumenChange()">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small mb-1">IVA (16%, automático)</label>
+            <input type="text" id="f_IVAResumen_disp" class="form-control form-control-sm text-end bg-light" readonly>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small mb-1">Retención (4%, automático)</label>
+            <input type="text" id="f_RetencionResumen_disp" class="form-control form-control-sm text-end bg-light" readonly>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small mb-1">Total (resumen)</label>
+            <input type="text" id="f_TotalResumen_disp" class="form-control form-control-sm text-end bg-light" readonly>
+          </div>
         </div>
 
         <div class="row g-2 mt-2">
@@ -312,8 +333,34 @@ const browse=initBrowse({searchInput:document.getElementById('searchInput'),sear
 let _mode='add';const modal=new bootstrap.Modal(document.getElementById('frmModal'));
 let _nota={idNotaCredito:null, serie:'', tipo:'NC', confirmada:false, cliente:null};
 
+// Con modales apilados (lookupCliente/lookupDoc/lookupSat sobre frmModal), el
+// focus-trap de Bootstrap hace que ESC cierre el modal de abajo en vez del que
+// está encima. Todos los modales comparten el mismo z-index (1055), así que el
+// que se ve arriba es el que aparece MÁS ABAJO en el HTML. Si hay más de uno
+// abierto, cerramos solo el último del DOM. (Mismo fix que cartaporte.ejs.)
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Escape') return;
+  const shown = document.querySelectorAll('.modal.show');
+  if (shown.length <= 1) return;
+  const top = bootstrap.Modal.getInstance(shown[shown.length - 1]);
+  if (top) {
+    e.preventDefault();
+    e.stopPropagation();
+    top.hide();
+  }
+}, true);
+
 function hoyISO(){return new Date().toISOString().slice(0,10);}
+// Plano (sin $ ni comas) -- SOLO para valores que vuelven a un input numérico
+// editable (type=number no acepta "$1,234.56" como value, lo vacía).
 function fmtN(v){return (parseFloat(v)||0).toFixed(2);}
+// Con $ y comas -- para todo lo que es puro texto/lectura (spans, td, inputs
+// readonly, mensajes).
+function fmtMoney(v){
+  const n=parseFloat(v)||0;
+  const signo=n<0?'-':'';
+  return signo+'$'+Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
 function showError(msg){const e=document.getElementById('frmError');e.textContent=msg;e.classList.remove('d-none');}
 function hideError(){document.getElementById('frmError').classList.add('d-none');}
 function showWarning(msg){const e=document.getElementById('frmWarning');e.textContent=msg;e.classList.remove('d-none');}
@@ -330,7 +377,7 @@ function clearForm(){
   document.getElementById('f_NombreCom_disp').value='';
   document.getElementById('f_NombreCom_disp').readOnly=false;
   document.getElementById('f_RFC').value='';
-  document.getElementById('f_Status').value='EMITIDA';
+  document.getElementById('f_Status').value='BORRADOR';
   document.getElementById('f_EsResumen').checked=(_tipoActivo==='NC');
   document.getElementById('f_Fecha').disabled=false;
   document.getElementById('f_Fecha').value=hoyISO();
@@ -348,6 +395,10 @@ function clearForm(){
   setSatField('f_c_ClaveUnidad','f_c_ClaveUnidad_disp','claveUnidad','E48');
   document.getElementById('f_Descripcion').value='SERVICIO DE TRASLADO DE MERCANCIA VIA TRANSPORTE';
   document.getElementById('f_Descripcion').disabled=false;
+  document.getElementById('f_SubtotalResumen').value='';
+  document.getElementById('f_IVAResumen_disp').value='0.00';
+  document.getElementById('f_RetencionResumen_disp').value='0.00';
+  document.getElementById('f_TotalResumen_disp').value='0.00';
   document.getElementById('detBody').innerHTML='';
   onToggleResumen();
   pintarTotales({Subtotal:0,IVA:0,Retencion:0,ImporteTotal:0});
@@ -394,7 +445,7 @@ function cargarNota(tipo, serie, id){
   fetch(`/notacred/get?tipo=${tipo}&serie=${encodeURIComponent(serie)}&id=${id}`).then(r=>r.json()).then(d=>{
     if(d.error){showError(d.error);return;}
     const c=d.cabecera;
-    _nota={idNotaCredito:c.Id_NotaCredito, serie:(c.Serie||'').trim(), tipo:tipo, confirmada:true, cliente:c.Id_Cliente};
+    _nota={idNotaCredito:c.Id_NotaCredito, serie:(c.Serie||'').trim(), tipo:tipo, confirmada:true, cliente:c.Id_Cliente, esResumen:c.FlagResNota==1};
     document.getElementById('f_Tipo').value=tipo;
     document.getElementById('f_Tipo').disabled=true;
     document.getElementById('f_Serie').value=(c.Serie||'').trim();
@@ -420,12 +471,47 @@ function cargarNota(tipo, serie, id){
     document.getElementById('f_Descripcion').disabled=yaTimbrada;
     onToggleResumen();
     pintarDetalle(d.lineas);
-    pintarTotales(c);
+    // El importe del concepto único (resumen) vive directo en la cabecera --
+    // independiente de la suma operativa de las líneas, ver recalcularCabecera.
+    document.getElementById('f_SubtotalResumen').value=fmtN(c.Subtotal);
+    document.getElementById('f_IVAResumen_disp').value=fmtMoney(c.IVA);
+    document.getElementById('f_RetencionResumen_disp').value=fmtMoney(c.Retencion);
+    document.getElementById('f_TotalResumen_disp').value=fmtMoney(c.ImporteTotal);
   });
 }
 
 function onToggleResumen(){
+  const esResumen=document.getElementById('f_EsResumen').checked;
+  document.getElementById('rowImporteResumen').style.display = esResumen ? '' : 'none';
   onCabeceraFieldChange();
+}
+
+// Cálculo instantáneo en el navegador mientras se teclea (solo visual); el
+// valor que realmente se persiste lo calcula el servidor en onImporteResumenChange.
+function previewImporteResumen(){
+  const sub=parseFloat(document.getElementById('f_SubtotalResumen').value)||0;
+  const iva=Math.round(sub*0.16*100)/100;
+  const ret=Math.round(sub*0.04*100)/100;
+  document.getElementById('f_IVAResumen_disp').value=fmtMoney(iva);
+  document.getElementById('f_RetencionResumen_disp').value=fmtMoney(ret);
+  document.getElementById('f_TotalResumen_disp').value=fmtMoney(sub+iva-ret);
+}
+
+function onImporteResumenChange(){
+  if(!_nota.idNotaCredito) return;
+  hideError();
+  fetch('/notacred/cabecera/importe-resumen',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    tipo:_nota.tipo, serie:_nota.serie, idNotaCredito:_nota.idNotaCredito,
+    subtotal:document.getElementById('f_SubtotalResumen').value,
+  })}).then(r=>r.json()).then(d=>{
+    if(d.error){showError(d.error);return;}
+    hideWarning();
+    if(d.limitado) showWarning('El importe se limitó al saldo disponible: '+fmtMoney(d.saldoDisponible));
+    document.getElementById('f_SubtotalResumen').value=fmtN(d.totales.Subtotal);
+    document.getElementById('f_IVAResumen_disp').value=fmtMoney(d.totales.IVA);
+    document.getElementById('f_RetencionResumen_disp').value=fmtMoney(d.totales.Retencion);
+    document.getElementById('f_TotalResumen_disp').value=fmtMoney(d.totales.ImporteTotal);
+  });
 }
 
 function onCabeceraFieldChange(){
@@ -443,38 +529,76 @@ function onCabeceraFieldChange(){
     descripcion:document.getElementById('f_Descripcion').value.trim(),
   };
   fetch('/notacred/cabecera/actualizar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
-    .then(r=>r.json()).then(d=>{ if(d.error){showError(d.error);return;} pintarTotales(d.totales); });
+    .then(r=>r.json()).then(d=>{ if(d.error){showError(d.error);return;} });
 }
 
+// La fila de "Totales:" debajo del detalle es SIEMPRE la suma real de las
+// líneas -- independiente de lo que se capture en Subtotal/IVA/Retención de
+// cabecera cuando la nota es resumen (ese importe es el declarado en el
+// concepto único del CFDI, no tiene por qué coincidir con la suma operativa).
 function pintarTotales(c){
-  document.getElementById('totSub').textContent=fmtN(c.Subtotal);
-  document.getElementById('totIva').textContent=fmtN(c.IVA);
-  document.getElementById('totRet').textContent=fmtN(c.Retencion);
-  document.getElementById('totApl').textContent=fmtN(c.ImporteTotal);
+  document.getElementById('totSub').textContent=fmtMoney(c.Subtotal);
+  document.getElementById('totIva').textContent=fmtMoney(c.IVA);
+  document.getElementById('totRet').textContent=fmtMoney(c.Retencion);
+  document.getElementById('totApl').textContent=fmtMoney(c.ImporteTotal);
+}
+function sumarLineas(lineas){
+  return lineas.reduce((acc,l)=>({
+    Subtotal: acc.Subtotal+(parseFloat(l.SUBTOTAL)||0),
+    IVA: acc.IVA+(parseFloat(l.IVA)||0),
+    Retencion: acc.Retencion+(parseFloat(l.RETENCION)||0),
+    ImporteTotal: acc.ImporteTotal+(parseFloat(l.IMPORTEAPLICA)||0),
+  }), {Subtotal:0, IVA:0, Retencion:0, ImporteTotal:0});
 }
 
 function filaDetalleHtml(l){
   const ref = Number(l.ID_NOFACTURA)>0 ? ('Factura #'+l.ID_NOFACTURA) : ('ND #'+l.Id_NotaDebito);
-  const desc=(l.DESNOTACREDITO||'').trim().replace(/"/g,'&quot;');
+  const uuid = (l.UUIDFac||'').trim() || '—';
+  // En resumen el importe del CFDI (concepto único) se captura en la cabecera
+  // -- el importe de la línea sigue siendo el que reduce el saldo de ESE
+  // documento en particular (/cabecera/grabar), pero no se edita a mano aquí,
+  // solo cuando la nota es detallada (ahí sí "se le aplica un monto"), con
+  // edición in-place: el lápiz revela un input sobre la misma celda.
+  const subtotalCell = _nota.esResumen
+    ? `<td class="text-end">${fmtMoney(l.SUBTOTAL)}</td>`
+    : `<td class="text-end">
+        <span class="subtotal-disp">${fmtMoney(l.SUBTOTAL)}</span>
+        <input type="number" class="form-control form-control-sm text-end py-0 subtotal-edit d-none" style="width:90px;display:inline-block" step="0.01" min="0" value="${fmtN(l.SUBTOTAL)}"
+          onblur="confirmarEdicionImporte(${l.ID_NOTASCREDDETA}, this)" onkeydown="if(event.key==='Enter') this.blur(); if(event.key==='Escape') cancelarEdicionImporte(this,'${fmtN(l.SUBTOTAL)}');">
+        <button class="btn btn-sm btn-outline-secondary py-0 px-1 btn-editar-importe" title="Editar importe" onclick="activarEdicionImporte(this)"><i class="bi bi-pencil"></i></button>
+      </td>`;
   return `<tr data-idd="${l.ID_NOTASCREDDETA}">
     <td>${ref}</td>
-    <td><input type="text" class="form-control form-control-sm py-0" maxlength="1000" value="${desc}" placeholder="Descripción de esta línea..." onchange="ajustarDescripcionLinea(${l.ID_NOTASCREDDETA}, this.value)"></td>
-    <td class="text-end">${fmtN(l.TOTALFAC - l.PAGOSREALFAC - l.NOTASCREDITOFAC)}</td>
-    <td class="text-end"><input type="number" class="form-control form-control-sm text-end py-0" style="width:90px;display:inline-block" step="0.01" min="0" value="${fmtN(l.SUBTOTAL)}" onchange="ajustarImporteLinea(${l.ID_NOTASCREDDETA}, this.value)"></td>
-    <td class="text-end">${fmtN(l.IVA)}</td>
-    <td class="text-end">${fmtN(l.RETENCION)}</td>
-    <td class="text-end">${fmtN(l.IMPORTEAPLICA)}</td>
+    <td class="small">${uuid}</td>
+    <td class="text-end">${fmtMoney(l.TOTALFAC - l.PAGOSREALFAC - l.NOTASCREDITOFAC)}</td>
+    ${subtotalCell}
+    <td class="text-end">${fmtMoney(l.IVA)}</td>
+    <td class="text-end">${fmtMoney(l.RETENCION)}</td>
+    <td class="text-end">${fmtMoney(l.IMPORTEAPLICA)}</td>
     <td class="text-center"><button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="eliminarLinea(${l.ID_NOTASCREDDETA})"><i class="bi bi-trash"></i></button></td>
   </tr>`;
 }
-function pintarDetalle(lineas){ document.getElementById('detBody').innerHTML=lineas.map(filaDetalleHtml).join(''); }
+function pintarDetalle(lineas){
+  document.getElementById('detBody').innerHTML=lineas.map(filaDetalleHtml).join('');
+  pintarTotales(sumarLineas(lineas));
+}
 
-function ajustarDescripcionLinea(idDeta, descripcion){
-  if(!_nota.idNotaCredito) return;
-  hideError();
-  fetch('/notacred/linea/actualizar-descripcion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-    tipo:_nota.tipo, serie:_nota.serie, idNotaCredito:_nota.idNotaCredito, idDeta, descripcion,
-  })}).then(r=>r.json()).then(d=>{ if(d.error){showError(d.error);return;} });
+function activarEdicionImporte(btn){
+  const td=btn.closest('td');
+  td.querySelector('.subtotal-disp').classList.add('d-none');
+  btn.classList.add('d-none');
+  const inp=td.querySelector('.subtotal-edit');
+  inp.classList.remove('d-none');
+  inp.focus(); inp.select();
+}
+function cancelarEdicionImporte(inp, valorOriginal){
+  inp.value=valorOriginal;
+  inp.blur();
+}
+function confirmarEdicionImporte(idDeta, inp){
+  const val=parseFloat(inp.value);
+  if(isNaN(val)||val<0){ showError('Importe inválido.'); return; }
+  ajustarImporteLinea(idDeta, val);
 }
 
 function ajustarImporteLinea(idDeta, subtotal){
@@ -485,7 +609,7 @@ function ajustarImporteLinea(idDeta, subtotal){
   })}).then(r=>r.json()).then(d=>{
     if(d.error){showError(d.error);return;}
     hideWarning();
-    if(d.limitado) showWarning('El importe se limito al saldo disponible: '+fmtN(d.saldoDisponible));
+    if(d.limitado) showWarning('El importe se limito al saldo disponible: '+fmtMoney(d.saldoDisponible));
     cargarNota(_nota.tipo, _nota.serie, _nota.idNotaCredito);
   });
 }
@@ -549,13 +673,19 @@ function loadDocLk(){
   const idCliente=document.getElementById('f_Id_Cliente').value;
   const q=document.getElementById('docLkQ').value;
   const url = docLkTipo==='factura' ? '/notacred/lookup/facturas' : '/notacred/lookup/notasdebito';
-  fetch(`${url}?idCliente=${idCliente}&q=${encodeURIComponent(q)}&page=${docLkPage}`).then(r=>r.json()).then(d=>{
+  // Excluye del browse los documentos que ya son línea de ESTA nota -- evita
+  // agregarlos dos veces (si la nota todavía no existe, no hay nada que excluir).
+  let excl='';
+  if(_nota.idNotaCredito){
+    excl=`&excluirTipo=${_nota.tipo}&excluirSerie=${encodeURIComponent(_nota.serie||'')}&excluirId=${_nota.idNotaCredito}`;
+  }
+  fetch(`${url}?idCliente=${idCliente}&q=${encodeURIComponent(q)}&page=${docLkPage}${excl}`).then(r=>r.json()).then(d=>{
     document.getElementById('docLkBody').innerHTML=d.rows.map(r=>{
       const folio = docLkTipo==='factura' ? r.Id_NoFactura : r.Id_NotaDebito;
       const fecha = docLkTipo==='factura' ? r.FechaFactura : r.Fecha;
       const saldo = docLkTipo==='factura' ? r.Saldo : r.ImporteTotal;
       const serieRef = docLkTipo==='factura' ? (r.SerieFac||'') : (r.SerieND||'');
-      return `<tr data-folio="${folio}" data-serie="${serieRef}" style="cursor:pointer"><td>${folio}</td><td>${fecha}</td><td class="text-end">${fmtN(saldo)}</td><td>${r.Status||''}</td></tr>`;
+      return `<tr data-folio="${folio}" data-serie="${serieRef}" style="cursor:pointer"><td>${folio}</td><td>${fecha}</td><td class="text-end">${fmtMoney(saldo)}</td><td>${r.Status||''}</td></tr>`;
     }).join('');
     document.getElementById('docLkInfo').textContent=`Pág ${d.page}/${d.totalPages} — ${d.total} registros`;
     document.getElementById('docLkPrev').disabled=d.page<=1;
