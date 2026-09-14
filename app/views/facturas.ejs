@@ -181,7 +181,14 @@
         </div>
 
         <div class="row g-2 mt-2">
-          <div class="col-md-12 small text-muted">Facturó: <strong><%= usuario.nombre.trim() %> <%= usuario.apellido ? usuario.apellido.trim() : '' %></strong></div>
+          <div class="col-md-12">
+            <label class="form-label small mb-1">Importe con letra</label>
+            <input type="text" id="f_ImporteLetras_disp" class="form-control form-control-sm bg-light" readonly>
+          </div>
+        </div>
+
+        <div class="row g-2 mt-2">
+          <div class="col-md-12 small text-muted">Facturó: <strong id="f_Facturo_disp"><%= usuario.nombre.trim() %> <%= usuario.apellido ? usuario.apellido.trim() : '' %></strong></div>
         </div>
       </div>
       <div class="modal-footer">
@@ -303,6 +310,7 @@ const timbraFacModal=new bootstrap.Modal(document.getElementById('timbraFacModal
 const cancelarFacModal=new bootstrap.Modal(document.getElementById('cancelarFacModal'));
 const errEl=document.getElementById('frmError'), warnEl=document.getElementById('frmWarning');
 let _factura={idNoFactura:null, confirmada:false, cliente:null};
+const USUARIO_ACTUAL="<%= usuario.nombre.trim() %> <%= usuario.apellido ? usuario.apellido.trim() : '' %>".trim();
 
 // Habilita "Timbrar" solo cuando hay una factura seleccionada, sin UUID
 // todavía (no timbrada) y que no esté cancelada.
@@ -440,6 +448,7 @@ function clearForm(){
   document.getElementById('f_Descripcion').value='';
   document.getElementById('f_Descripcion').disabled=true;
   document.getElementById('f_Observaciones').value='';
+  document.getElementById('f_Facturo_disp').textContent=USUARIO_ACTUAL;
   document.getElementById('detBody').innerHTML='';
   pintarTotales({SubTotal:0,IVA:0,Retencion:0,TOTAL:0});
   hideError(); hideWarning();
@@ -502,6 +511,7 @@ function cargarFactura(idNoFactura, serieFac){
     document.getElementById('f_Descripcion').value=(c.Descripcion||'').trim();
     document.getElementById('f_Descripcion').disabled=c.FlagResFac!=1;
     document.getElementById('f_Observaciones').value=(c.Observaciones||'').trim();
+    document.getElementById('f_Facturo_disp').textContent=(c.Facturo||'').trim()||USUARIO_ACTUAL;
     pintarDetalle(d.lineas);
     pintarTotales(c);
   });
@@ -550,6 +560,7 @@ function pintarTotales(c){
   document.getElementById('totIva').textContent=fmtN(c.IVA);
   document.getElementById('totRet').textContent=fmtN(c.Retencion);
   document.getElementById('totTot').textContent=fmtN(c.TOTAL);
+  document.getElementById('f_ImporteLetras_disp').value=(c.ImporteLetras||'').trim();
 }
 
 const CONCEPTOS=[

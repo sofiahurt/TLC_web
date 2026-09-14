@@ -3,6 +3,7 @@ const router = express.Router();
 const { getPool, sql } = require('../config/db');
 const { browseQuery } = require('../config/browse');
 const { requierePermiso } = require('../middleware/permisos');
+const { importeALetras } = require('../services/importe-letras');
 
 // La clave real de una factura es el par (SerieFac, Id_NoFactura) — la tabla
 // Empresa2.Factura NO tiene ningún índice/PK, y SerieFac normalmente viene
@@ -39,9 +40,10 @@ async function withTransaction(pool, fn) {
 async function recalcularCabecera(tx, idNoFactura, serieFac) {
   const cabRes = await reqSerieFac(new sql.Request(tx), serieFac)
     .input('id', sql.Decimal(9), idNoFactura)
-    .query(`SELECT FlagResFac FROM Empresa2.Factura WHERE Id_NoFactura=@id AND ${SERIEFAC_EQ}`);
+    .query(`SELECT FlagResFac, MonFactura FROM Empresa2.Factura WHERE Id_NoFactura=@id AND ${SERIEFAC_EQ}`);
   if (!cabRes.recordset[0]) throw new Error('Factura no encontrada al recalcular.');
   const flagResFac = cabRes.recordset[0].FlagResFac === 1;
+  const monFactura = trim(cabRes.recordset[0].MonFactura);
 
   const sumRes = await reqSerieFac(new sql.Request(tx), serieFac)
     .input('id', sql.Decimal(9), idNoFactura)
@@ -60,15 +62,18 @@ async function recalcularCabecera(tx, idNoFactura, serieFac) {
     total = Math.round(s.totalL * 100) / 100;
   }
 
+  const importeLetras = importeALetras(total, monFactura);
+
   await reqSerieFac(new sql.Request(tx), serieFac)
     .input('id', sql.Decimal(9), idNoFactura)
     .input('sub', sql.Decimal(11,2), subtotal)
     .input('iva', sql.Decimal(11,2), iva)
     .input('ret', sql.Decimal(11,2), reten)
     .input('tot', sql.Decimal(11,2), total)
-    .query(`UPDATE Empresa2.Factura SET SubTotal=@sub, IVA=@iva, Retencion=@ret, TOTAL=@tot WHERE Id_NoFactura=@id AND ${SERIEFAC_EQ}`);
+    .input('letras', sql.VarChar(150), importeLetras)
+    .query(`UPDATE Empresa2.Factura SET SubTotal=@sub, IVA=@iva, Retencion=@ret, TOTAL=@tot, ImporteLetras=@letras WHERE Id_NoFactura=@id AND ${SERIEFAC_EQ}`);
 
-  return { SubTotal: subtotal, IVA: iva, Retencion: reten, TOTAL: total };
+  return { SubTotal: subtotal, IVA: iva, Retencion: reten, TOTAL: total, ImporteLetras: importeLetras };
 }
 
 // ── Recalcular ImporteFac acumulado de una Carta Porte (líneas activas no canceladas) ─

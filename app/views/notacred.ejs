@@ -205,7 +205,14 @@
         </div>
 
         <div class="row g-2 mt-2">
-          <div class="col-md-12 small text-muted">Realizó: <strong><%= usuario.nombre.trim() %> <%= usuario.apellido ? usuario.apellido.trim() : '' %></strong></div>
+          <div class="col-md-12">
+            <label class="form-label small mb-1">Importe con letra</label>
+            <input type="text" id="f_ImporteLetras_disp" class="form-control form-control-sm bg-light" readonly>
+          </div>
+        </div>
+
+        <div class="row g-2 mt-2">
+          <div class="col-md-12 small text-muted">Realizó: <strong id="f_WhoIs_disp"><%= usuario.nombre.trim() %> <%= usuario.apellido ? usuario.apellido.trim() : '' %></strong></div>
         </div>
       </div>
       <div class="modal-footer">
@@ -332,6 +339,7 @@ const browse=initBrowse({searchInput:document.getElementById('searchInput'),sear
 
 let _mode='add';const modal=new bootstrap.Modal(document.getElementById('frmModal'));
 let _nota={idNotaCredito:null, serie:'', tipo:'NC', confirmada:false, cliente:null};
+const USUARIO_ACTUAL="<%= usuario.nombre.trim() %> <%= usuario.apellido ? usuario.apellido.trim() : '' %>".trim();
 
 // Con modales apilados (lookupCliente/lookupDoc/lookupSat sobre frmModal), el
 // focus-trap de Bootstrap hace que ESC cierre el modal de abajo en vez del que
@@ -399,6 +407,8 @@ function clearForm(){
   document.getElementById('f_IVAResumen_disp').value='0.00';
   document.getElementById('f_RetencionResumen_disp').value='0.00';
   document.getElementById('f_TotalResumen_disp').value='0.00';
+  document.getElementById('f_ImporteLetras_disp').value='';
+  document.getElementById('f_WhoIs_disp').textContent=USUARIO_ACTUAL;
   document.getElementById('detBody').innerHTML='';
   onToggleResumen();
   pintarTotales({Subtotal:0,IVA:0,Retencion:0,ImporteTotal:0});
@@ -477,6 +487,8 @@ function cargarNota(tipo, serie, id){
     document.getElementById('f_IVAResumen_disp').value=fmtMoney(c.IVA);
     document.getElementById('f_RetencionResumen_disp').value=fmtMoney(c.Retencion);
     document.getElementById('f_TotalResumen_disp').value=fmtMoney(c.ImporteTotal);
+    document.getElementById('f_ImporteLetras_disp').value=(c.ImporteLetras||'').trim();
+    document.getElementById('f_WhoIs_disp').textContent=(c.WhoIs||'').trim()||USUARIO_ACTUAL;
   });
 }
 
@@ -511,6 +523,7 @@ function onImporteResumenChange(){
     document.getElementById('f_IVAResumen_disp').value=fmtMoney(d.totales.IVA);
     document.getElementById('f_RetencionResumen_disp').value=fmtMoney(d.totales.Retencion);
     document.getElementById('f_TotalResumen_disp').value=fmtMoney(d.totales.ImporteTotal);
+    document.getElementById('f_ImporteLetras_disp').value=(d.totales.ImporteLetras||'').trim();
   });
 }
 
@@ -529,7 +542,10 @@ function onCabeceraFieldChange(){
     descripcion:document.getElementById('f_Descripcion').value.trim(),
   };
   fetch('/notacred/cabecera/actualizar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
-    .then(r=>r.json()).then(d=>{ if(d.error){showError(d.error);return;} });
+    .then(r=>r.json()).then(d=>{
+      if(d.error){showError(d.error);return;}
+      document.getElementById('f_ImporteLetras_disp').value=(d.totales.ImporteLetras||'').trim();
+    });
 }
 
 // La fila de "Totales:" debajo del detalle es SIEMPRE la suma real de las

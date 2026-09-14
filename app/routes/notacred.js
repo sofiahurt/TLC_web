@@ -3,6 +3,7 @@ const router = express.Router();
 const { getPool, sql } = require('../config/db');
 const { browseQuery } = require('../config/browse');
 const { requierePermiso } = require('../middleware/permisos');
+const { importeALetras } = require('../services/importe-letras');
 
 // La clave real de una Nota de Crédito/Débito es (Tipo, Serie, Id_NotaCredito)
 // -- NC y ND llevan numeración INDEPENDIENTE aunque compartan la misma tabla
@@ -52,22 +53,25 @@ async function withTransaction(pool, fn) {
 // regresa los valores ya persistidos en NotaCred, sin tocarlos.
 async function recalcularCabecera(tx, tipo, serie, id) {
   const cabRes = await reqNC(new sql.Request(tx), tipo, serie, id)
-    .query(`SELECT FlagResNota, Subtotal, IVA, Retencion, ImporteTotal FROM Empresa2.NotaCred WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
+    .query(`SELECT FlagResNota, Subtotal, IVA, Retencion, ImporteTotal, ImporteLetras FROM Empresa2.NotaCred WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
   const cab = cabRes.recordset[0];
   if (!cab) throw Object.assign(new Error('Nota no encontrada.'), { status: 404 });
   if (Number(cab.FlagResNota) === 1) {
-    return { Subtotal: num(cab.Subtotal), IVA: num(cab.IVA), Retencion: num(cab.Retencion), ImporteTotal: num(cab.ImporteTotal) };
+    return { Subtotal: num(cab.Subtotal), IVA: num(cab.IVA), Retencion: num(cab.Retencion), ImporteTotal: num(cab.ImporteTotal), ImporteLetras: trim(cab.ImporteLetras) };
   }
   const sumRes = await reqNC(new sql.Request(tx), tipo, serie, id).query(
     `SELECT ISNULL(SUM(SUBTOTAL),0) sub, ISNULL(SUM(IVA),0) iva, ISNULL(SUM(RETENCION),0) ret, ISNULL(SUM(IMPORTEAPLICA),0) tot
      FROM Empresa2.NotaCredDeta WHERE ID_NOTACREDITO=@id AND ${NC_EQ}`);
   const s = sumRes.recordset[0];
   const r2 = v => Math.round(v * 100) / 100;
-  const vals = { Subtotal: r2(s.sub), IVA: r2(s.iva), Retencion: r2(s.ret), ImporteTotal: r2(s.tot) };
+  // NotaCred no tiene columna de moneda propia -- siempre pesos (mismo criterio
+  // que TipoFactura='Pesos' fijo en el INSERT).
+  const vals = { Subtotal: r2(s.sub), IVA: r2(s.iva), Retencion: r2(s.ret), ImporteTotal: r2(s.tot), ImporteLetras: importeALetras(r2(s.tot), 'MXN') };
   await reqNC(new sql.Request(tx), tipo, serie, id)
     .input('sub', sql.Decimal(9,2), vals.Subtotal).input('iva', sql.Decimal(10,2), vals.IVA)
     .input('ret', sql.Decimal(9,2), vals.Retencion).input('tot', sql.Decimal(12,2), vals.ImporteTotal)
-    .query(`UPDATE Empresa2.NotaCred SET Subtotal=@sub, IVA=@iva, Retencion=@ret, ImporteTotal=@tot, SumaPartidas=@tot WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
+    .input('letras', sql.VarChar(200), vals.ImporteLetras)
+    .query(`UPDATE Empresa2.NotaCred SET Subtotal=@sub, IVA=@iva, Retencion=@ret, ImporteTotal=@tot, SumaPartidas=@tot, ImporteLetras=@letras WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
   return vals;
 }
 
@@ -348,14 +352,15 @@ router.post('/partida/agregar', requierePermiso('notacred.editar'), async (req, 
           .input('cclaveunidad', sql.VarChar(5), trim(f.c_ClaveUnidad) || defaults.c_ClaveUnidad)
           .input('descripcion', sql.VarChar(100), trim(f.Descripcion) || defaults.Descripcion)
           .input('flagres', sql.TinyInt, esResumen)
+          .input('whois', sql.VarChar(80), [req.session.usuario.nombre, req.session.usuario.apellido].filter(Boolean).join(' '))
           .query(`INSERT INTO Empresa2.NotaCred(
             Serie, Id_NotaCredito, Fecha, Hora, Id_Cliente, NombreCom, TipoFactura, Status,
             c_FormaPago, ClaveMP, c_UsoCFDI, c_TipoRelacion, c_ClaveProdServ, c_ClaveUnidad, Descripcion,
-            FlagResNota, Tipo, Subtotal, IVA, Retencion, ImporteTotal, SumaPartidas
+            FlagResNota, Tipo, Subtotal, IVA, Retencion, ImporteTotal, SumaPartidas, WhoIs
           ) VALUES(
             ISNULL(@serie,''), @id, @fecha, @hora, @idCli, @nombreCom, 'Pesos', @status,
             @cformapago, @clavemp, @cusocfdi, @ctiporel, @cclaveprodserv, @cclaveunidad, @descripcion,
-            @flagres, @tipo, 0, 0, 0, 0, 0
+            @flagres, @tipo, 0, 0, 0, 0, 0, @whois
           )`);
       } else {
         const cabRes = await reqNC(new sql.Request(tx), tipo, serieCab, idNotaCredito).query(`SELECT Status FROM Empresa2.NotaCred WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
@@ -580,13 +585,15 @@ router.post('/cabecera/importe-resumen', requierePermiso('notacred.editar'), asy
       const nuevoIva = Math.round(nuevoSub * 0.16 * 100) / 100;
       const nuevoRet = Math.round(nuevoSub * 0.04 * 100) / 100;
       const total = Math.round((nuevoSub + nuevoIva - nuevoRet) * 100) / 100;
+      const importeLetras = importeALetras(total, 'MXN');
 
       await reqNC(new sql.Request(tx), tipo, serie, id)
         .input('sub', sql.Decimal(9,2), nuevoSub).input('iva', sql.Decimal(10,2), nuevoIva)
         .input('ret', sql.Decimal(9,2), nuevoRet).input('tot', sql.Decimal(12,2), total)
-        .query(`UPDATE Empresa2.NotaCred SET Subtotal=@sub, IVA=@iva, Retencion=@ret, ImporteTotal=@tot, SumaPartidas=@tot WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
+        .input('letras', sql.VarChar(200), importeLetras)
+        .query(`UPDATE Empresa2.NotaCred SET Subtotal=@sub, IVA=@iva, Retencion=@ret, ImporteTotal=@tot, SumaPartidas=@tot, ImporteLetras=@letras WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
 
-      return { limitado, saldoDisponible, totales: { Subtotal: nuevoSub, IVA: nuevoIva, Retencion: nuevoRet, ImporteTotal: total } };
+      return { limitado, saldoDisponible, totales: { Subtotal: nuevoSub, IVA: nuevoIva, Retencion: nuevoRet, ImporteTotal: total, ImporteLetras: importeLetras } };
     });
     res.json({ ok: true, ...result });
   } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
