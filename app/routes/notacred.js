@@ -4,6 +4,7 @@ const { getPool, sql } = require('../config/db');
 const { browseQuery } = require('../config/browse');
 const { requierePermiso } = require('../middleware/permisos');
 const { importeALetras } = require('../services/importe-letras');
+const { ajustarSaldoFactura, ajustarSaldoNotaDebito } = require('../services/saldo-factura');
 
 // La clave real de una Nota de Crédito/Débito es (Tipo, Serie, Id_NotaCredito)
 // -- NC y ND llevan numeración INDEPENDIENTE aunque compartan la misma tabla
@@ -73,14 +74,6 @@ async function recalcularCabecera(tx, tipo, serie, id) {
     .input('letras', sql.VarChar(200), vals.ImporteLetras)
     .query(`UPDATE Empresa2.NotaCred SET Subtotal=@sub, IVA=@iva, Retencion=@ret, ImporteTotal=@tot, SumaPartidas=@tot, ImporteLetras=@letras WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
   return vals;
-}
-
-// ── Recalcula PagosReal/NotasCredito -> Status de una Factura ──────────────
-function statusPorSaldo(total, pagosReal, notasCredito) {
-  const cubierto = num(pagosReal) + num(notasCredito);
-  if (cubierto >= num(total) - 0.005) return 'PAGADA';
-  if (cubierto > 0.005) return 'PAGO PARCIAL';
-  return 'EMITIDA';
 }
 
 router.get('/', (req, res) => res.render('notacred', { usuario: req.session.usuario, modulo: 'notacred' }));
@@ -615,30 +608,11 @@ router.post('/cabecera/grabar', requierePermiso('notacred.editar'), async (req, 
         const importe = num(linea.IMPORTEAPLICA);
         if (importe <= 0.005) continue;
         if (Number(linea.ID_NOFACTURA) > 0) {
-          const facRes = await new sql.Request(tx)
-            .input('id', sql.Decimal(9), linea.ID_NOFACTURA).input('serieFac', sql.VarChar(20), serieKey(linea.SerieFac))
-            .query(`SELECT TOTAL, PagosReal, NotasCredito FROM Empresa2.Factura WITH (UPDLOCK, ROWLOCK)
-                    WHERE Id_NoFactura=@id AND ISNULL(LTRIM(RTRIM(SerieFac)),'')=ISNULL(@serieFac,'')`);
-          const fac = facRes.recordset[0];
-          if (!fac) continue;
-          const nuevoNC = num(fac.NotasCredito) + importe;
-          const nuevoStatus = statusPorSaldo(fac.TOTAL, fac.PagosReal, nuevoNC);
-          await new sql.Request(tx)
-            .input('id', sql.Decimal(9), linea.ID_NOFACTURA).input('serieFac', sql.VarChar(20), serieKey(linea.SerieFac))
-            .input('nc', sql.Decimal(9,2), nuevoNC).input('status', sql.VarChar(20), nuevoStatus).input('anio', sql.Decimal(5), anio)
-            .query(`UPDATE Empresa2.Factura SET NotasCredito=@nc, Status=@status, AnioNotaCred=@anio
-                    WHERE Id_NoFactura=@id AND ISNULL(LTRIM(RTRIM(SerieFac)),'')=ISNULL(@serieFac,'')`);
+          await ajustarSaldoFactura(tx, 'nota_credito', {
+            idNoFactura: linea.ID_NOFACTURA, serieFac: linea.SerieFac, importe, signo: 1, anio,
+          });
         } else if (Number(linea.Id_NotaDebito) > 0) {
-          const ndRes = await new sql.Request(tx)
-            .input('id', sql.Decimal(7), linea.Id_NotaDebito).input('serie', sql.VarChar(10), serieKey(linea.SerieND))
-            .query(`SELECT ImporteTotal FROM Empresa2.NotaCred WITH (UPDLOCK, ROWLOCK) WHERE Id_NotaCredito=@id AND LTRIM(RTRIM(Tipo))='ND' AND ISNULL(LTRIM(RTRIM(Serie)),'')=ISNULL(@serie,'')`);
-          const nd = ndRes.recordset[0];
-          if (!nd) continue;
-          const nuevoStatus = statusPorSaldo(nd.ImporteTotal, 0, importe);
-          await new sql.Request(tx)
-            .input('id', sql.Decimal(7), linea.Id_NotaDebito).input('serie', sql.VarChar(10), serieKey(linea.SerieND))
-            .input('status', sql.VarChar(20), nuevoStatus)
-            .query(`UPDATE Empresa2.NotaCred SET Status=@status WHERE Id_NotaCredito=@id AND LTRIM(RTRIM(Tipo))='ND' AND ISNULL(LTRIM(RTRIM(Serie)),'')=ISNULL(@serie,'')`);
+          await ajustarSaldoNotaDebito(tx, { idNotaDebito: linea.Id_NotaDebito, serieND: linea.SerieND, importeAplicado: importe });
         }
       }
 
@@ -679,27 +653,11 @@ async function revertirEfectoSaldo(tx, tipo, serie, id) {
     const importe = num(linea.IMPORTEAPLICA);
     if (importe <= 0.005) continue;
     if (Number(linea.ID_NOFACTURA) > 0) {
-      const facRes = await new sql.Request(tx)
-        .input('id', sql.Decimal(9), linea.ID_NOFACTURA).input('serieFac', sql.VarChar(20), serieKey(linea.SerieFac))
-        .query(`SELECT TOTAL, PagosReal, NotasCredito FROM Empresa2.Factura WITH (UPDLOCK, ROWLOCK)
-                WHERE Id_NoFactura=@id AND ISNULL(LTRIM(RTRIM(SerieFac)),'')=ISNULL(@serieFac,'')`);
-      const fac = facRes.recordset[0];
-      if (!fac) continue;
-      const nuevoNC = Math.max(0, num(fac.NotasCredito) - importe);
-      const nuevoStatus = statusPorSaldo(fac.TOTAL, fac.PagosReal, nuevoNC);
-      await new sql.Request(tx)
-        .input('id', sql.Decimal(9), linea.ID_NOFACTURA).input('serieFac', sql.VarChar(20), serieKey(linea.SerieFac))
-        .input('nc', sql.Decimal(9,2), nuevoNC).input('status', sql.VarChar(20), nuevoStatus)
-        .query(`UPDATE Empresa2.Factura SET NotasCredito=@nc, Status=@status WHERE Id_NoFactura=@id AND ISNULL(LTRIM(RTRIM(SerieFac)),'')=ISNULL(@serieFac,'')`);
+      await ajustarSaldoFactura(tx, 'nota_credito', {
+        idNoFactura: linea.ID_NOFACTURA, serieFac: linea.SerieFac, importe, signo: -1,
+      });
     } else if (Number(linea.Id_NotaDebito) > 0) {
-      const ndRes = await new sql.Request(tx)
-        .input('id', sql.Decimal(7), linea.Id_NotaDebito).input('serie', sql.VarChar(10), serieKey(linea.SerieND))
-        .query(`SELECT ImporteTotal FROM Empresa2.NotaCred WITH (UPDLOCK, ROWLOCK) WHERE Id_NotaCredito=@id AND LTRIM(RTRIM(Tipo))='ND' AND ISNULL(LTRIM(RTRIM(Serie)),'')=ISNULL(@serie,'')`);
-      const nd = ndRes.recordset[0];
-      if (!nd) continue;
-      await new sql.Request(tx)
-        .input('id', sql.Decimal(7), linea.Id_NotaDebito).input('serie', sql.VarChar(10), serieKey(linea.SerieND))
-        .query(`UPDATE Empresa2.NotaCred SET Status='EMITIDA' WHERE Id_NotaCredito=@id AND LTRIM(RTRIM(Tipo))='ND' AND ISNULL(LTRIM(RTRIM(Serie)),'')=ISNULL(@serie,'')`);
+      await ajustarSaldoNotaDebito(tx, { idNotaDebito: linea.Id_NotaDebito, serieND: linea.SerieND, importeAplicado: 0 });
     }
   }
 }

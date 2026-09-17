@@ -112,6 +112,15 @@ async function datosAcuse(tipoDoc, params, pool) {
     nombreBaseAcuse = `NC_${tipo}${serieKey || 'SF'}${idNotaCredito}`;
     tituloDoc = tipo === 'ND' ? 'NOTA DE DÉBITO' : 'NOTA DE CRÉDITO';
     folioDoc = `${serieKey ? serieKey + '-' : ''}${idNotaCredito}`;
+  } else if (tipoDoc === 'pago') {
+    const { idNoPago, central } = params;
+    const r = await pool.request().input('id', sql.Decimal(9), idNoPago).query(`SELECT * FROM Empresa2.Pagos WHERE Id_NoPago=@id`);
+    docRow = r.recordset[0];
+    if (!docRow) throw new Error(`Pago ${idNoPago} no encontrado`);
+    centralOperativo = central || 'CUA';
+    nombreBaseAcuse = `PAGO_${idNoPago}`;
+    tituloDoc = 'PAGO';
+    folioDoc = String(idNoPago);
   } else {
     throw new Error(`tipoDoc desconocido: ${tipoDoc}`);
   }

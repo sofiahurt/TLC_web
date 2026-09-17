@@ -350,11 +350,15 @@ function ejecutarTimbradoFactura(){
       if(d.ok){
         document.getElementById('timbraFacBody').innerHTML=
           `<div class="alert alert-success mb-0"><i class="bi bi-check-circle-fill me-2"></i><strong>${d.mensaje}</strong></div>`;
+        // El UUID (y el XML en disco) ya quedan guardados aunque sea modo
+        // prueba -- hay que refrescar el browse siempre para que la columna
+        // XML habilite su descarga. Solo el botón "Timbrar" se deja activo en
+        // modo prueba, para poder re-timbrar en sandbox sin recargar la fila.
+        if(window._selectedRow) window._selectedRow.UUID=d.pacResult?.uuid||'x';
+        browse.load();
         if(!d.testFel){
-          if(window._selectedRow) window._selectedRow.UUID=d.pacResult?.uuid||'x';
           const btnTiOk=document.getElementById('btnTimbrarFactura');
           if(btnTiOk) btnTiOk.disabled=true;
-          browse.load();
         }
       } else {
         btn.disabled=false; btn.style.display='';

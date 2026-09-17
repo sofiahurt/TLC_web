@@ -9,8 +9,16 @@ const { serieFiscal } = require('../config/empresa-serie');
 
 const { RUTA_XML } = require('../config/storage');
 
-const XSLT_PATH   = path.join(__dirname, '../resources/cadenaoriginal_cfdi40_cp31.xslt');
-const xsltContent = fs.readFileSync(XSLT_PATH, 'utf8');
+const XSLT_PATH_DEFAULT = path.join(__dirname, '../resources/cadenaoriginal_cfdi40_cp31.xslt');
+// Cache por ruta -- Carta Porte/Factura/NotaCred siguen usando el XSLT por
+// defecto (ya verificado byte-por-byte en producción, sin tocar); Pagos usa
+// su propio archivo con el complemento Pagos 2.0 (ver cfdi-pago.js) para no
+// arriesgar ese archivo ya probado con un cambio "aditivo".
+const xsltCache = new Map();
+function leerXslt(xsltPath) {
+  if (!xsltCache.has(xsltPath)) xsltCache.set(xsltPath, fs.readFileSync(xsltPath, 'utf8'));
+  return xsltCache.get(xsltPath);
+}
 
 function fmt(v) { return v ? String(v).trim() : ''; }
 
@@ -25,6 +33,9 @@ function fmt(v) { return v ? String(v).trim() : ''; }
  *   (ej. "CP_CUI0000517" para Carta Porte, "FAC_TESTQA126251" para Factura) —
  *   el llamador decide el prefijo/formato, este módulo solo lo usa tal cual.
  * @param {object} pool       Conexión mssql
+ * @param {string} [xsltPath] Ruta al XSLT de cadena original a usar; por
+ *   defecto el combinado CFDI 4.0 + CartaPorte 3.1 (Factura/NotaCred nunca
+ *   ejercitan los templates de CartaPorte, así que les es transparente).
  * @returns {Promise<{xml: string, noCertificado: string}>} XML sellado y el
  *   número de certificado del CSD usado (para persistirlo de inmediato, antes
  *   de siquiera intentar el timbrado — no depende de que el PAC responda).
@@ -56,7 +67,8 @@ async function cargarCSD(serie, pool) {
   return { csd, emp };
 }
 
-async function sellarXML(xmlString, serie, nombreBase, pool) {
+async function sellarXML(xmlString, serie, nombreBase, pool, xsltPath = XSLT_PATH_DEFAULT) {
+  const xsltContent = leerXslt(xsltPath);
   // 1-3. Empresa + CSD — varios centrales comparten la misma razón social/CSD
   // (ver config/empresa-serie.js), por eso se resuelve la serie fiscal primero.
   const { csd, emp } = await cargarCSD(serie, pool);

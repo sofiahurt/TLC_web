@@ -48,6 +48,7 @@ app.get('/dashboard', (req, res) => res.render('dashboard', { usuario: req.sessi
 app.use('/cartaporte',  requierePermiso('cartaporte.ver'), require('./app/routes/cartaporte'));
 app.use('/facturas',    requierePermiso('facturas.ver'),   require('./app/routes/facturas'));
 app.use('/notacred',    requierePermiso('notacred.ver'),   require('./app/routes/notacred'));
+app.use('/pagos',       requierePermiso('pagos.ver'),      require('./app/routes/pagos'));
 app.use('/seguridad',   requierePermiso('seguridad.administrar'), require('./app/routes/seguridad'));
 app.use('/usuarios',    requierePermiso('usuarios.ver'),     require('./app/routes/usuarios'));
 app.use('/centrales',   require('./app/routes/centrales'));

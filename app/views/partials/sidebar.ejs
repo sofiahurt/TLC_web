@@ -29,6 +29,9 @@
         <% if (typeof tienePermiso === 'function' && tienePermiso('notacred.ver')) { %>
         <a href="/notacred"   class="sidebar-link <%= modulo==='notacred'   ?'active':'' %>"><i class="bi bi-receipt-cutoff"></i> Notas de Crédito/Débito</a>
         <% } %>
+        <% if (typeof tienePermiso === 'function' && tienePermiso('pagos.ver')) { %>
+        <a href="/pagos"      class="sidebar-link <%= modulo==='pagos'      ?'active':'' %>"><i class="bi bi-cash-coin"></i> Pagos</a>
+        <% } %>
       </div>
     </div>
 

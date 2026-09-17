@@ -8,6 +8,7 @@ const { getPool, sql } = require('../config/db');
 const { buildCFDITraslado } = require('../services/cfdi-traslado');
 const { buildCFDIFactura } = require('../services/cfdi-factura');
 const { buildCFDINotaCredito } = require('../services/cfdi-notacredito');
+const { buildCFDIPago } = require('../services/cfdi-pago');
 const { sellarXML, cargarCSD } = require('../services/cfdi-sello');
 const { timbrarConPAC, resolverConexionPAC } = require('../services/cfdi-pac');
 const { ejecutarCancelacionFiscal } = require('../services/cfdi-cancelacion');
@@ -16,10 +17,13 @@ const { generarPDFBuffer } = require('../services/cfdi-pdf');
 const { generarPDFBufferFactura } = require('../services/factura-pdf');
 const { generarPDFBufferNotaCredito } = require('../services/notacred-pdf');
 const { generarPDFBufferAcuse } = require('../services/cfdi-acuse-pdf');
+const { generarPDFBufferPago } = require('../services/pago-pdf');
 const { revertirEfectoSaldo } = require('../routes/notacred');
+const { revertirEfectoSaldoPago } = require('../routes/pagos');
 const { recalcularImporteFacCP } = require('../routes/facturas');
 const { requierePermiso } = require('../middleware/permisos');
 const { RUTA_XML } = require('../config/storage');
+const path_XSLT_PAGO20 = path.join(__dirname, '../resources/cadenaoriginal_cfdi40_pago20.xslt');
 
 // ── PREVIEW (debug) ──────────────────────────────────────────────────────────
 // GET /cfdi/preview?serie=CUI&cartaporte=CUI0000517
@@ -856,6 +860,202 @@ router.get('/xml-notacredito', async (req, res) => {
     res.send(fs.readFileSync(ruta, 'utf8'));
   } catch (err) {
     console.error('CFDI xml-notacredito error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── TIMBRAR PAGO (Complemento de Pagos 2.0) ───────────────────────────────
+// POST /cfdi/timbrar-pago { idNoPago }
+router.post('/timbrar-pago', requierePermiso('pagos.btn_timbrar'), async (req, res) => {
+  try {
+    const idNoPago = parseInt(req.body.idNoPago);
+    if (!idNoPago) return res.status(400).json({ ok: false, error: 'Falta idNoPago' });
+
+    const pool = await getPool();
+
+    // 0. UUID ya existente (307) + Status (no se timbra un pago cancelado)
+    const prevRes = await pool.request().input('id', sql.Decimal(9), idNoPago).query(`SELECT UUID, Status FROM Empresa2.Pagos WHERE Id_NoPago=@id`);
+    if (!prevRes.recordset[0]) return res.status(404).json({ ok: false, error: 'Pago no encontrado' });
+    const uuidExistente = (prevRes.recordset[0].UUID || '').trim();
+    if (uuidExistente) return res.status(400).json({ ok: false, error: 'Este pago ya está timbrado.' });
+    if ((prevRes.recordset[0].Status || '').trim().toUpperCase() === 'CANCELADO') {
+      return res.status(400).json({ ok: false, error: 'Este pago está cancelado, no puede timbrarse.' });
+    }
+
+    const central = (req.session.central || '').trim();
+    const conexion = await resolverConexionPAC(pool, central);
+
+    // 2. Armar XML (requiere que las Facturas/ND relacionadas ya estén timbradas)
+    const { xml } = await buildCFDIPago(idNoPago, central, pool);
+
+    // 3. Sellar con CSD (XSLT propio del Complemento de Pagos 2.0) y guardar en
+    // disco. A diferencia de Factura/NotaCred, Empresa2.Pagos no tiene una
+    // columna propia para el número de certificado del emisor (solo
+    // NoCertificadoSAT, que es el del PAC tras timbrar) -- el dato no se
+    // pierde, queda igual inyectado en el XML sellado, solo no se refleja
+    // aparte en una columna previa al timbrado.
+    const nombreBase = `PAGO_${idNoPago}`;
+    const { xml: xmlSellado } = await sellarXML(xml, central, nombreBase, pool, path_XSLT_PAGO20);
+
+    // 4. Enviar al PAC y timbrar
+    const pacResult = await timbrarConPAC(xmlSellado, conexion);
+    if (!pacResult.exito) {
+      return res.json({ ok: false, error: pacResult.mensajeError || 'El PAC rechazó el timbrado' });
+    }
+
+    // Reenvío (307) — mismo manejo que Carta Porte/Factura/Notas de Crédito.
+    if (pacResult.reenvio && uuidExistente) {
+      return res.json({ ok: true, mensaje: `Este pago ya estaba timbrado. UUID: ${uuidExistente}`, pacResult: { ...pacResult, uuid: uuidExistente } });
+    }
+
+    // 5. Persistir UUID/FechaTimbrado/ProvTim. Status se queda tal cual (REALIZADO).
+    await pool.request()
+      .input('id', sql.Decimal(9), idNoPago)
+      .input('uuid', sql.VarChar(149), pacResult.uuid).input('fecha', sql.VarChar(20), pacResult.fechaTimbrado || null)
+      .input('provTim', sql.VarChar(20), pacResult.rfcProvCertif || null)
+      .query(`UPDATE Empresa2.Pagos SET UUID=@uuid, FechaTimbrado=@fecha, ProvTim=@provTim WHERE Id_NoPago=@id`);
+
+    // 6. Guardar el XML timbrado final.
+    const sufijoArchivo = conexion.testFel ? 'Prueba' : 'Timbrada';
+    fs.mkdirSync(RUTA_XML, { recursive: true });
+    fs.writeFileSync(path.join(RUTA_XML, `${nombreBase}_${sufijoArchivo}.xml`), pacResult.xmlTimbrado, 'utf8');
+    const rutaSellado = path.join(RUTA_XML, `${nombreBase}_sellado.xml`);
+    if (fs.existsSync(rutaSellado)) fs.unlinkSync(rutaSellado);
+
+    // 7. Descuento/bitácora de timbres — solo fuera de modo prueba. 'Pago' ya
+    // es el literal histórico real en Empresa2.ParamTimbreDeta (238 filas).
+    if (!conexion.testFel) {
+      await descontarTimbre(pool, { tipo: 'Pago', serie: null, idFacVen: String(idNoPago), uuid: pacResult.uuid });
+    }
+
+    res.json({
+      ok: true,
+      mensaje: `Pago timbrado correctamente${conexion.testFel ? ' (modo prueba)' : ''}. UUID: ${pacResult.uuid}`,
+      testFel: conexion.testFel,
+      pacResult,
+    });
+  } catch (err) {
+    console.error('CFDI timbrar-pago error:', err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ── CANCELAR PAGO (fiscal, ante el PAC) ───────────────────────────────────
+// POST /cfdi/cancelar-pago { idNoPago, motivo, folioSustitucion }
+router.post('/cancelar-pago', requierePermiso('pagos.btn_cancelar'), async (req, res) => {
+  try {
+    const idNoPago = parseInt(req.body.idNoPago);
+    if (!idNoPago) return res.status(400).json({ ok: false, error: 'Falta idNoPago' });
+    const motivo = (req.body.motivo || '02').trim();
+    const folioSustitucion = (req.body.folioSustitucion || '').trim();
+    if (motivo === '01' && !folioSustitucion) {
+      return res.status(400).json({ ok: false, error: 'El motivo 01 requiere el UUID que sustituye.' });
+    }
+
+    const pool = await getPool();
+    const cabRes = await pool.request().input('id', sql.Decimal(9), idNoPago).query(`SELECT * FROM Empresa2.Pagos WHERE Id_NoPago=@id`);
+    const pago = cabRes.recordset[0];
+    if (!pago) return res.status(404).json({ ok: false, error: 'Pago no encontrado' });
+    const uuid = (pago.UUID || '').trim();
+    if (!uuid) return res.status(400).json({ ok: false, error: 'Este pago no está timbrado; use la cancelación normal (sin PAC).' });
+    if ((pago.Status || '').trim().toUpperCase() === 'CANCELADO') return res.status(400).json({ ok: false, error: 'Ya está cancelado.' });
+
+    const central = (req.session.central || '').trim();
+    const cliRes = await pool.request().input('id', sql.Decimal(18, 0), pago.Id_Cliente).query(`SELECT RFC FROM Empresa2.Clientes WHERE ID_CLIENTE=@id`);
+    const rfcReceptor = (cliRes.recordset[0]?.RFC || '').trim();
+    const { emp } = await cargarCSD(central, pool);
+
+    // El comprobante tipo "P" siempre declara Total="0.00" (el importe real
+    // vive dentro del complemento, no en el atributo Total) -- mismo criterio
+    // ya usado para Carta Porte (Total="0.00" fiscal en comprobantes tipo "T").
+    const cancelacion = await ejecutarCancelacionFiscal(pool, central, {
+      uuid, rfcEmisor: (emp.RFC || '').trim(), rfcReceptor, total: '0.00', motivo, folioSustitucion,
+    });
+    if (cancelacion.resultado !== 'exito') {
+      return res.json({ ok: false, pendiente: cancelacion.resultado === 'pendiente', error: cancelacion.mensaje });
+    }
+
+    // Solo si el PAC confirma la cancelación se revierte el efecto de saldo y
+    // se marca el pago como cancelado -- en una sola transacción.
+    const tx = new sql.Transaction(pool);
+    await tx.begin();
+    try {
+      await revertirEfectoSaldoPago(tx, idNoPago);
+      await new sql.Request(tx).input('id', sql.Decimal(9), idNoPago).query(`UPDATE Empresa2.Pagos SET Status='CANCELADO' WHERE Id_NoPago=@id`);
+      await tx.commit();
+    } catch (err) {
+      try { await tx.rollback(); } catch (_) { /* ya cerrada */ }
+      throw err;
+    }
+
+    if (cancelacion.acuseXml) {
+      const nombreBase = `PAGO_${idNoPago}`;
+      fs.mkdirSync(RUTA_XML, { recursive: true });
+      fs.writeFileSync(path.join(RUTA_XML, `${nombreBase}_Acuse.xml`), cancelacion.acuseXml, 'utf8');
+    }
+
+    res.json({ ok: true, mensaje: 'Pago cancelado correctamente ante el SAT.', pacResult: cancelacion.pacResult });
+  } catch (err) {
+    console.error('CFDI cancelar-pago error:', err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ── PDF de Pago ────────────────────────────────────────────────────────────
+// GET /cfdi/pdf-pago?idNoPago= — disponible con o sin timbre.
+router.get('/pdf-pago', async (req, res) => {
+  try {
+    const idNoPago = parseInt(req.query.idNoPago);
+    if (!idNoPago) return res.status(400).send('Falta el parámetro idNoPago');
+    const pool = await getPool();
+    const buffer = await generarPDFBufferPago(idNoPago, pool, (req.session.central || '').trim() || 'CUA');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="PAGO_${idNoPago}.pdf"`);
+    res.send(buffer);
+  } catch (err) {
+    console.error('CFDI pdf-pago error:', err);
+    res.status(500).send(`Error al generar el PDF: ${err.message}`);
+  }
+});
+
+// GET /cfdi/acuse-pago?idNoPago=
+router.get('/acuse-pago', async (req, res) => {
+  try {
+    const idNoPago = parseInt(req.query.idNoPago);
+    if (!idNoPago) return res.status(400).send('Falta el parámetro idNoPago');
+    const pool = await getPool();
+    const buffer = await generarPDFBufferAcuse('pago', { idNoPago, central: (req.session.central || '').trim() }, pool);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="PAGO_${idNoPago}_Acuse.pdf"`);
+    res.send(buffer);
+  } catch (err) {
+    console.error('CFDI acuse-pago error:', err);
+    res.status(400).send(`No se pudo generar el acuse: ${err.message}`);
+  }
+});
+
+// GET /cfdi/xml-pago?idNoPago= — solo disponible una vez timbrado.
+router.get('/xml-pago', async (req, res) => {
+  try {
+    const idNoPago = parseInt(req.query.idNoPago);
+    if (!idNoPago) return res.status(400).json({ error: 'Falta el parámetro idNoPago' });
+    const pool = await getPool();
+    const pagoRes = await pool.request().input('id', sql.Decimal(9), idNoPago).query(`SELECT UUID FROM Empresa2.Pagos WHERE Id_NoPago=@id`);
+    const pago = pagoRes.recordset[0];
+    if (!pago) return res.status(404).json({ error: 'Pago no encontrado' });
+    if (!(pago.UUID || '').trim()) return res.status(400).json({ error: 'Este pago todavía no está timbrado' });
+
+    const nombreBase = `PAGO_${idNoPago}`;
+    const rutaTimbrada = path.join(RUTA_XML, `${nombreBase}_Timbrada.xml`);
+    const rutaPrueba   = path.join(RUTA_XML, `${nombreBase}_Prueba.xml`);
+    const ruta = fs.existsSync(rutaTimbrada) ? rutaTimbrada : (fs.existsSync(rutaPrueba) ? rutaPrueba : null);
+    if (!ruta) return res.status(404).json({ error: `No se encontró el archivo XML en ${RUTA_XML}` });
+
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${path.basename(ruta)}"`);
+    res.send(fs.readFileSync(ruta, 'utf8'));
+  } catch (err) {
+    console.error('CFDI xml-pago error:', err);
     res.status(500).json({ error: err.message });
   }
 });
