@@ -65,7 +65,8 @@
           </div>
         </div>
         <div class="tab-pane fade" id="tabPermisos">
-          <div id="permisosBox" class="small text-muted">Cargando permisos...</div>
+          <ul class="nav nav-pills mb-2 small" id="permGrupoTabs"></ul>
+          <div class="tab-content" id="permGrupoContent"><div class="small text-muted">Cargando permisos...</div></div>
         </div>
         <div class="tab-pane fade" id="tabUsuarios">
           <input type="text" id="usrFiltro" class="form-control form-control-sm mb-2" placeholder="Buscar usuario...">
@@ -86,21 +87,57 @@ const browse=initBrowse({searchInput:document.getElementById('searchInput'),sear
 let _mode='add';const modal=new bootstrap.Modal(document.getElementById('frmModal'));
 let _permisosCatalogo=null, _usuariosCatalogo=null;
 
-function trimClaves(){return Array.from(document.querySelectorAll('#permisosBox input[type=checkbox]:checked')).map(el=>el.dataset.clave);}
+function trimClaves(){return Array.from(document.querySelectorAll('#permGrupoContent input[type=checkbox]:checked')).map(el=>el.dataset.clave);}
 function trimUsuarios(){return Array.from(document.querySelectorAll('#usuariosBox input[type=checkbox]:checked')).map(el=>parseInt(el.dataset.id));}
+
+// Mismo agrupamiento que el menú lateral (app/views/partials/sidebar.ejs) --
+// un tab por submenú, para ubicar cada módulo igual que en la navegación.
+const GRUPOS_MENU=[
+  {id:'operacion',  nombre:'Operación',                  modulos:['cartaporte','facturas','notacred','pagos']},
+  {id:'catalogos',  nombre:'Catálogos',                  modulos:['centrales','ciudades','colonias','tipoflete','operadores','prodserv']},
+  {id:'clientes',   nombre:'Clientes y Transportistas',  modulos:['clientes','contacto','domicilios','transport']},
+  {id:'flota',      nombre:'Flota',                      modulos:['camiones']},
+  {id:'tarifas',    nombre:'Tarifas',                    modulos:['tarifas','tarkilomts','dieselpre']},
+  {id:'admin',      nombre:'Administración',             modulos:['usuarios','seguridad']},
+];
+const NOMBRES_MODULO={
+  cartaporte:'Carta Porte', facturas:'Facturas', notacred:'Notas de Crédito/Débito', pagos:'Cobros',
+  centrales:'Centrales', ciudades:'Ciudades', colonias:'Colonias', tipoflete:'Tipos de Flete',
+  operadores:'Operadores', prodserv:'Productos y Servicios',
+  clientes:'Clientes', contacto:'Contactos', domicilios:'Domicilios', transport:'Transportistas',
+  camiones:'Camiones', tarifas:'Tarifas', tarkilomts:'Tarifas x Km', dieselpre:'Precios Diesel',
+  usuarios:'Usuarios', seguridad:'Seguridad',
+};
 
 function renderPermisos(clavesSeleccionadas){
   const porModulo={};
   _permisosCatalogo.forEach(p=>{ (porModulo[p.Modulo]=porModulo[p.Modulo]||[]).push(p); });
   const sel=new Set(clavesSeleccionadas||[]);
-  document.getElementById('permisosBox').innerHTML=Object.keys(porModulo).sort().map(mod=>`
+
+  // Cualquier módulo con permisos que no esté en el mapa de arriba (futuros
+  // módulos aún no clasificados) cae en un tab "Otros" -- así nunca desaparece.
+  const asignados=new Set();
+  GRUPOS_MENU.forEach(g=>g.modulos.forEach(m=>asignados.add(m)));
+  const otros=Object.keys(porModulo).filter(m=>!asignados.has(m)).sort();
+  const grupos=(otros.length?[...GRUPOS_MENU,{id:'otros',nombre:'Otros',modulos:otros}]:GRUPOS_MENU)
+    .filter(g=>g.modulos.some(m=>porModulo[m]));
+
+  const htmlModulo=(mod)=>`
     <div class="mb-2">
-      <div class="fw-semibold small text-uppercase text-muted border-bottom mb-1">${mod}</div>
+      <div class="fw-semibold small text-uppercase text-muted border-bottom mb-1">${NOMBRES_MODULO[mod]||mod}</div>
       ${porModulo[mod].map(p=>`
         <div class="form-check">
           <input type="checkbox" class="form-check-input" data-clave="${p.Clave}" id="perm_${p.Clave}" ${sel.has(p.Clave)?'checked':''}>
           <label class="form-check-label" for="perm_${p.Clave}">${p.Descripcion}</label>
         </div>`).join('')}
+    </div>`;
+
+  document.getElementById('permGrupoTabs').innerHTML=grupos.map((g,i)=>`
+    <li class="nav-item"><a class="nav-link ${i===0?'active':''}" data-bs-toggle="pill" href="#permGrupo_${g.id}">${g.nombre}</a></li>
+  `).join('');
+  document.getElementById('permGrupoContent').innerHTML=grupos.map((g,i)=>`
+    <div class="tab-pane fade ${i===0?'show active':''}" id="permGrupo_${g.id}">
+      ${g.modulos.filter(m=>porModulo[m]).map(htmlModulo).join('')}
     </div>`).join('');
 }
 

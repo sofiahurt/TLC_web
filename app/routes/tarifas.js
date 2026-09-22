@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getPool, sql } = require('../config/db');
 const { browseQuery } = require('../config/browse');
+const { requierePermiso } = require('../middleware/permisos');
 
 router.get('/', (req, res) => res.render('tarifas', { usuario: req.session.usuario, modulo: 'tarifas' }));
 
@@ -60,7 +61,7 @@ router.get('/lookup/tipoflete', (req, res) => lookupGeneric(res, 'Empresa2.TipoF
 router.get('/lookup/transport', (req, res) => lookupGeneric(res, 'Empresa2.Transport', 'ID_TRANSPORTISTA', 'NOMBRECOMUN', (req.query.q||'').trim(), parseInt(req.query.page)||1));
 router.get('/lookup/clientes', (req, res) => lookupGeneric(res, 'Empresa2.Clientes', 'ID_CLIENTE', 'NOMBRECOMUN', (req.query.q||'').trim(), parseInt(req.query.page)||1));
 
-router.post('/guardar', async (req, res) => {
+router.post('/guardar', requierePermiso('tarifas.editar'), async (req, res) => {
   const f = req.body;
   try {
     const pool = await getPool();
@@ -99,7 +100,7 @@ router.post('/guardar', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.post('/eliminar', async (req, res) => {
+router.post('/eliminar', requierePermiso('tarifas.editar'), async (req, res) => {
   try {
     const pool = await getPool();
     await pool.request().input('id', sql.Decimal(7), req.body.ID_TARIFA)

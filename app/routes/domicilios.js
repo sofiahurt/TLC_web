@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getPool, sql } = require('../config/db');
 const { browseQuery } = require('../config/browse');
+const { requierePermiso } = require('../middleware/permisos');
 
 router.get('/', (req, res) => res.render('domicilios', { usuario: req.session.usuario, modulo: 'domicilios' }));
 
@@ -38,7 +39,7 @@ router.get('/data', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.post('/guardar', async (req, res) => {
+router.post('/guardar', requierePermiso('domicilios.editar'), async (req, res) => {
   const f = req.body;
   try {
     const pool = await getPool();
@@ -71,7 +72,7 @@ router.post('/guardar', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.post('/eliminar', async (req, res) => {
+router.post('/eliminar', requierePermiso('domicilios.editar'), async (req, res) => {
   try {
     const pool = await getPool();
     await pool.request()

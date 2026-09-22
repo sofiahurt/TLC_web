@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getPool, sql } = require('../config/db');
 const { browseQuery } = require('../config/browse');
+const { requierePermiso } = require('../middleware/permisos');
 
 router.get('/', (req, res) => res.render('prodserv', { usuario: req.session.usuario, modulo: 'prodserv' }));
 
@@ -20,7 +21,7 @@ router.get('/data', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.post('/guardar', async (req, res) => {
+router.post('/guardar', requierePermiso('prodserv.editar'), async (req, res) => {
   const { Clave, ProdServ, c_ProdServ, Descripcion_SAT, c_Unidad, Unidad, Precio, _mode } = req.body;
   try {
     const pool = await getPool();
@@ -49,7 +50,7 @@ router.post('/guardar', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.post('/eliminar', async (req, res) => {
+router.post('/eliminar', requierePermiso('prodserv.editar'), async (req, res) => {
   try {
     const pool = await getPool();
     await pool.request().input('clave', sql.VarChar(30), req.body.Clave)

@@ -3,6 +3,7 @@ const router = express.Router();
 const path = require('path');
 const { getPool, sql } = require('../config/db');
 const { browseQuery } = require('../config/browse');
+const { requierePermiso } = require('../middleware/permisos');
 
 // SAT SQLite catalog helpers (read-only, cached per table)
 let _satDb = null;
@@ -116,7 +117,7 @@ router.get('/lookup/sat/tipo-relacion',  satLookupHandler('sat_TipoRelacion',  '
 router.get('/lookup/sat/unidad',         satLookupHandler('sat_Unidad',        'c_claveunidad',  'nombre'));
 router.get('/lookup/sat/prodserv',       satLookupHandler('sat_ProdServ',      'c_claveprodserv','descripcion'));
 
-router.post('/guardar', async (req, res) => {
+router.post('/guardar', requierePermiso('clientes.editar'), async (req, res) => {
   const f = req.body;
   try {
     const pool = await getPool();
@@ -158,7 +159,7 @@ router.post('/guardar', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.post('/eliminar', async (req, res) => {
+router.post('/eliminar', requierePermiso('clientes.editar'), async (req, res) => {
   try {
     const pool = await getPool();
     await pool.request().input('id', sql.Decimal(7), req.body.ID_CLIENTE)

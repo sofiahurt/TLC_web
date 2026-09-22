@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getPool, sql } = require('../config/db');
 const { browseQuery } = require('../config/browse');
+const { requierePermiso } = require('../middleware/permisos');
 
 const TABLE = 'Empresa2.Ciudades';
 const COLS = ['ID_CIUDAD', 'CIUDAD'];
@@ -22,7 +23,7 @@ router.get('/data', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.post('/guardar', async (req, res) => {
+router.post('/guardar', requierePermiso('ciudades.editar'), async (req, res) => {
   const { ID_CIUDAD, CIUDAD, _mode } = req.body;
   try {
     const pool = await getPool();
@@ -41,7 +42,7 @@ router.post('/guardar', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.post('/eliminar', async (req, res) => {
+router.post('/eliminar', requierePermiso('ciudades.editar'), async (req, res) => {
   try {
     const pool = await getPool();
     await pool.request()

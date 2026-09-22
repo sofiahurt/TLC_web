@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getPool, sql } = require('../config/db');
 const { browseQuery } = require('../config/browse');
+const { requierePermiso } = require('../middleware/permisos');
 
 router.get('/', (req, res) => res.render('transport', { usuario: req.session.usuario, modulo: 'transport' }));
 
@@ -44,7 +45,7 @@ router.get('/lookup/colonias', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.post('/guardar', async (req, res) => {
+router.post('/guardar', requierePermiso('transport.editar'), async (req, res) => {
   const { ID_TRANSPORTISTA, NOMBRECOM, NOMBRECOMUN, CALLENUM, ID_COLONIA, COLONIA, CP, CIUDAD, RFC, REALIZO, _mode } = req.body;
   try {
     const pool = await getPool();
@@ -69,7 +70,7 @@ router.post('/guardar', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.post('/eliminar', async (req, res) => {
+router.post('/eliminar', requierePermiso('transport.editar'), async (req, res) => {
   try {
     const pool = await getPool();
     await pool.request().input('id', sql.Decimal(7), req.body.ID_TRANSPORTISTA)

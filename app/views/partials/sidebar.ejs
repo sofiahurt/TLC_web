@@ -35,34 +35,39 @@
       </div>
     </div>
 
+    <% if (typeof tienePermiso === 'function' && (tienePermiso('centrales.ver') || tienePermiso('ciudades.ver') || tienePermiso('colonias.ver') || tienePermiso('tipoflete.ver') || tienePermiso('operadores.ver') || tienePermiso('prodserv.ver'))) { %>
     <div class="sidebar-group" data-group="catalogos">
       <div class="sidebar-section sidebar-toggle">
         <span>Catálogos</span>
         <i class="bi bi-chevron-down sidebar-chevron"></i>
       </div>
       <div class="sidebar-group-body">
-        <a href="/centrales"  class="sidebar-link <%= modulo==='centrales' ?'active':'' %>"><i class="bi bi-building-gear"></i> Centrales</a>
-        <a href="/ciudades"   class="sidebar-link <%= modulo==='ciudades'  ?'active':'' %>"><i class="bi bi-geo-alt"></i> Ciudades</a>
-        <a href="/colonias"   class="sidebar-link <%= modulo==='colonias'  ?'active':'' %>"><i class="bi bi-mailbox"></i> Colonias</a>
-        <a href="/tipoflete"  class="sidebar-link <%= modulo==='tipoflete' ?'active':'' %>"><i class="bi bi-tags"></i> Tipos de Flete</a>
-        <a href="/operadores" class="sidebar-link <%= modulo==='operadores'?'active':'' %>"><i class="bi bi-person-badge"></i> Operadores</a>
-        <a href="/prodserv"   class="sidebar-link <%= modulo==='prodserv'  ?'active':'' %>"><i class="bi bi-box-seam"></i> Productos y Servicios</a>
+        <% if (tienePermiso('centrales.ver')) { %><a href="/centrales"  class="sidebar-link <%= modulo==='centrales' ?'active':'' %>"><i class="bi bi-building-gear"></i> Centrales</a><% } %>
+        <% if (tienePermiso('ciudades.ver')) { %><a href="/ciudades"   class="sidebar-link <%= modulo==='ciudades'  ?'active':'' %>"><i class="bi bi-geo-alt"></i> Ciudades</a><% } %>
+        <% if (tienePermiso('colonias.ver')) { %><a href="/colonias"   class="sidebar-link <%= modulo==='colonias'  ?'active':'' %>"><i class="bi bi-mailbox"></i> Colonias</a><% } %>
+        <% if (tienePermiso('tipoflete.ver')) { %><a href="/tipoflete"  class="sidebar-link <%= modulo==='tipoflete' ?'active':'' %>"><i class="bi bi-tags"></i> Tipos de Flete</a><% } %>
+        <% if (tienePermiso('operadores.ver')) { %><a href="/operadores" class="sidebar-link <%= modulo==='operadores'?'active':'' %>"><i class="bi bi-person-badge"></i> Operadores</a><% } %>
+        <% if (tienePermiso('prodserv.ver')) { %><a href="/prodserv"   class="sidebar-link <%= modulo==='prodserv'  ?'active':'' %>"><i class="bi bi-box-seam"></i> Productos y Servicios</a><% } %>
       </div>
     </div>
+    <% } %>
 
+    <% if (typeof tienePermiso === 'function' && (tienePermiso('clientes.ver') || tienePermiso('contacto.ver') || tienePermiso('domicilios.ver') || tienePermiso('transport.ver'))) { %>
     <div class="sidebar-group" data-group="clientes">
       <div class="sidebar-section sidebar-toggle">
         <span>Clientes y Transportistas</span>
         <i class="bi bi-chevron-down sidebar-chevron"></i>
       </div>
       <div class="sidebar-group-body">
-        <a href="/clientes"   class="sidebar-link <%= modulo==='clientes'  ?'active':'' %>"><i class="bi bi-building"></i> Clientes</a>
-        <a href="/contacto"   class="sidebar-link <%= modulo==='contacto'  ?'active':'' %>"><i class="bi bi-person-lines-fill"></i> Contactos</a>
-        <a href="/domicilios" class="sidebar-link <%= modulo==='domicilios'?'active':'' %>"><i class="bi bi-house"></i> Domicilios</a>
-        <a href="/transport"  class="sidebar-link <%= modulo==='transport' ?'active':'' %>"><i class="bi bi-truck"></i> Transportistas</a>
+        <% if (tienePermiso('clientes.ver')) { %><a href="/clientes"   class="sidebar-link <%= modulo==='clientes'  ?'active':'' %>"><i class="bi bi-building"></i> Clientes</a><% } %>
+        <% if (tienePermiso('contacto.ver')) { %><a href="/contacto"   class="sidebar-link <%= modulo==='contacto'  ?'active':'' %>"><i class="bi bi-person-lines-fill"></i> Contactos</a><% } %>
+        <% if (tienePermiso('domicilios.ver')) { %><a href="/domicilios" class="sidebar-link <%= modulo==='domicilios'?'active':'' %>"><i class="bi bi-house"></i> Domicilios</a><% } %>
+        <% if (tienePermiso('transport.ver')) { %><a href="/transport"  class="sidebar-link <%= modulo==='transport' ?'active':'' %>"><i class="bi bi-truck"></i> Transportistas</a><% } %>
       </div>
     </div>
+    <% } %>
 
+    <% if (typeof tienePermiso === 'function' && tienePermiso('camiones.ver')) { %>
     <div class="sidebar-group" data-group="flota">
       <div class="sidebar-section sidebar-toggle">
         <span>Flota</span>
@@ -72,18 +77,21 @@
         <a href="/camiones"   class="sidebar-link <%= modulo==='camiones'  ?'active':'' %>"><i class="bi bi-truck-front"></i> Camiones</a>
       </div>
     </div>
+    <% } %>
 
+    <% if (typeof tienePermiso === 'function' && (tienePermiso('tarifas.ver') || tienePermiso('tarkilomts.ver') || tienePermiso('dieselpre.ver'))) { %>
     <div class="sidebar-group" data-group="tarifas">
       <div class="sidebar-section sidebar-toggle">
         <span>Tarifas</span>
         <i class="bi bi-chevron-down sidebar-chevron"></i>
       </div>
       <div class="sidebar-group-body">
-        <a href="/tarifas"    class="sidebar-link <%= modulo==='tarifas'   ?'active':'' %>"><i class="bi bi-currency-dollar"></i> Tarifas</a>
-        <a href="/tarkilomts" class="sidebar-link <%= modulo==='tarkilomts'?'active':'' %>"><i class="bi bi-speedometer2"></i> Tarifas x Km</a>
-        <a href="/dieselpre"  class="sidebar-link <%= modulo==='dieselpre' ?'active':'' %>"><i class="bi bi-fuel-pump"></i> Precios Diesel</a>
+        <% if (tienePermiso('tarifas.ver')) { %><a href="/tarifas"    class="sidebar-link <%= modulo==='tarifas'   ?'active':'' %>"><i class="bi bi-currency-dollar"></i> Tarifas</a><% } %>
+        <% if (tienePermiso('tarkilomts.ver')) { %><a href="/tarkilomts" class="sidebar-link <%= modulo==='tarkilomts'?'active':'' %>"><i class="bi bi-speedometer2"></i> Tarifas x Km</a><% } %>
+        <% if (tienePermiso('dieselpre.ver')) { %><a href="/dieselpre"  class="sidebar-link <%= modulo==='dieselpre' ?'active':'' %>"><i class="bi bi-fuel-pump"></i> Precios Diesel</a><% } %>
       </div>
     </div>
+    <% } %>
 
     <% if (typeof tienePermiso === 'function' && (tienePermiso('seguridad.administrar') || tienePermiso('usuarios.ver'))) { %>
     <div class="sidebar-group" data-group="administracion">
