@@ -74,9 +74,23 @@ router.get('/get', async (req, res) => {
   try {
     const pool = await getPool();
     const id = parseInt(req.query.id);
-    const cabRes = await pool.request().input('id', sql.Decimal(9), id).query(`SELECT * FROM Empresa2.Pagos WHERE Id_NoPago=@id`);
+    const cabRes = await pool.request().input('id', sql.Decimal(9), id).query(`
+      SELECT p.*, cli.RFC
+      FROM Empresa2.Pagos p
+      LEFT JOIN Empresa2.Clientes cli ON cli.ID_CLIENTE=p.Id_Cliente
+      WHERE p.Id_NoPago=@id`);
     if (!cabRes.recordset[0]) return res.status(404).json({ error: 'No encontrado' });
-    const detRes = await pool.request().input('id', sql.Decimal(9), id).query(`SELECT * FROM Empresa2.PagFac WHERE ID_NOPAGO=@id ORDER BY ID_NOPAGFAC`);
+    // TOTALDOC = total original de la Factura/ND referenciada -- junto con
+    // SALDOANT (saldo ya congelado al momento de agregar la línea) permite
+    // mostrar "Pagos realizados" = TOTALDOC - SALDOANT en el detalle.
+    const detRes = await pool.request().input('id', sql.Decimal(9), id).query(`
+      SELECT pf.*, ISNULL(fac.TOTAL, nd.ImporteTotal) AS TOTALDOC
+      FROM Empresa2.PagFac pf
+      LEFT JOIN Empresa2.Factura fac ON pf.NOFACTURA>0 AND fac.Id_NoFactura=pf.NOFACTURA
+        AND ISNULL(LTRIM(RTRIM(fac.SerieFac)),'')=ISNULL(LTRIM(RTRIM(pf.SERIEFAC)),'')
+      LEFT JOIN Empresa2.NotaCred nd ON pf.ID_NOTACREDITO>0 AND nd.Id_NotaCredito=pf.ID_NOTACREDITO
+        AND LTRIM(RTRIM(nd.Tipo))='ND' AND ISNULL(LTRIM(RTRIM(nd.Serie)),'')=ISNULL(LTRIM(RTRIM(pf.SERIEND)),'')
+      WHERE pf.ID_NOPAGO=@id ORDER BY pf.ID_NOPAGFAC`);
     res.json({ cabecera: cabRes.recordset[0], lineas: detRes.recordset });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -113,7 +127,12 @@ router.get('/lookup/facturas', async (req, res) => {
     const q = trim(req.query.q);
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const excluirId = parseInt(req.query.excluirId) || 0;
-    let where = `WHERE Id_Cliente=@idCliente AND LTRIM(RTRIM(ISNULL(Status,'')))<>'CANCELADA' AND LTRIM(RTRIM(ISNULL(Status,'')))<>'PAGADA'`;
+    // El saldo disponible se calcula (TOTAL - PagosReal - NotasCredito) en vez
+    // de confiar en el texto de Status: hay facturas legado marcadas 'VENCIDA'
+    // (no 'PAGADA') que ya están cubiertas por completo -- filtrarlas por
+    // Status las dejaba aparecer en el buscador con saldo $0.00.
+    let where = `WHERE Id_Cliente=@idCliente AND LTRIM(RTRIM(ISNULL(Status,'')))<>'CANCELADA'
+                 AND (TOTAL - ISNULL(PagosReal,0) - ISNULL(NotasCredito,0)) > 0.005`;
     if (excluirId) {
       where += ` AND NOT EXISTS (
         SELECT 1 FROM Empresa2.PagFac pf
@@ -136,7 +155,8 @@ router.get('/lookup/facturas', async (req, res) => {
     res.json({
       rows: data.recordset.map(r => ({
         Id_NoFactura: r.Id_NoFactura, SerieFac: r.SerieFac || '', FechaFactura: fmtDate(r.FechaFactura),
-        TOTAL: r.TOTAL || 0, Saldo: Math.max(0, num(r.TOTAL) - num(r.PagosReal) - num(r.NotasCredito)),
+        TOTAL: r.TOTAL || 0, PagosRealizados: num(r.PagosReal) + num(r.NotasCredito),
+        Saldo: Math.max(0, num(r.TOTAL) - num(r.PagosReal) - num(r.NotasCredito)),
         Status: trim(r.Status), ClaveMP: trim(r.ClaveMP),
       })),
       total, totalPages: Math.ceil(total / 10) || 1, page,
@@ -239,7 +259,7 @@ router.post('/partida/agregar', requierePermiso('pagos.editar'), async (req, res
           )`);
       } else {
         const cabRes = await new sql.Request(tx).input('id', sql.Decimal(9), idNoPago).query(`SELECT Status, FlagCompensacion, Id_Cliente FROM Empresa2.Pagos WHERE Id_NoPago=@id`);
-        if (!cabRes.recordset[0]) throw Object.assign(new Error('Pago no encontrado.'), { status: 400 });
+        if (!cabRes.recordset[0]) throw Object.assign(new Error('Cobro no encontrado.'), { status: 400 });
       }
 
       const nextDetaRes = await new sql.Request(tx).input('id', sql.Decimal(9), idNoPago).query(`SELECT ISNULL(MAX(ID_NOPAGFAC),0)+1 AS next FROM Empresa2.PagFac WHERE ID_NOPAGO=@id`);
@@ -262,7 +282,7 @@ router.post('/partida/agregar', requierePermiso('pagos.editar'), async (req, res
         const dupRes = await new sql.Request(tx)
           .input('idpago', sql.Decimal(9), idNoPago).input('idnofactura', sql.Decimal(9), idNoFactura).input('seriefac', sql.VarChar(20), serieFacRef)
           .query(`SELECT TOP 1 1 AS x FROM Empresa2.PagFac WHERE ID_NOPAGO=@idpago AND NOFACTURA=@idnofactura AND ISNULL(LTRIM(RTRIM(SERIEFAC)),'')=ISNULL(@seriefac,'')`);
-        if (dupRes.recordset[0]) throw Object.assign(new Error('Esa Factura ya fue agregada a este pago.'), { status: 400 });
+        if (dupRes.recordset[0]) throw Object.assign(new Error('Esa Factura ya fue agregada a este cobro.'), { status: 400 });
 
         const saldoAnt = Math.round(Math.max(num(fac.TOTAL) - num(fac.PagosReal) - num(fac.NotasCredito), 0) * 100) / 100;
         if (saldoAnt <= 0.005) throw Object.assign(new Error('Esa factura ya está pagada.'), { status: 400 });
@@ -287,7 +307,7 @@ router.post('/partida/agregar', requierePermiso('pagos.editar'), async (req, res
         const dupRes = await new sql.Request(tx)
           .input('idpago', sql.Decimal(9), idNoPago).input('idnd', sql.Decimal(7), idNotaDebito).input('seriend', sql.VarChar(20), serieND)
           .query(`SELECT TOP 1 1 AS x FROM Empresa2.PagFac WHERE ID_NOPAGO=@idpago AND ID_NOTACREDITO=@idnd AND ISNULL(LTRIM(RTRIM(SERIEND)),'')=ISNULL(@seriend,'')`);
-        if (dupRes.recordset[0]) throw Object.assign(new Error('Esa Nota de Débito ya fue agregada a este pago.'), { status: 400 });
+        if (dupRes.recordset[0]) throw Object.assign(new Error('Esa Nota de Débito ya fue agregada a este cobro.'), { status: 400 });
 
         // Todo o nada (confirmado con el usuario, igual que el legado): no
         // maneja saldo parcial, el importe siempre es el total de la ND.
@@ -369,7 +389,7 @@ router.post('/linea/actualizar-importe', requierePermiso('pagos.editar'), async 
     const pool = await getPool();
     const result = await withTransaction(pool, async (tx) => {
       const cabRes = await new sql.Request(tx).input('id', sql.Decimal(9), idNoPago).query(`SELECT FlagCompensacion FROM Empresa2.Pagos WHERE Id_NoPago=@id`);
-      if (!cabRes.recordset[0]) throw Object.assign(new Error('Pago no encontrado.'), { status: 404 });
+      if (!cabRes.recordset[0]) throw Object.assign(new Error('Cobro no encontrado.'), { status: 404 });
       const flagCompensacion = Number(cabRes.recordset[0].FlagCompensacion) === 1;
 
       const lineaRes = await new sql.Request(tx)
@@ -442,14 +462,14 @@ router.post('/partida/eliminar', requierePermiso('pagos.editar'), async (req, re
 // ── ACTUALIZAR CAMPOS DE CABECERA ─────────────────────────────────────────
 router.post('/cabecera/actualizar', requierePermiso('pagos.editar'), async (req, res) => {
   const idNoPago = parseInt(req.body.idNoPago);
-  if (!idNoPago) return res.status(400).json({ error: 'Pago inválido.' });
+  if (!idNoPago) return res.status(400).json({ error: 'Cobro inválido.' });
   try {
     const pool = await getPool();
     await withTransaction(pool, async (tx) => {
       const cabRes = await new sql.Request(tx).input('id', sql.Decimal(9), idNoPago).query(`SELECT UUID FROM Empresa2.Pagos WHERE Id_NoPago=@id`);
-      if (!cabRes.recordset[0]) throw Object.assign(new Error('Pago no encontrado.'), { status: 404 });
+      if (!cabRes.recordset[0]) throw Object.assign(new Error('Cobro no encontrado.'), { status: 404 });
       const yaTimbrado = !!trim(cabRes.recordset[0].UUID);
-      if (yaTimbrado) throw Object.assign(new Error('El pago ya está timbrado; no se puede modificar.'), { status: 400 });
+      if (yaTimbrado) throw Object.assign(new Error('El cobro ya está timbrado; no se puede modificar.'), { status: 400 });
 
       const r2 = new sql.Request(tx).input('id', sql.Decimal(9), idNoPago)
         .input('flagComp', sql.TinyInt, req.body.flagCompensacion ? 1 : 0);
@@ -474,16 +494,16 @@ router.post('/cabecera/actualizar', requierePermiso('pagos.editar'), async (req,
 // el efecto sobre el saldo de cada Factura/ND relacionada ─────────────────
 router.post('/cabecera/grabar', requierePermiso('pagos.editar'), async (req, res) => {
   const idNoPago = parseInt(req.body.idNoPago);
-  if (!idNoPago) return res.status(400).json({ error: 'Pago inválido.' });
+  if (!idNoPago) return res.status(400).json({ error: 'Cobro inválido.' });
   try {
     const pool = await getPool();
     await withTransaction(pool, async (tx) => {
       const cabRes = await new sql.Request(tx).input('id', sql.Decimal(9), idNoPago).query(`SELECT * FROM Empresa2.Pagos WHERE Id_NoPago=@id`);
       const cab = cabRes.recordset[0];
-      if (!cab) throw Object.assign(new Error('Pago no encontrado.'), { status: 404 });
+      if (!cab) throw Object.assign(new Error('Cobro no encontrado.'), { status: 404 });
 
       const detRes = await new sql.Request(tx).input('id', sql.Decimal(9), idNoPago).query(`SELECT * FROM Empresa2.PagFac WHERE ID_NOPAGO=@id`);
-      if (!detRes.recordset.length) throw Object.assign(new Error('El pago no tiene líneas.'), { status: 400 });
+      if (!detRes.recordset.length) throw Object.assign(new Error('El cobro no tiene líneas.'), { status: 400 });
 
       const anio = new Date().getFullYear();
       for (const linea of detRes.recordset) {
@@ -541,15 +561,15 @@ async function revertirEfectoSaldoPago(tx, idNoPago) {
 
 router.post('/cancelar', requierePermiso('pagos.btn_cancelar'), async (req, res) => {
   const idNoPago = parseInt(req.body.idNoPago);
-  if (!idNoPago) return res.status(400).json({ error: 'Pago inválido.' });
+  if (!idNoPago) return res.status(400).json({ error: 'Cobro inválido.' });
   try {
     const pool = await getPool();
     const cabRes = await pool.request().input('id', sql.Decimal(9), idNoPago).query(`SELECT Status, UUID FROM Empresa2.Pagos WHERE Id_NoPago=@id`);
     const cab = cabRes.recordset[0];
-    if (!cab) return res.status(404).json({ error: 'Pago no encontrado.' });
+    if (!cab) return res.status(404).json({ error: 'Cobro no encontrado.' });
     if (trim(cab.Status).toUpperCase() === 'CANCELADO') return res.status(400).json({ error: 'Ya está cancelado.' });
     if (trim(cab.UUID)) {
-      return res.status(409).json({ error: 'Este pago ya está timbrado; debe cancelarse fiscalmente primero (usar el flujo de Cancelar con PAC).', requiereFiscal: true });
+      return res.status(409).json({ error: 'Este cobro ya está timbrado; debe cancelarse fiscalmente primero (usar el flujo de Cancelar con PAC).', requiereFiscal: true });
     }
     await withTransaction(pool, async (tx) => {
       await revertirEfectoSaldoPago(tx, idNoPago);

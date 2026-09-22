@@ -30,13 +30,13 @@ function monedaDesdeTipoFacturas(tipoFacturas) {
 async function buildCFDIPago(idNoPago, centralOperativo, pool) {
   // 1. Cabecera
   const cabRes = await pool.request().input('id', sql.Decimal(9), idNoPago).query(`SELECT * FROM Empresa2.Pagos WHERE Id_NoPago=@id`);
-  if (!cabRes.recordset.length) throw new Error(`Pago ${idNoPago} no encontrado`);
+  if (!cabRes.recordset.length) throw new Error(`Cobro ${idNoPago} no encontrado`);
   const cab = cabRes.recordset[0];
 
   // 2. Líneas
   const detRes = await pool.request().input('id', sql.Decimal(9), idNoPago).query(`SELECT * FROM Empresa2.PagFac WHERE ID_NOPAGO=@id ORDER BY ID_NOPAGFAC`);
   const lineas = detRes.recordset;
-  if (!lineas.length) throw new Error(`El Pago ${idNoPago} no tiene líneas`);
+  if (!lineas.length) throw new Error(`El Cobro ${idNoPago} no tiene líneas`);
 
   // 3. Empresa emisora
   const empRes = await pool.request().input('serie', sql.VarChar(10), serieFiscal(centralOperativo)).query(`SELECT * FROM dbo.Empresas WHERE LTRIM(RTRIM(SERIE)) = @serie`);
@@ -46,7 +46,7 @@ async function buildCFDIPago(idNoPago, centralOperativo, pool) {
   // 4. Receptor (cliente facturado, cabecera del pago)
   const cliRes = await pool.request().input('id', sql.Decimal(18, 0), cab.Id_Cliente).query(`SELECT * FROM Empresa2.Clientes WHERE Id_Cliente = @id`);
   const cli = cliRes.recordset[0];
-  if (!cli) throw new Error(`Cliente ${cab.Id_Cliente} del Pago ${idNoPago} no encontrado`);
+  if (!cli) throw new Error(`Cliente ${cab.Id_Cliente} del Cobro ${idNoPago} no encontrado`);
 
   const emisorRFC    = fmt(emp.RFC);
   const emisorNombre = fmt(emp.NOMBRECORTO);
@@ -63,7 +63,7 @@ async function buildCFDIPago(idNoPago, centralOperativo, pool) {
     tipoCambioP = '1';
   } else {
     const tc = parseFloat(cab.TipoCambio);
-    if (!tc || tc <= 0) throw new Error(`El Pago ${idNoPago} está en ${monedaP} pero no tiene un tipo de cambio válido capturado.`);
+    if (!tc || tc <= 0) throw new Error(`El Cobro ${idNoPago} está en ${monedaP} pero no tiene un tipo de cambio válido capturado.`);
     tipoCambioP = String(tc);
   }
   const fechaPago    = isoFechaHora(cab.FechaPago || cab.Fecha, null);
@@ -81,6 +81,21 @@ async function buildCFDIPago(idNoPago, centralOperativo, pool) {
       if (!fac) throw new Error(`Factura ${l.NOFACTURA} de la línea ${l.ID_NOPAGFAC} no encontrada`);
       if (!fmt(fac.UUID)) throw new Error(`La Factura ${l.NOFACTURA} referenciada aún no está timbrada; no se puede generar el Complemento de Pago.`);
 
+      // Saldo de la Factura ANTES de este Cobro. Se confía en PagFac.SALDOANT
+      // (congelado al agregar la línea) SOLO cuando es consistente con lo que
+      // esa misma línea aplicó (>= TOTALPAGO) -- si no, se asume que este
+      // Cobro por sí solo liquidó el total declarado en sus propias columnas
+      // (ImpSaldoInsoluto queda en 0), en vez de restar contra el
+      // PagosReal/NotasCredito "en vivo" de la Factura, que en datos legado ya
+      // vienen duplicados/corrompidos (confirmado: varias facturas reales con
+      // PagosReal ≈ 2×TOTAL). Caso real que expuso el bug: Pago 3495, filas
+      // legado (importadas del sistema anterior, nunca creadas por este
+      // módulo) con SALDOANT=0, producían ImpSaldoAnt="-9920.28" (0-IMPRTE) en
+      // el nodo de compensación; con este fallback da ImpSaldoAnt=TOTALPAGO,
+      // que aquí coincide exactamente con el TOTAL de la factura (pago único).
+      const totalPagoLinea = num(l.TOTALPAGO);
+      const saldoBase = num(l.SALDOANT) >= totalPagoLinea - 0.005 ? num(l.SALDOANT) : totalPagoLinea;
+
       let numParcialidad = 1;
       if (fmt(fac.ClaveMP).toUpperCase() === 'PPD') {
         const prevRes = await pool.request()
@@ -95,20 +110,22 @@ async function buildCFDIPago(idNoPago, centralOperativo, pool) {
         linea: l, esFactura: true, uuid: fmt(fac.UUID), monedaDR: fmt(fac.MonFactura) || 'MXN',
         tipoCambioDR: parseFloat(fac.TipoCambio) || 1, // 1 [MonedaDR] = tipoCambioDR MXN
         objetoImpDR: (num(fac.IVA) > 0.005 || num(fac.Retencion) > 0.005) ? '02' : '01',
-        numParcialidad,
+        numParcialidad, saldoBase,
         serieDoc: fmt(l.SERIEFAC) || undefined, folioDoc: String(l.NOFACTURA),
       });
     } else if (Number(l.ID_NOTACREDITO) > 0) {
       const ndRes = await pool.request().input('id', sql.Decimal(7), l.ID_NOTACREDITO).input('serie', sql.VarChar(10), fmt(l.SERIEND) || null)
-        .query(`SELECT UUID, IVA, Retencion FROM Empresa2.NotaCred WHERE Id_NotaCredito=@id AND LTRIM(RTRIM(Tipo))='ND' AND ISNULL(LTRIM(RTRIM(Serie)),'')=ISNULL(@serie,'')`);
+        .query(`SELECT UUID, IVA, Retencion, ImporteTotal FROM Empresa2.NotaCred WHERE Id_NotaCredito=@id AND LTRIM(RTRIM(Tipo))='ND' AND ISNULL(LTRIM(RTRIM(Serie)),'')=ISNULL(@serie,'')`);
       const nd = ndRes.recordset[0];
       if (!nd) throw new Error(`Nota de Débito ${l.ID_NOTACREDITO} de la línea ${l.ID_NOPAGFAC} no encontrada`);
       if (!fmt(nd.UUID)) throw new Error(`La Nota de Débito ${l.ID_NOTACREDITO} referenciada aún no está timbrada; no se puede generar el Complemento de Pago.`);
-      // Todo o nada (confirmado con el usuario): siempre 1 sola parcialidad.
+      // Todo o nada (confirmado con el usuario): siempre 1 sola parcialidad,
+      // y el saldo base es siempre el total de la ND (no acumula un
+      // PagosReal propio -- su Status es la única marca de si ya se pagó).
       datosLinea.push({
         linea: l, esFactura: false, uuid: fmt(nd.UUID), monedaDR: 'MXN', tipoCambioDR: 1,
         objetoImpDR: (num(nd.IVA) > 0.005 || num(nd.Retencion) > 0.005) ? '02' : '01',
-        numParcialidad: 1,
+        numParcialidad: 1, saldoBase: num(nd.ImporteTotal),
         serieDoc: fmt(l.SERIEND) || undefined, folioDoc: String(l.ID_NOTACREDITO),
       });
     }
@@ -150,7 +167,7 @@ async function buildCFDIPago(idNoPago, centralOperativo, pool) {
   // pago20:Totales debe ir ANTES de los pago20:Pago en el XML, pero sus
   // valores dependen de la suma de impuestos de ambos, así que se calcula
   // todo en JS puro primero y se construye el árbol ya en el orden correcto.
-  function calcularDocsRelacionados(docs, campoMonto, campoSubtotal, campoIva, campoReten, saldoAntFn) {
+  function calcularDocsRelacionados(docs, campoMonto, campoSubtotal, campoIva, campoReten, esCompensacion) {
     let totRetISR = 0, totBaseIVA16 = 0, totImpIVA16 = 0;
     const relacionados = docs
       .filter(d => num(d.linea[campoMonto]) > 0.005)
@@ -160,7 +177,12 @@ async function buildCFDIPago(idNoPago, centralOperativo, pool) {
         const subtotalLinea = num(l[campoSubtotal]);
         const ivaLinea = num(l[campoIva]);
         const retLinea = num(l[campoReten]);
-        const saldoInsoluto = num(l.SALDOANT) - num(l.TOTALPAGO); // pagado + compensado ya reducen el mismo saldo
+        // El nodo de compensación parte del saldo YA reducido por la porción
+        // real de esta misma línea (si la hubo); el de pago real parte del
+        // saldo base tal cual (ver saldoBase, calculado desde PagosReal/
+        // NotasCredito reales de la Factura, no desde PagFac.SALDOANT).
+        const impSaldoAnt = Math.max(0, esCompensacion ? (d.saldoBase - num(l.IMPRTE)) : d.saldoBase);
+        const saldoInsoluto = impSaldoAnt - montoAplicado;
         const drAttrs = { IdDocumento: d.uuid };
         // Serie/Folio del documento relacionado (Factura o Nota de Débito),
         // tal como se capturaron en la línea del Pago -- a diferencia del
@@ -170,7 +192,7 @@ async function buildCFDIPago(idNoPago, centralOperativo, pool) {
         drAttrs.Folio = d.folioDoc;
         Object.assign(drAttrs, {
           MonedaDR: d.monedaDR, NumParcialidad: String(d.numParcialidad),
-          ImpSaldoAnt: fmtDec(saldoAntFn(l), 2), ImpPagado: fmtDec(montoAplicado, 2),
+          ImpSaldoAnt: fmtDec(impSaldoAnt, 2), ImpPagado: fmtDec(montoAplicado, 2),
           ImpSaldoInsoluto: fmtDec(Math.max(0, saldoInsoluto), 2), ObjetoImpDR: d.objetoImpDR,
         });
         // Regla real del Complemento de Pagos (confirmada por rechazo del PAC):
@@ -205,12 +227,12 @@ async function buildCFDIPago(idNoPago, centralOperativo, pool) {
   const hayCompensacion = Number(cab.FlagCompensacion) === 1 && montoComp > 0.005;
 
   const pagoReal = montoReal > 0.005
-    ? calcularDocsRelacionados(datosLinea, 'IMPRTE', 'SUBTOTAL', 'IVA', 'RETENCION', l => num(l.SALDOANT))
+    ? calcularDocsRelacionados(datosLinea, 'IMPRTE', 'SUBTOTAL', 'IVA', 'RETENCION', false)
     : null;
   // El nodo de Compensación parte del saldo YA reducido por la porción real
   // de esa misma línea (si la hubo) -- no del saldo antes de todo el pago.
   const pagoComp = hayCompensacion
-    ? calcularDocsRelacionados(datosLinea, 'COMPESACION', 'SUBTOTALCOMP', 'IVACOMP', 'RETENCIONCOMP', l => num(l.SALDOANT) - num(l.IMPRTE))
+    ? calcularDocsRelacionados(datosLinea, 'COMPESACION', 'SUBTOTALCOMP', 'IVACOMP', 'RETENCIONCOMP', true)
     : null;
 
   const montoTotalPagos = montoReal + (hayCompensacion ? montoComp : 0);

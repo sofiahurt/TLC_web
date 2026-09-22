@@ -875,11 +875,11 @@ router.post('/timbrar-pago', requierePermiso('pagos.btn_timbrar'), async (req, r
 
     // 0. UUID ya existente (307) + Status (no se timbra un pago cancelado)
     const prevRes = await pool.request().input('id', sql.Decimal(9), idNoPago).query(`SELECT UUID, Status FROM Empresa2.Pagos WHERE Id_NoPago=@id`);
-    if (!prevRes.recordset[0]) return res.status(404).json({ ok: false, error: 'Pago no encontrado' });
+    if (!prevRes.recordset[0]) return res.status(404).json({ ok: false, error: 'Cobro no encontrado' });
     const uuidExistente = (prevRes.recordset[0].UUID || '').trim();
-    if (uuidExistente) return res.status(400).json({ ok: false, error: 'Este pago ya está timbrado.' });
+    if (uuidExistente) return res.status(400).json({ ok: false, error: 'Este cobro ya está timbrado.' });
     if ((prevRes.recordset[0].Status || '').trim().toUpperCase() === 'CANCELADO') {
-      return res.status(400).json({ ok: false, error: 'Este pago está cancelado, no puede timbrarse.' });
+      return res.status(400).json({ ok: false, error: 'Este cobro está cancelado, no puede timbrarse.' });
     }
 
     const central = (req.session.central || '').trim();
@@ -905,7 +905,7 @@ router.post('/timbrar-pago', requierePermiso('pagos.btn_timbrar'), async (req, r
 
     // Reenvío (307) — mismo manejo que Carta Porte/Factura/Notas de Crédito.
     if (pacResult.reenvio && uuidExistente) {
-      return res.json({ ok: true, mensaje: `Este pago ya estaba timbrado. UUID: ${uuidExistente}`, pacResult: { ...pacResult, uuid: uuidExistente } });
+      return res.json({ ok: true, mensaje: `Este cobro ya estaba timbrado. UUID: ${uuidExistente}`, pacResult: { ...pacResult, uuid: uuidExistente } });
     }
 
     // 5. Persistir UUID/FechaTimbrado/ProvTim. Status se queda tal cual (REALIZADO).
@@ -930,7 +930,7 @@ router.post('/timbrar-pago', requierePermiso('pagos.btn_timbrar'), async (req, r
 
     res.json({
       ok: true,
-      mensaje: `Pago timbrado correctamente${conexion.testFel ? ' (modo prueba)' : ''}. UUID: ${pacResult.uuid}`,
+      mensaje: `Cobro timbrado correctamente${conexion.testFel ? ' (modo prueba)' : ''}. UUID: ${pacResult.uuid}`,
       testFel: conexion.testFel,
       pacResult,
     });
@@ -955,9 +955,9 @@ router.post('/cancelar-pago', requierePermiso('pagos.btn_cancelar'), async (req,
     const pool = await getPool();
     const cabRes = await pool.request().input('id', sql.Decimal(9), idNoPago).query(`SELECT * FROM Empresa2.Pagos WHERE Id_NoPago=@id`);
     const pago = cabRes.recordset[0];
-    if (!pago) return res.status(404).json({ ok: false, error: 'Pago no encontrado' });
+    if (!pago) return res.status(404).json({ ok: false, error: 'Cobro no encontrado' });
     const uuid = (pago.UUID || '').trim();
-    if (!uuid) return res.status(400).json({ ok: false, error: 'Este pago no está timbrado; use la cancelación normal (sin PAC).' });
+    if (!uuid) return res.status(400).json({ ok: false, error: 'Este cobro no está timbrado; use la cancelación normal (sin PAC).' });
     if ((pago.Status || '').trim().toUpperCase() === 'CANCELADO') return res.status(400).json({ ok: false, error: 'Ya está cancelado.' });
 
     const central = (req.session.central || '').trim();
@@ -994,7 +994,7 @@ router.post('/cancelar-pago', requierePermiso('pagos.btn_cancelar'), async (req,
       fs.writeFileSync(path.join(RUTA_XML, `${nombreBase}_Acuse.xml`), cancelacion.acuseXml, 'utf8');
     }
 
-    res.json({ ok: true, mensaje: 'Pago cancelado correctamente ante el SAT.', pacResult: cancelacion.pacResult });
+    res.json({ ok: true, mensaje: 'Cobro cancelado correctamente ante el SAT.', pacResult: cancelacion.pacResult });
   } catch (err) {
     console.error('CFDI cancelar-pago error:', err);
     res.status(500).json({ ok: false, error: err.message });
@@ -1042,8 +1042,8 @@ router.get('/xml-pago', async (req, res) => {
     const pool = await getPool();
     const pagoRes = await pool.request().input('id', sql.Decimal(9), idNoPago).query(`SELECT UUID FROM Empresa2.Pagos WHERE Id_NoPago=@id`);
     const pago = pagoRes.recordset[0];
-    if (!pago) return res.status(404).json({ error: 'Pago no encontrado' });
-    if (!(pago.UUID || '').trim()) return res.status(400).json({ error: 'Este pago todavía no está timbrado' });
+    if (!pago) return res.status(404).json({ error: 'Cobro no encontrado' });
+    if (!(pago.UUID || '').trim()) return res.status(400).json({ error: 'Este cobro todavía no está timbrado' });
 
     const nombreBase = `PAGO_${idNoPago}`;
     const rutaTimbrada = path.join(RUTA_XML, `${nombreBase}_Timbrada.xml`);

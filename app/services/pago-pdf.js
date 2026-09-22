@@ -53,7 +53,7 @@ function extraerDatosXMLPago(xmlString) {
 async function datosParaImpresionPago(idNoPago, pool, centralOperativo = 'CUA') {
   const cabRes = await pool.request().input('id', sql.Decimal(9), idNoPago).query(`SELECT * FROM Empresa2.Pagos WHERE Id_NoPago=@id`);
   const pago = cabRes.recordset[0];
-  if (!pago) throw new Error(`Pago ${idNoPago} no encontrado`);
+  if (!pago) throw new Error(`Cobro ${idNoPago} no encontrado`);
 
   const detRes = await pool.request().input('id', sql.Decimal(9), idNoPago).query(`SELECT * FROM Empresa2.PagFac WHERE ID_NOPAGO=@id ORDER BY ID_NOPAGFAC`);
   const lineas = detRes.recordset;
@@ -78,7 +78,7 @@ async function datosParaImpresionPago(idNoPago, pool, centralOperativo = 'CUA') 
     const rutaTimbrada = path.join(RUTA_XML, `${nombreBase}_Timbrada.xml`);
     const rutaPrueba   = path.join(RUTA_XML, `${nombreBase}_Prueba.xml`);
     const rutaFinal = fs.existsSync(rutaTimbrada) ? rutaTimbrada : (fs.existsSync(rutaPrueba) ? rutaPrueba : null);
-    if (!rutaFinal) throw new Error(`Este Pago está marcado como timbrado pero no se encontró el XML en ${RUTA_XML}`);
+    if (!rutaFinal) throw new Error(`Este Cobro está marcado como timbrado pero no se encontró el XML en ${RUTA_XML}`);
     xmlString = fs.readFileSync(rutaFinal, 'utf8');
   } else {
     const built = await buildCFDIPago(idNoPago, centralOperativo, pool);

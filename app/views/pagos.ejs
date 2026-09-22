@@ -1,9 +1,9 @@
-<%- include('partials/header', { titulo: 'Pagos' }) %>
+<%- include('partials/header', { titulo: 'Cobros' }) %>
 <%- include('partials/sidebar') %>
 <div id="page-content">
   <div class="d-flex align-items-center mb-3">
     <button class="btn btn-sm btn-outline-secondary me-3 d-md-none" id="sidebarToggle"><i class="bi bi-list fs-5"></i></button>
-    <h4 class="mb-0 fw-bold flex-grow-1">Pagos</h4>
+    <h4 class="mb-0 fw-bold flex-grow-1">Cobros</h4>
   </div>
 
   <div class="card border-0 shadow-sm mb-3 barra-filtros"><div class="card-body py-2">
@@ -13,7 +13,7 @@
       </select></div>
       <div class="col col-md-4"><input type="text" id="searchInput" class="form-control form-select-sm" placeholder="Buscar..."></div>
       <div class="col-auto ms-auto btn-action-group">
-        <button class="btn btn-sm btn-success" onclick="openAdd()"><i class="bi bi-plus-lg"></i> Nuevo Pago</button>
+        <button class="btn btn-sm btn-success" onclick="openAdd()"><i class="bi bi-plus-lg"></i> Nuevo Cobro</button>
         <button class="btn btn-sm btn-primary" data-requires-selection disabled onclick="openEdit()"><i class="bi bi-eye"></i> Ver / Editar</button>
         <% if (tienePermiso('pagos.btn_timbrar')) { %>
         <button class="btn btn-sm btn-warning" id="btnTimbrarPago" disabled onclick="openTimbrarPago()"><i class="bi bi-file-earmark-check"></i> Timbrar</button>
@@ -30,7 +30,7 @@
       <thead class="thead-tlc"><tr>
         <th data-sort="Id_NoPago" style="width:70px">No. <span class="sort-icon"></span></th>
         <th data-sort="Fecha" style="width:100px">Fecha <span class="sort-icon"></span></th>
-        <th data-sort="FechaPago" style="width:100px">Fecha Pago <span class="sort-icon"></span></th>
+        <th data-sort="FechaPago" style="width:100px">Fecha Cobro <span class="sort-icon"></span></th>
         <th data-sort="NombreCom">Cliente <span class="sort-icon"></span></th>
         <th data-sort="NomClientePago">Paga <span class="sort-icon"></span></th>
         <th class="text-end" style="width:120px">Total</th>
@@ -56,7 +56,7 @@
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title" id="frmTitle">Nuevo Pago</h5>
+        <h5 class="modal-title" id="frmTitle">Nuevo Cobro</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" onclick="return onCerrarModal()"></button>
       </div>
       <div class="modal-body">
@@ -113,8 +113,9 @@
               </div>
             </div>
             <div class="row g-2 mt-1">
-              <div class="col-md-6">
+              <div class="col-md-6 d-flex align-items-center gap-2">
                 <button class="btn btn-sm btn-primary" id="btnBuscarDoc" onclick="openLookupDocumento()"><i class="bi bi-search"></i> Buscar Factura o Nota de Débito...</button>
+                <input type="text" id="filtroLineasQ" class="form-control form-control-sm" style="width:160px" placeholder="Ubicar folio agregado...">
               </div>
             </div>
           </div>
@@ -124,7 +125,7 @@
             <div class="input-group input-group-sm mb-2">
               <input type="date" id="f_Fecha" class="form-control form-control-sm" onchange="onCabeceraFieldChange()">
             </div>
-            <label class="form-label fw-semibold small mb-1">Fecha del pago</label>
+            <label class="form-label fw-semibold small mb-1">Fecha del cobro</label>
             <div class="input-group input-group-sm mb-2">
               <input type="date" id="f_FechaPago" class="form-control form-control-sm" onchange="onCabeceraFieldChange()">
             </div>
@@ -153,6 +154,7 @@
             <thead class="table-light">
               <tr>
                 <th>Referencia</th>
+                <th class="text-end">Pagos realizados</th>
                 <th class="text-end">Saldo disp.</th>
                 <th class="text-end">Pagado</th>
                 <th class="text-end" id="thComp" style="display:none">Compensado</th>
@@ -163,7 +165,7 @@
             <tbody id="detBody"></tbody>
             <tfoot>
               <tr class="fw-bold table-light">
-                <td colspan="2" class="text-end">Totales:</td>
+                <td colspan="3" class="text-end">Totales:</td>
                 <td class="text-end" id="totPagado">0.00</td>
                 <td class="text-end" id="totComp" style="display:none">0.00</td>
                 <td class="text-end" id="totGran">0.00</td>
@@ -172,6 +174,7 @@
             </tfoot>
           </table>
         </div>
+        <div class="small text-muted mb-2" id="detCount">0 documentos</div>
 
         <div class="row g-2 mt-2">
           <div class="col-md-12 small text-muted">Realizó: <strong id="f_Realizo_disp"><%= usuario.nombre.trim() %> <%= usuario.apellido ? usuario.apellido.trim() : '' %></strong></div>
@@ -211,7 +214,7 @@
         <li class="nav-item"><a class="nav-link" data-doc="nd" href="#" onclick="return docLkSwitchTab(this)">Notas de Débito</a></li>
       </ul>
       <input type="text" id="docLkQ" class="form-control form-control-sm mb-2" placeholder="Buscar por folio...">
-      <table class="table table-hover table-sm"><thead class="table-secondary"><tr><th>Folio</th><th>Fecha</th><th class="text-end">Saldo</th><th>Status</th></tr></thead>
+      <table class="table table-hover table-sm"><thead class="table-secondary"><tr><th>Folio</th><th>Fecha</th><th class="text-end">Total</th><th class="text-end">Pagos realizados</th><th class="text-end">Saldo disp.</th><th>Status</th></tr></thead>
       <tbody id="docLkBody"></tbody></table>
       <div class="d-flex justify-content-between align-items-center">
         <span id="docLkInfo" class="small text-muted"></span>
@@ -242,7 +245,7 @@
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header">
-        <h6 class="modal-title"><i class="bi bi-file-earmark-check me-2 text-warning"></i>Timbrar Pago</h6>
+        <h6 class="modal-title"><i class="bi bi-file-earmark-check me-2 text-warning"></i>Timbrar Cobro</h6>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body" id="timbraPagoBody"></div>
@@ -261,7 +264,7 @@
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header">
-        <h6 class="modal-title"><i class="bi bi-x-circle me-2 text-danger"></i>Cancelar Pago (timbrado)</h6>
+        <h6 class="modal-title"><i class="bi bi-x-circle me-2 text-danger"></i>Cancelar Cobro (timbrado)</h6>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
@@ -313,6 +316,9 @@ function fmtMoney(v){
   const signo=n<0?'-':'';
   return signo+'$'+Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 }
+// Para inputs de texto con máscara de dinero ($1,234.56) -- quita todo lo que
+// no sea dígito/punto/signo antes de convertir a número.
+function parseMoneyInput(v){return parseFloat(String(v==null?'':v).replace(/[^0-9.-]/g,''))||0;}
 function showError(msg){const e=document.getElementById('frmError');e.textContent=msg;e.classList.remove('d-none');}
 function hideError(){document.getElementById('frmError').classList.add('d-none');}
 function showWarning(msg){const e=document.getElementById('frmWarning');e.textContent=msg;e.classList.remove('d-none');}
@@ -329,6 +335,7 @@ function clearForm(){
   document.getElementById('f_Id_RealPago').value='';
   document.getElementById('f_NomClientePago_disp').value='';
   document.getElementById('f_FlagCompensacion').checked=false;
+  document.getElementById('filtroLineasQ').value='';
   document.getElementById('f_BancoDeposito').value='';
   document.getElementById('f_TipoDeposito').value='';
   document.getElementById('f_NoCheque').value='';
@@ -342,6 +349,8 @@ function clearForm(){
   document.getElementById('rowTipoCambio').style.display='none';
   document.getElementById('f_Realizo_disp').textContent=USUARIO_ACTUAL;
   document.getElementById('detBody').innerHTML='';
+  _lineasActuales=[];
+  document.getElementById('detCount').textContent='0 documentos';
   document.getElementById('thComp').style.display='none';
   document.getElementById('totComp').style.display='none';
   pintarTotales([]);
@@ -366,12 +375,12 @@ function openAdd(){
 function openEdit(){
   if(!window._selectedRow) return;
   clearForm();
-  document.getElementById('frmTitle').textContent='Pago #'+window._selectedRow.Id_NoPago;
+  document.getElementById('frmTitle').textContent='Cobro #'+window._selectedRow.Id_NoPago;
   cargarPago(parseInt(window._selectedRow.Id_NoPago));
   modal.show();
 }
 
-function cargarPago(id){
+function cargarPago(id, onDone){
   fetch(`/pagos/get?id=${id}`).then(r=>r.json()).then(d=>{
     if(d.error){showError(d.error);return;}
     const c=d.cabecera;
@@ -380,6 +389,7 @@ function cargarPago(id){
     document.getElementById('f_Id_Cliente').value=c.Id_Cliente;
     document.getElementById('f_NombreCom_disp').value=(c.NombreCom||'').trim();
     document.getElementById('f_NombreCom_disp').readOnly=true;
+    document.getElementById('f_RFC').value=(c.RFC||'').trim();
     document.getElementById('f_Status').value=(c.Status||'').trim();
     const yaTimbrado=!!(c.UUID||'').trim();
     document.getElementById('f_Id_RealPago').value=c.Id_RealPago||'';
@@ -402,6 +412,7 @@ function cargarPago(id){
     document.getElementById('f_Realizo_disp').textContent=(c.Realizo||'').trim()||USUARIO_ACTUAL;
     onFlagCompensacionUI();
     pintarDetalle(d.lineas);
+    if(onDone) onDone(d);
   });
 }
 
@@ -446,44 +457,102 @@ function pintarTotales(lineas){
 function filaDetalleHtml(l){
   const ref = Number(l.NOFACTURA)>0 ? ('Factura #'+l.NOFACTURA) : ('ND #'+l.ID_NOTACREDITO);
   const puedeEditar = Number(l.NOFACTURA)>0; // ND es todo o nada, sin edición
+  // Pagos realizados ANTES de esta línea (sin incluir este mismo cobro) =
+  // total original del documento menos el saldo que ya traía al momento de
+  // agregarse (SALDOANT). SALDOANT solo es confiable si es >= lo que esta
+  // misma línea aplicó (TOTALPAGO); si no (filas legado importadas del
+  // sistema anterior con SALDOANT=0), se asume que este cobro por sí solo
+  // liquidó el total, igual que en la generación del XML (ver cfdi-pago.js)
+  // -- si no, "pagos realizados" terminaba mostrando el total completo,
+  // como si el propio cobro actual ya contara como pago anterior.
+  const totalDoc = parseFloat(l.TOTALDOC)||0;
+  const totalPagoLinea = parseFloat(l.TOTALPAGO)||0;
+  const saldoAntesDeEstePago = (parseFloat(l.SALDOANT)||0) >= totalPagoLinea - 0.005 ? (parseFloat(l.SALDOANT)||0) : totalPagoLinea;
+  const pagosRealizados = Math.max(0, totalDoc - saldoAntesDeEstePago);
   const celdaImprte = puedeEditar
-    ? `<td class="text-end"><span class="imprte-disp">${fmtMoney(l.IMPRTE)}</span><input type="number" class="form-control form-control-sm text-end py-0 imprte-edit d-none" style="width:85px;display:inline-block" step="0.01" min="0" value="${fmtN(l.IMPRTE)}"></td>`
+    ? `<td class="text-end"><span class="imprte-disp">${fmtMoney(l.IMPRTE)}</span><input type="text" inputmode="decimal" class="form-control form-control-sm text-end py-0 imprte-edit d-none" style="width:95px;display:inline-block" value="${fmtMoney(l.IMPRTE)}"></td>`
     : `<td class="text-end">${fmtMoney(l.IMPRTE)}</td>`;
   const celdaComp = _pago.flagCompensacion
     ? (puedeEditar
-        ? `<td class="text-end"><span class="comp-disp">${fmtMoney(l.COMPESACION)}</span><input type="number" class="form-control form-control-sm text-end py-0 comp-edit d-none" style="width:85px;display:inline-block" step="0.01" min="0" value="${fmtN(l.COMPESACION)}"></td>`
+        ? `<td class="text-end"><span class="comp-disp">${fmtMoney(l.COMPESACION)}</span><input type="text" inputmode="decimal" class="form-control form-control-sm text-end py-0 comp-edit d-none" style="width:95px;display:inline-block" value="${fmtMoney(l.COMPESACION)}"></td>`
         : `<td class="text-end">${fmtMoney(l.COMPESACION)}</td>`)
     : '';
   const btnEditar = puedeEditar
     ? `<button class="btn btn-sm btn-outline-secondary py-0 px-1 btn-editar-importe" title="Editar" onclick="activarEdicionLinea(this, ${l.ID_NOPAGFAC})"><i class="bi bi-pencil"></i></button>`
     : '';
-  return `<tr data-idd="${l.ID_NOPAGFAC}">
+  const folioBusqueda = Number(l.NOFACTURA)>0 ? l.NOFACTURA : l.ID_NOTACREDITO;
+  return `<tr data-idd="${l.ID_NOPAGFAC}" data-saldo="${saldoAntesDeEstePago}" data-folio="${folioBusqueda}">
     <td>${ref}</td>
-    <td class="text-end">${fmtMoney(l.SALDOANT)}</td>
+    <td class="text-end">${fmtMoney(pagosRealizados)}</td>
+    <td class="text-end">${fmtMoney(saldoAntesDeEstePago)}</td>
     ${celdaImprte}
     ${celdaComp}
     <td class="text-end">${fmtMoney(l.TOTALPAGO)}</td>
     <td class="text-center">${btnEditar} <button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="eliminarLinea(${l.ID_NOPAGFAC})"><i class="bi bi-trash"></i></button></td>
   </tr>`;
 }
+let _lineasActuales=[];
 function pintarDetalle(lineas){
   onFlagCompensacionUI();
+  _lineasActuales=lineas;
   document.getElementById('detBody').innerHTML=lineas.map(filaDetalleHtml).join('');
+  aplicarFiltroLineas();
   pintarTotales(lineas);
 }
 
+document.getElementById('detBody').addEventListener('dblclick', function(e){
+  const row=e.target.closest('tr[data-idd]');
+  if(!row) return;
+  const editBtn=row.querySelector('.btn-editar-importe');
+  if(editBtn) activarEdicionLinea(editBtn, Number(row.dataset.idd));
+});
 function activarEdicionLinea(btn, idDeta){
   const row=btn.closest('tr');
   row.querySelectorAll('.imprte-disp,.comp-disp').forEach(el=>el.classList.add('d-none'));
   row.querySelectorAll('.imprte-edit,.comp-edit').forEach(el=>el.classList.remove('d-none'));
   btn.outerHTML = `<button class="btn btn-sm btn-outline-success py-0 px-1" title="Confirmar" onclick="confirmarEdicionLinea(this, ${idDeta})"><i class="bi bi-check-lg"></i></button>`;
-  const first = row.querySelector('.imprte-edit'); if(first){first.focus(); first.select();}
+  const imprteInp=row.querySelector('.imprte-edit');
+  const compInp=row.querySelector('.comp-edit');
+  // Máscara de dinero ($1,234.56): en foco se muestra el número plano para
+  // editar cómodo, al perder el foco se vuelve a formatear.
+  [imprteInp, compInp].forEach(inp=>{
+    if(!inp) return;
+    inp.addEventListener('focus', function(){ const v=parseMoneyInput(inp.value); inp.value=v?fmtN(v):''; });
+    inp.addEventListener('blur', function(){ inp.value=fmtMoney(parseMoneyInput(inp.value)); });
+  });
+  // Con compensación activa, capturar uno de los dos importes calcula el
+  // otro automáticamente para que sumen siempre el saldo disponible antes de
+  // este cobro (data-saldo, ya calculado al pintar la fila).
+  if(imprteInp && compInp){
+    const saldoDisp=parseFloat(row.dataset.saldo)||0;
+    imprteInp.addEventListener('input', function(){
+      compInp.value=Math.max(0, saldoDisp-parseMoneyInput(imprteInp.value)).toFixed(2);
+    });
+    compInp.addEventListener('input', function(){
+      imprteInp.value=Math.max(0, saldoDisp-parseMoneyInput(compInp.value)).toFixed(2);
+    });
+  }
+  // ESC cancela solo la edición de esta línea (no debe cerrar el modal del
+  // Cobro completo -- mismo tipo de bug ya corregido para modales anidados).
+  // Enter guarda (dispara el mismo botón "Confirmar").
+  function onKeyLinea(e){
+    if(e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); cancelarEdicionLinea(row, idDeta); }
+    else if(e.key==='Enter'){ e.preventDefault(); e.stopPropagation(); confirmarEdicionLinea(row.querySelector('.btn-outline-success'), idDeta); }
+  }
+  [imprteInp, compInp].forEach(inp=>inp && inp.addEventListener('keydown', onKeyLinea));
+  const first=imprteInp; if(first){first.focus(); first.select();}
+}
+function cancelarEdicionLinea(row, idDeta){
+  row.querySelectorAll('.imprte-edit,.comp-edit').forEach(el=>el.classList.add('d-none'));
+  row.querySelectorAll('.imprte-disp,.comp-disp').forEach(el=>el.classList.remove('d-none'));
+  const checkBtn=row.querySelector('.btn-outline-success');
+  if(checkBtn) checkBtn.outerHTML = `<button class="btn btn-sm btn-outline-secondary py-0 px-1 btn-editar-importe" title="Editar" onclick="activarEdicionLinea(this, ${idDeta})"><i class="bi bi-pencil"></i></button>`;
 }
 function confirmarEdicionLinea(btn, idDeta){
   const row=btn.closest('tr');
-  const imprte=parseFloat(row.querySelector('.imprte-edit')?.value)||0;
+  const imprte=parseMoneyInput(row.querySelector('.imprte-edit')?.value);
   const compEl=row.querySelector('.comp-edit');
-  const compensacion=compEl?(parseFloat(compEl.value)||0):0;
+  const compensacion=compEl?parseMoneyInput(compEl.value):0;
   ajustarImporteLinea(idDeta, imprte, compensacion);
 }
 function ajustarImporteLinea(idNoPagFac, imprte, compensacion){
@@ -513,7 +582,7 @@ function eliminarLinea(idNoPagFac){
 let lkCliPage=1, _lkCliTarget='facturado'; const lkCliModal=new bootstrap.Modal(document.getElementById('lookupCliente'));
 function openLookupCliente(target){
   _lkCliTarget=target;
-  if(target==='facturado' && _pago.idNoPago){showError('No se puede cambiar el cliente facturado de un pago que ya tiene líneas.');return;}
+  if(target==='facturado' && _pago.idNoPago){showError('No se puede cambiar el cliente facturado de un cobro que ya tiene líneas.');return;}
   document.getElementById('lkCliTitle').textContent = target==='paga' ? 'Seleccionar Cliente que paga' : 'Seleccionar Cliente facturado';
   lkCliPage=1;document.getElementById('lkCliQ').value='';loadLkCli();lkCliModal.show();
 }
@@ -572,9 +641,13 @@ function loadDocLk(){
     document.getElementById('docLkBody').innerHTML=d.rows.map(r=>{
       const folio = docLkTipo==='factura' ? r.Id_NoFactura : r.Id_NotaDebito;
       const fecha = docLkTipo==='factura' ? r.FechaFactura : r.Fecha;
+      const total = docLkTipo==='factura' ? r.TOTAL : r.ImporteTotal;
+      // ND es todo-o-nada: si aparece en la lista es porque aún no se ha
+      // pagado nada, así que "Pagos realizados" siempre es 0 y Saldo=Total.
+      const pagosRealizados = docLkTipo==='factura' ? r.PagosRealizados : 0;
       const saldo = docLkTipo==='factura' ? r.Saldo : r.ImporteTotal;
       const serieRef = docLkTipo==='factura' ? (r.SerieFac||'') : (r.SerieND||'');
-      return `<tr data-folio="${folio}" data-serie="${serieRef}" style="cursor:pointer"><td>${folio}</td><td>${fecha}</td><td class="text-end">${fmtMoney(saldo)}</td><td>${r.Status||''}</td></tr>`;
+      return `<tr data-folio="${folio}" data-serie="${serieRef}" style="cursor:pointer"><td>${folio}</td><td>${fecha}</td><td class="text-end">${fmtMoney(total)}</td><td class="text-end">${fmtMoney(pagosRealizados)}</td><td class="text-end">${fmtMoney(saldo)}</td><td>${r.Status||''}</td></tr>`;
     }).join('');
     document.getElementById('docLkInfo').textContent=`Pág ${d.page}/${d.totalPages} — ${d.total} registros`;
     document.getElementById('docLkPrev').disabled=d.page<=1;
@@ -589,6 +662,26 @@ document.getElementById('docLkBody').addEventListener('click',e=>{
   docLkModal.hide();
   agregarLinea(docLkTipo, row.dataset.folio, row.dataset.serie);
 });
+
+// ── Ubicar un renglón YA agregado a este Cobro (filtra la tabla de líneas,
+// no busca nuevos documentos -- eso lo hace "Buscar Factura o Nota de
+// Débito..."). Útil cuando hay muchas líneas (ej. un Cobro con 15+ facturas).
+document.getElementById('filtroLineasQ').addEventListener('input', aplicarFiltroLineas);
+function aplicarFiltroLineas(){
+  const q=document.getElementById('filtroLineasQ').value.trim().toLowerCase();
+  const rows=document.querySelectorAll('#detBody tr[data-idd]');
+  let visibles=0;
+  rows.forEach(row=>{
+    const texto=(row.dataset.folio||'').toLowerCase();
+    const match=!q||texto.includes(q);
+    row.style.display=match?'':'none';
+    if(match) visibles++;
+  });
+  const total=_lineasActuales.length;
+  document.getElementById('detCount').textContent = q
+    ? `${visibles} de ${total} ${total===1?'documento':'documentos'} (filtrado)`
+    : `${total} ${total===1?'documento':'documentos'}`;
+}
 
 function agregarLinea(tipoDoc, folio, serieRef){
   hideError();
@@ -616,7 +709,13 @@ function agregarLinea(tipoDoc, folio, serieRef){
       _pago.idNoPago=d.idNoPago;
       document.getElementById('f_Id_NoPago').value=d.idNoPago;
       document.getElementById('f_NombreCom_disp').readOnly=true;
-      cargarPago(d.idNoPago);
+      // Al agregar, entra directo a editar el importe a pagar de la línea
+      // recién insertada (ND no aplica: es todo-o-nada, sin botón de editar).
+      cargarPago(d.idNoPago, ()=>{
+        const row=document.querySelector(`tr[data-idd="${d.idNoPagFac}"]`);
+        const editBtn=row&&row.querySelector('.btn-editar-importe');
+        if(editBtn) activarEdicionLinea(editBtn, d.idNoPagFac);
+      });
     });
 }
 
@@ -650,7 +749,7 @@ function confirmCancelarPago(){
     new bootstrap.Modal(document.getElementById('cancelarPagoModal')).show();
     return;
   }
-  if(!confirm('¿Cancelar este pago? Esta acción revierte su efecto sobre el saldo de las facturas relacionadas.')) return;
+  if(!confirm('¿Cancelar este cobro? Esta acción revierte su efecto sobre el saldo de las facturas relacionadas.')) return;
   fetch('/pagos/cancelar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
     idNoPago:window._selectedRow.Id_NoPago,
   })}).then(r=>r.json()).then(d=>{ if(d.error){alert(d.error);return;} browse.load(); });
@@ -691,7 +790,7 @@ document.addEventListener('click', function(e){
 });
 function openTimbrarPago(){
   if(!window._selectedRow) return;
-  document.getElementById('timbraPagoBody').innerHTML = `<p>¿Timbrar el Pago #${window._selectedRow.Id_NoPago}?</p>`;
+  document.getElementById('timbraPagoBody').innerHTML = `<p>¿Timbrar el Cobro #${window._selectedRow.Id_NoPago}?</p>`;
   const btn=document.getElementById('btnConfirmTimbrarPago');
   btn.disabled=false; btn.style.display=''; btn.innerHTML='<i class="bi bi-file-earmark-check me-1"></i>Confirmar timbrado';
   new bootstrap.Modal(document.getElementById('timbraPagoModal')).show();
