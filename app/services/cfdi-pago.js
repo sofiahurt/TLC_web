@@ -96,6 +96,7 @@ async function buildCFDIPago(idNoPago, centralOperativo, pool) {
         tipoCambioDR: parseFloat(fac.TipoCambio) || 1, // 1 [MonedaDR] = tipoCambioDR MXN
         objetoImpDR: (num(fac.IVA) > 0.005 || num(fac.Retencion) > 0.005) ? '02' : '01',
         numParcialidad,
+        serieDoc: fmt(l.SERIEFAC) || undefined, folioDoc: String(l.NOFACTURA),
       });
     } else if (Number(l.ID_NOTACREDITO) > 0) {
       const ndRes = await pool.request().input('id', sql.Decimal(7), l.ID_NOTACREDITO).input('serie', sql.VarChar(10), fmt(l.SERIEND) || null)
@@ -108,6 +109,7 @@ async function buildCFDIPago(idNoPago, centralOperativo, pool) {
         linea: l, esFactura: false, uuid: fmt(nd.UUID), monedaDR: 'MXN', tipoCambioDR: 1,
         objetoImpDR: (num(nd.IVA) > 0.005 || num(nd.Retencion) > 0.005) ? '02' : '01',
         numParcialidad: 1,
+        serieDoc: fmt(l.SERIEND) || undefined, folioDoc: String(l.ID_NOTACREDITO),
       });
     }
   }
@@ -159,11 +161,18 @@ async function buildCFDIPago(idNoPago, centralOperativo, pool) {
         const ivaLinea = num(l[campoIva]);
         const retLinea = num(l[campoReten]);
         const saldoInsoluto = num(l.SALDOANT) - num(l.TOTALPAGO); // pagado + compensado ya reducen el mismo saldo
-        const drAttrs = {
-          IdDocumento: d.uuid, MonedaDR: d.monedaDR, NumParcialidad: String(d.numParcialidad),
+        const drAttrs = { IdDocumento: d.uuid };
+        // Serie/Folio del documento relacionado (Factura o Nota de Débito),
+        // tal como se capturaron en la línea del Pago -- a diferencia del
+        // Folio del comprobante raíz (que siempre es el Id_NoPago y no
+        // cambia), estos sí identifican el documento que se está pagando.
+        if (d.serieDoc) drAttrs.Serie = d.serieDoc;
+        drAttrs.Folio = d.folioDoc;
+        Object.assign(drAttrs, {
+          MonedaDR: d.monedaDR, NumParcialidad: String(d.numParcialidad),
           ImpSaldoAnt: fmtDec(saldoAntFn(l), 2), ImpPagado: fmtDec(montoAplicado, 2),
           ImpSaldoInsoluto: fmtDec(Math.max(0, saldoInsoluto), 2), ObjetoImpDR: d.objetoImpDR,
-        };
+        });
         // Regla real del Complemento de Pagos (confirmada por rechazo del PAC):
         // EquivalenciaDR es SIEMPRE obligatorio, nunca se omite. Si MonedaDR
         // es igual a MonedaP, debe ser literal "1". Si difieren, es cuántas
