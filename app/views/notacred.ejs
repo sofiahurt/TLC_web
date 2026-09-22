@@ -464,7 +464,7 @@ function cargarNota(tipo, serie, id){
     document.getElementById('f_Id_Cliente').value=c.Id_Cliente;
     document.getElementById('f_NombreCom_disp').value=(c.NombreCom||'').trim();
     document.getElementById('f_NombreCom_disp').readOnly=true;
-    document.getElementById('f_RFC').value='';
+    document.getElementById('f_RFC').value=(c.RFC||'').trim();
     document.getElementById('f_Status').value=(c.Status||'').trim();
     const yaTimbrada=!!(c.UUID||'').trim();
     document.getElementById('f_EsResumen').checked=c.FlagResNota==1;

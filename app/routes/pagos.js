@@ -55,11 +55,11 @@ router.get('/data', async (req, res) => {
       <td data-field="TotalImporte" data-value="${r.TotalImporte||0}" class="text-end">${fmtN(r.TotalImporte)}</td>
       <td data-field="Status" data-value="${fmt(r.Status)}">${fmt(r.Status)}</td>
       <td class="text-center">${fmt(r.UUID)
-        ? `<a href="/cfdi/xml-pago?idNoPago=${r.Id_NoPago}" class="btn btn-sm btn-outline-secondary py-0 px-1" title="Descargar XML" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-code"></i></a>`
+        ? `<a href="/cfdi/xml-pago?idNoPago=${r.Id_NoPago}" class="btn btn-sm btn-primary py-0 px-1" title="Descargar XML" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-code"></i></a>`
         : `<button class="btn btn-sm btn-outline-secondary py-0 px-1" disabled title="Solo disponible una vez timbrado"><i class="bi bi-file-earmark-code"></i></button>`}</td>
-      <td class="text-center"><a href="/cfdi/pdf-pago?idNoPago=${r.Id_NoPago}" target="_blank" class="btn btn-sm btn-outline-secondary py-0 px-1" title="Ver/descargar PDF" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-pdf"></i></a></td>
+      <td class="text-center"><a href="/cfdi/pdf-pago?idNoPago=${r.Id_NoPago}" target="_blank" class="btn btn-sm btn-success py-0 px-1" title="Ver/descargar PDF" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-pdf"></i></a></td>
       <td class="text-center">${canceladoConAcuse
-        ? `<a href="/cfdi/acuse-pago?idNoPago=${r.Id_NoPago}" target="_blank" class="btn btn-sm btn-outline-danger py-0 px-1" title="Ver/descargar Acuse de Cancelación" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-x"></i></a>`
+        ? `<a href="/cfdi/acuse-pago?idNoPago=${r.Id_NoPago}" target="_blank" class="btn btn-sm btn-danger py-0 px-1" title="Ver/descargar Acuse de Cancelación" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-x"></i></a>`
         : `<button class="btn btn-sm btn-outline-secondary py-0 px-1" disabled title="Solo disponible si se canceló ante el SAT"><i class="bi bi-file-earmark-x"></i></button>`}</td>
       <td data-field="UUID" data-value="${fmt(r.UUID)}" style="display:none"></td>
       <td data-field="Id_Cliente" data-value="${r.Id_Cliente||''}" style="display:none"></td>

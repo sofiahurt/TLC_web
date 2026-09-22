@@ -63,11 +63,11 @@ router.get('/data', async (req, res) => {
         <td data-field="Status"        data-value="${fmt(r.Status)}">${fmt(r.Status)}</td>
         <td data-field="RealizoPedido" data-value="${fmt(r.RealizoPedido)}">${fmt(r.RealizoPedido)}</td>
         <td class="text-center">${timbrada
-          ? `<a href="/cfdi/xml?${qs}" class="btn btn-sm btn-outline-secondary py-0 px-1" title="Descargar XML" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-code"></i></a>`
+          ? `<a href="/cfdi/xml?${qs}" class="btn btn-sm btn-primary py-0 px-1" title="Descargar XML" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-code"></i></a>`
           : `<button class="btn btn-sm btn-outline-secondary py-0 px-1" disabled title="Solo disponible una vez timbrada"><i class="bi bi-file-earmark-code"></i></button>`}</td>
-        <td class="text-center"><a href="/cfdi/pdf?${qs}" target="_blank" class="btn btn-sm btn-outline-secondary py-0 px-1" title="Ver/descargar PDF" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-pdf"></i></a></td>
+        <td class="text-center"><a href="/cfdi/pdf?${qs}" target="_blank" class="btn btn-sm btn-success py-0 px-1" title="Ver/descargar PDF" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-pdf"></i></a></td>
         <td class="text-center">${canceladaConAcuse
-          ? `<a href="/cfdi/acuse-cartaporte?${qs}" target="_blank" class="btn btn-sm btn-outline-danger py-0 px-1" title="Ver/descargar Acuse de Cancelación" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-x"></i></a>`
+          ? `<a href="/cfdi/acuse-cartaporte?${qs}" target="_blank" class="btn btn-sm btn-danger py-0 px-1" title="Ver/descargar Acuse de Cancelación" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-x"></i></a>`
           : `<button class="btn btn-sm btn-outline-secondary py-0 px-1" disabled title="Solo disponible si se canceló ante el SAT"><i class="bi bi-file-earmark-x"></i></button>`}</td>
         <td data-field="Id_Pedido"     data-value="${r.Id_Pedido||''}" style="display:none"></td>
         <td data-field="UUID"          data-value="${fmt(r.UUID)}" style="display:none"></td>

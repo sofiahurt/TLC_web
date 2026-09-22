@@ -112,11 +112,11 @@ router.get('/data', async (req, res) => {
       <td data-field="ImporteTotal" data-value="${r.ImporteTotal||0}" class="text-end">${fmtN(r.ImporteTotal)}</td>
       <td data-field="Status" data-value="${fmt(r.Status)}">${fmt(r.Status)}</td>
       <td class="text-center">${fmt(r.UUID)
-        ? `<a href="/cfdi/xml-notacredito?tipo=${tipo}&serie=${encodeURIComponent(fmt(r.Serie))}&idNotaCredito=${r.Id_NotaCredito}" class="btn btn-sm btn-outline-secondary py-0 px-1" title="Descargar XML" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-code"></i></a>`
+        ? `<a href="/cfdi/xml-notacredito?tipo=${tipo}&serie=${encodeURIComponent(fmt(r.Serie))}&idNotaCredito=${r.Id_NotaCredito}" class="btn btn-sm btn-primary py-0 px-1" title="Descargar XML" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-code"></i></a>`
         : `<button class="btn btn-sm btn-outline-secondary py-0 px-1" disabled title="Solo disponible una vez timbrada"><i class="bi bi-file-earmark-code"></i></button>`}</td>
-      <td class="text-center"><a href="/cfdi/pdf-notacredito?tipo=${tipo}&serie=${encodeURIComponent(fmt(r.Serie))}&idNotaCredito=${r.Id_NotaCredito}" target="_blank" class="btn btn-sm btn-outline-secondary py-0 px-1" title="Ver/descargar PDF" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-pdf"></i></a></td>
+      <td class="text-center"><a href="/cfdi/pdf-notacredito?tipo=${tipo}&serie=${encodeURIComponent(fmt(r.Serie))}&idNotaCredito=${r.Id_NotaCredito}" target="_blank" class="btn btn-sm btn-success py-0 px-1" title="Ver/descargar PDF" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-pdf"></i></a></td>
       <td class="text-center">${canceladaConAcuse
-        ? `<a href="/cfdi/acuse-notacredito?tipo=${tipo}&serie=${encodeURIComponent(fmt(r.Serie))}&idNotaCredito=${r.Id_NotaCredito}" target="_blank" class="btn btn-sm btn-outline-danger py-0 px-1" title="Ver/descargar Acuse de Cancelación" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-x"></i></a>`
+        ? `<a href="/cfdi/acuse-notacredito?tipo=${tipo}&serie=${encodeURIComponent(fmt(r.Serie))}&idNotaCredito=${r.Id_NotaCredito}" target="_blank" class="btn btn-sm btn-danger py-0 px-1" title="Ver/descargar Acuse de Cancelación" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-x"></i></a>`
         : `<button class="btn btn-sm btn-outline-secondary py-0 px-1" disabled title="Solo disponible si se canceló ante el SAT"><i class="bi bi-file-earmark-x"></i></button>`}</td>
       <td data-field="UUID" data-value="${fmt(r.UUID)}" style="display:none"></td>
       <td data-field="Id_Cliente" data-value="${r.Id_Cliente||''}" style="display:none"></td>
@@ -131,7 +131,13 @@ router.get('/get', async (req, res) => {
   try {
     const pool = await getPool();
     const tipo = req.query.tipo, serie = req.query.serie, id = parseInt(req.query.id);
-    const cabRes = await reqNC(pool.request(), tipo, serie, id).query(`SELECT * FROM Empresa2.NotaCred WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
+    // Empresa2.NotaCred no tiene columna propia de RFC del cliente -- se
+    // trae por join con Clientes (igual que se corrigió en Pagos).
+    const cabRes = await reqNC(pool.request(), tipo, serie, id).query(`
+      SELECT nc.*, cli.RFC
+      FROM Empresa2.NotaCred nc
+      LEFT JOIN Empresa2.Clientes cli ON cli.ID_CLIENTE=nc.Id_Cliente
+      WHERE nc.Id_NotaCredito=@id AND LTRIM(RTRIM(nc.Tipo))=@tipo AND ISNULL(LTRIM(RTRIM(nc.Serie)),'')=ISNULL(@serie,'')`);
     if (!cabRes.recordset[0]) return res.status(404).json({ error: 'No encontrada' });
     const detRes = await reqNC(pool.request(), tipo, serie, id).query(`SELECT * FROM Empresa2.NotaCredDeta WHERE ID_NOTACREDITO=@id AND ${NC_EQ} ORDER BY ID_NOTASCREDDETA`);
     res.json({ cabecera: cabRes.recordset[0], lineas: detRes.recordset });
