@@ -1,0 +1,168 @@
+<%- include('partials/header', { titulo: 'Reportes' }) %>
+<%- include('partials/sidebar') %>
+<div id="page-content">
+  <div class="d-flex align-items-center mb-3">
+    <button class="btn btn-sm btn-outline-secondary me-3 d-md-none" id="sidebarToggle"><i class="bi bi-list fs-5"></i></button>
+    <h4 class="mb-0 fw-bold flex-grow-1">Reportes</h4>
+  </div>
+
+  <div class="card border-0 shadow-sm">
+    <div class="card-body">
+      <h6 class="fw-semibold mb-3"><i class="bi bi-file-earmark-excel text-success me-1"></i> Cartas Porte</h6>
+      <div id="frmError" class="alert alert-danger d-none py-2 small"></div>
+      <div class="row g-3">
+        <div class="col-md-3">
+          <label class="form-label small mb-1">Fecha inicio <span class="text-danger">*</span></label>
+          <input type="date" id="f_FechaIni" class="form-control form-control-sm">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small mb-1">Fecha fin <span class="text-danger">*</span></label>
+          <input type="date" id="f_FechaFin" class="form-control form-control-sm">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label small mb-1">Serie</label>
+          <select id="f_Serie" class="form-select form-select-sm">
+            <option value="">Todas</option>
+          </select>
+        </div>
+        <div class="col-md-4 d-flex align-items-end pb-1">
+          <div class="form-check">
+            <input type="checkbox" id="f_SoloSinFactura" class="form-check-input">
+            <label class="form-check-label small" for="f_SoloSinFactura">Solo Cartas Porte sin factura</label>
+          </div>
+        </div>
+
+        <div class="col-md-5">
+          <label class="form-label small mb-1">Cliente inicio</label>
+          <div class="input-group input-group-sm">
+            <input type="hidden" id="f_ClienteIni">
+            <input type="text" id="f_ClienteIni_disp" class="form-control form-control-sm" placeholder="Todos..." readonly>
+            <button class="btn btn-outline-secondary btn-sm" type="button" onclick="openLookupCliente('ini')"><i class="bi bi-search"></i></button>
+            <button class="btn btn-outline-secondary btn-sm" type="button" title="Quitar" onclick="limpiarCliente('ini')"><i class="bi bi-x-lg"></i></button>
+          </div>
+        </div>
+        <div class="col-md-5">
+          <label class="form-label small mb-1">Cliente fin</label>
+          <div class="input-group input-group-sm">
+            <input type="hidden" id="f_ClienteFin">
+            <input type="text" id="f_ClienteFin_disp" class="form-control form-control-sm" placeholder="Todos..." readonly>
+            <button class="btn btn-outline-secondary btn-sm" type="button" onclick="openLookupCliente('fin')"><i class="bi bi-search"></i></button>
+            <button class="btn btn-outline-secondary btn-sm" type="button" title="Quitar" onclick="limpiarCliente('fin')"><i class="bi bi-x-lg"></i></button>
+          </div>
+        </div>
+        <div class="col-md-2 d-flex align-items-end">
+          <button class="btn btn-sm btn-success w-100" id="btnGenerarExcel" onclick="generarExcel()"><i class="bi bi-file-earmark-excel me-1"></i> Generar Excel</button>
+        </div>
+      </div>
+      <div id="progresoBox" class="mt-3 d-none">
+        <div class="small text-muted mb-1"><span class="spinner-border spinner-border-sm text-success me-1"></span> Generando el reporte, esto puede tardar unos segundos...</div>
+        <div class="progress" style="height:6px">
+          <div class="progress-bar progress-bar-striped progress-bar-animated bg-success" style="width:100%"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Lookup Cliente (compartido: inicio / fin, según _lkCliTarget) -->
+<div class="modal fade modal-lookup" id="lookupCliente" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-lg">
+  <div class="modal-content">
+    <div class="modal-header py-2"><h6 class="modal-title" id="lkCliTitle">Seleccionar Cliente</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <input type="text" id="lkCliQ" class="form-control form-control-sm mb-2" placeholder="Buscar cliente...">
+      <table class="table table-hover table-sm"><thead class="table-secondary"><tr><th>ID</th><th>Nombre</th><th>RFC</th></tr></thead>
+      <tbody id="lkCliBody"></tbody></table>
+      <div class="d-flex justify-content-between align-items-center">
+        <span id="lkCliInfo" class="small text-muted"></span>
+        <div><button class="btn btn-sm btn-outline-secondary" id="lkCliPrev">‹</button> <button class="btn btn-sm btn-outline-secondary" id="lkCliNext">›</button></div>
+      </div>
+    </div>
+  </div>
+</div></div>
+
+<%- include('partials/footer') %>
+<script>
+function showError(msg){const e=document.getElementById('frmError');e.textContent=msg;e.classList.remove('d-none');}
+function hideError(){document.getElementById('frmError').classList.add('d-none');}
+
+fetch('/reportes/cartaporte/series').then(r=>r.json()).then(d=>{
+  const sel=document.getElementById('f_Serie');
+  (d.series||[]).forEach(s=>{ const op=document.createElement('option'); op.value=s; op.textContent=s; sel.appendChild(op); });
+});
+
+// ── Lookup Cliente (compartido: inicio / fin) ──────────────────────────────
+let lkCliPage=1, _lkCliTarget='ini'; const lkCliModal=new bootstrap.Modal(document.getElementById('lookupCliente'));
+function openLookupCliente(target){
+  _lkCliTarget=target;
+  document.getElementById('lkCliTitle').textContent = target==='fin' ? 'Seleccionar Cliente fin' : 'Seleccionar Cliente inicio';
+  lkCliPage=1;document.getElementById('lkCliQ').value='';loadLkCli();lkCliModal.show();
+}
+function loadLkCli(){fetch(`/clientes/lookup?q=${encodeURIComponent(document.getElementById('lkCliQ').value)}&page=${lkCliPage}`).then(r=>r.json()).then(d=>{
+  document.getElementById('lkCliBody').innerHTML=d.rows.map(r=>`<tr data-id="${r.ID_CLIENTE}" data-nombre="${(r.NOMBRECOMUN||r.NOMBRECOM||'').trim()}" style="cursor:pointer"><td>${r.ID_CLIENTE}</td><td>${(r.NOMBRECOMUN||'').trim()}</td><td>${(r.RFC||'').trim()}</td></tr>`).join('');
+  document.getElementById('lkCliInfo').textContent=`Pág ${d.page}/${d.totalPages}`;
+  document.getElementById('lkCliPrev').disabled=d.page<=1;document.getElementById('lkCliNext').disabled=d.page>=d.totalPages;
+});}
+document.getElementById('lkCliQ').addEventListener('input',debounce(()=>{lkCliPage=1;loadLkCli();},300));
+document.getElementById('lkCliPrev').addEventListener('click',()=>{if(lkCliPage>1){lkCliPage--;loadLkCli();}});
+document.getElementById('lkCliNext').addEventListener('click',()=>{lkCliPage++;loadLkCli();});
+document.getElementById('lkCliBody').addEventListener('click',e=>{
+  const row=e.target.closest('tr[data-id]'); if(!row) return;
+  const idCliente=row.dataset.id, nombre=row.dataset.nombre;
+  lkCliModal.hide();
+  document.getElementById('f_Cliente'+(_lkCliTarget==='fin'?'Fin':'Ini')).value=idCliente;
+  document.getElementById('f_Cliente'+(_lkCliTarget==='fin'?'Fin':'Ini')+'_disp').value=nombre;
+});
+function limpiarCliente(target){
+  document.getElementById('f_Cliente'+(target==='fin'?'Fin':'Ini')).value='';
+  document.getElementById('f_Cliente'+(target==='fin'?'Fin':'Ini')+'_disp').value='';
+}
+
+async function generarExcel(){
+  hideError();
+  const fechaIni=document.getElementById('f_FechaIni').value;
+  const fechaFin=document.getElementById('f_FechaFin').value;
+  if(!fechaIni || !fechaFin){ showError('El rango de fechas es obligatorio.'); return; }
+  const params=new URLSearchParams({
+    fechaIni, fechaFin,
+    serie: document.getElementById('f_Serie').value,
+    soloSinFactura: document.getElementById('f_SoloSinFactura').checked ? '1' : '0',
+  });
+  const clienteIni=document.getElementById('f_ClienteIni').value;
+  const clienteFin=document.getElementById('f_ClienteFin').value;
+  // Si solo se elige uno de los dos, se toma como filtro de un solo cliente.
+  if(clienteIni || clienteFin){
+    params.set('clienteIni', clienteIni || clienteFin);
+    params.set('clienteFin', clienteFin || clienteIni);
+  }
+
+  // El archivo se arma en el servidor y se transmite en streaming (sin
+  // Content-Length previo), así que no hay un % real que mostrar -- se usa
+  // una barra indeterminada + deshabilitar el botón, para que quede claro
+  // que sí está trabajando en vez de parecer que no pasó nada.
+  const btn=document.getElementById('btnGenerarExcel');
+  btn.disabled=true;
+  document.getElementById('progresoBox').classList.remove('d-none');
+  try{
+    const resp=await fetch('/reportes/cartaporte/excel?'+params.toString());
+    if(!resp.ok){
+      let msg='No se pudo generar el reporte.';
+      try{ const d=await resp.json(); if(d.error) msg=d.error; }catch(_){}
+      showError(msg);
+      return;
+    }
+    const blob=await resp.blob();
+    const cd=resp.headers.get('content-disposition')||'';
+    const match=cd.match(/filename="?([^"]+)"?/);
+    const nombreArchivo=match?match[1]:'CartasPorte.xlsx';
+    const url=window.URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url; a.download=nombreArchivo; document.body.appendChild(a); a.click();
+    a.remove(); window.URL.revokeObjectURL(url);
+  }catch(e){
+    showError('Error de conexión al generar el reporte.');
+  }finally{
+    btn.disabled=false;
+    document.getElementById('progresoBox').classList.add('d-none');
+  }
+}
+</script>

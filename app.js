@@ -65,6 +65,7 @@ app.use('/camiones',    requierePermiso('camiones.ver'),   require('./app/routes
 app.use('/tarifas',     requierePermiso('tarifas.ver'),    require('./app/routes/tarifas'));
 app.use('/tarkilomts',  requierePermiso('tarkilomts.ver'), require('./app/routes/tarkilomts'));
 app.use('/dieselpre',   requierePermiso('dieselpre.ver'),  require('./app/routes/dieselpre'));
+app.use('/reportes',    requierePermiso('reportes.ver'),   require('./app/routes/reportes'));
 app.use('/cfdi',        require('./app/routes/cfdi'));
 
 const { RUTA_XML } = require('./app/config/storage');
