@@ -64,6 +64,42 @@ function debounce(fn, ms) {
   return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
 }
 
+// Descarga genérica (via fetch+Blob) con barra de progreso indeterminada --
+// usada por los formularios de /reportes. El archivo se arma en el servidor
+// y se transmite en streaming (sin Content-Length previo), así que no hay un
+// % real que mostrar: se usa una barra indeterminada + deshabilitar el botón,
+// para que quede claro que sí está trabajando en vez de parecer que no pasó
+// nada al hacer clic.
+async function descargarReporte({ url, params, btnId, progresoId, errorId, nombrePorDefecto }) {
+  const errorEl = document.getElementById(errorId);
+  errorEl.classList.add('d-none');
+  const btn = document.getElementById(btnId);
+  btn.disabled = true;
+  document.getElementById(progresoId).classList.remove('d-none');
+  try {
+    const resp = await fetch(url + '?' + params.toString());
+    if (!resp.ok) {
+      let msg = 'No se pudo generar el reporte.';
+      try { const d = await resp.json(); if (d.error) msg = d.error; } catch (_) {}
+      errorEl.textContent = msg; errorEl.classList.remove('d-none');
+      return;
+    }
+    const blob = await resp.blob();
+    const cd = resp.headers.get('content-disposition') || '';
+    const match = cd.match(/filename="?([^"]+)"?/);
+    const nombreArchivo = match ? match[1] : nombrePorDefecto;
+    const urlBlob = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = urlBlob; a.download = nombreArchivo; document.body.appendChild(a); a.click();
+    a.remove(); window.URL.revokeObjectURL(urlBlob);
+  } catch (e) {
+    errorEl.textContent = 'Error de conexión al generar el reporte.'; errorEl.classList.remove('d-none');
+  } finally {
+    btn.disabled = false;
+    document.getElementById(progresoId).classList.add('d-none');
+  }
+}
+
 // Generic browse search
 function initBrowse(options) {
   const { searchInput, searchColumn, tableBody, paginationEl, infoEl, pageSize = 20, fetchUrl, onLoad, defaultSort = '', defaultDir = 'asc' } = options;

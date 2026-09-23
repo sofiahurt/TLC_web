@@ -2,19 +2,134 @@ const express = require('express');
 const router = express.Router();
 const ExcelJS = require('exceljs');
 const { getPool, sql } = require('../config/db');
+const { requierePermiso } = require('../middleware/permisos');
 
 const trim = v => (v == null ? '' : String(v).trim());
 
-router.get('/', (req, res) => res.render('reportes', { usuario: req.session.usuario, modulo: 'reportes' }));
+router.get('/', (req, res) => res.redirect('/reportes/cartaporte'));
+router.get('/cartaporte', requierePermiso('reportes.cartaporte.ver'), (req, res) => res.render('reportes-cartaporte', { usuario: req.session.usuario, modulo: 'reportes-cartaporte' }));
+router.get('/facturas', requierePermiso('reportes.facturas.ver'), (req, res) => res.render('reportes-facturas', { usuario: req.session.usuario, modulo: 'reportes-facturas' }));
 
 // ── Series con Carta Porte capturada (para el combo "Serie") ──────────────
-router.get('/cartaporte/series', async (req, res) => {
+router.get('/cartaporte/series', requierePermiso('reportes.cartaporte.ver'), async (req, res) => {
   try {
     const pool = await getPool();
     const r = await pool.request().query(`SELECT DISTINCT Serie FROM Empresa2.CartaPorte ORDER BY Serie`);
     res.json({ series: r.recordset.map(row => trim(row.Serie)) });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
+// El resultado de las funciones de reporte trae las fechas convertidas a
+// varchar formato dd/mm/yyyy (CONVERT(...,103)) -- se reconvierten a Date
+// real para que Excel las trate como fecha, no como texto.
+function parseFechaDDMMYYYY(v) {
+  const s = trim(v);
+  if (!s) return null;
+  const [d, m, y] = s.split('/');
+  if (!d || !m || !y) return null;
+  return new Date(Number(y), Number(m) - 1, Number(d));
+}
+
+// Convierte 'YYYY-MM-DD' (como llega en el query string) a 'DD/MM/YYYY' para
+// mostrar en el título del reporte.
+function fmtFechaTitulo(v) {
+  const [y, m, d] = trim(v).split('-');
+  if (!y || !m || !d) return trim(v);
+  return `${d}/${m}/${y}`;
+}
+
+const NUMFMT_POR_TIPO = { fecha: 'dd/mm/yyyy', moneda: '$#,##0.00', numero: '#,##0.00', entero: '#,##0' };
+const TIPOS_NUMERICOS = ['moneda', 'numero', 'entero'];
+
+// ── Construcción genérica de un reporte Excel: título + subtítulo (filas
+// 1-2), encabezados sombreados de amarillo con autofiltro (fila 4), datos
+// desde la fila 5, y fila de totales opcional. Reutilizada por todos los
+// reportes de este módulo para que se vean y se comporten igual. ──────────
+function construirWorkbookReporte({ nombreHoja, titulo, subtitulo, columnas, filas, columnasTotales }) {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet(nombreHoja);
+  const numCols = columnas.length;
+  const FILA_ENCABEZADOS = 4;
+
+  columnas.forEach((c, idx) => {
+    const columna = sheet.getColumn(idx + 1);
+    columna.width = 16;
+    if (NUMFMT_POR_TIPO[c.tipo]) columna.numFmt = NUMFMT_POR_TIPO[c.tipo];
+  });
+
+  sheet.mergeCells(1, 1, 1, numCols);
+  const celdaTitulo = sheet.getCell(1, 1);
+  celdaTitulo.value = titulo;
+  celdaTitulo.font = { bold: true, size: 18 };
+  celdaTitulo.alignment = { horizontal: 'left' };
+
+  sheet.mergeCells(2, 1, 2, numCols);
+  const celdaSub = sheet.getCell(2, 1);
+  celdaSub.value = subtitulo;
+  celdaSub.font = { bold: true, size: 14 };
+  celdaSub.alignment = { horizontal: 'left' };
+
+  // Fila 3 se deja en blanco a propósito -- los encabezados arrancan en la 4.
+
+  const filaEncabezados = sheet.getRow(FILA_ENCABEZADOS);
+  columnas.forEach((c, idx) => {
+    const celda = filaEncabezados.getCell(idx + 1);
+    celda.value = c.header;
+    celda.font = { bold: true };
+    celda.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
+  });
+  sheet.autoFilter = { from: { row: FILA_ENCABEZADOS, column: 1 }, to: { row: FILA_ENCABEZADOS, column: numCols } };
+
+  // Índices de las columnas a totalizar, por nombre de encabezado -- así no
+  // se rompe si el orden de columnas cambia más adelante.
+  const idxTotales = (columnasTotales || [])
+    .map(h => columnas.findIndex(c => c.header === h))
+    .filter(i => i >= 0);
+  const sumas = new Array(numCols).fill(0);
+
+  let filaActual = FILA_ENCABEZADOS + 1;
+  for (const row of filas) {
+    const excelRow = sheet.getRow(filaActual);
+    columnas.forEach((col, idx) => {
+      let valor = row[col.campo];
+      if (col.tipo === 'fecha') valor = parseFechaDDMMYYYY(valor);
+      else if (TIPOS_NUMERICOS.includes(col.tipo)) {
+        // Un NaN escrito en una celda numérica corrompe el .xlsx (Excel pide
+        // reparar) -- si el dato no convierte limpio, se deja vacío.
+        const n = valor == null ? null : Number(valor);
+        valor = (n == null || isNaN(n)) ? null : n;
+      } else valor = valor == null ? '' : trim(valor);
+      excelRow.getCell(idx + 1).value = valor;
+      if (idxTotales.includes(idx) && typeof valor === 'number') sumas[idx] += valor;
+    });
+    filaActual++;
+  }
+
+  if (idxTotales.length) {
+    const filaTotales = sheet.getRow(filaActual);
+    filaTotales.getCell(1).value = 'Totales:';
+    filaTotales.getCell(1).font = { bold: true };
+    idxTotales.forEach(idx => {
+      const celda = filaTotales.getCell(idx + 1);
+      celda.value = Math.round(sumas[idx] * 100) / 100;
+      celda.font = { bold: true };
+      celda.numFmt = NUMFMT_POR_TIPO[columnas[idx].tipo] || '$#,##0.00';
+    });
+  }
+
+  return workbook;
+}
+
+function enviarWorkbook(res, workbook, nombreBase, fechaIni, fechaFin) {
+  const ahora = new Date();
+  const hhmmss = ahora.toTimeString().slice(0, 8).replace(/:/g, '');
+  const nombreArchivo = `${nombreBase}_${fechaIni}_a_${fechaFin}_${hhmmss}.xlsx`;
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="${nombreArchivo}"`);
+  return workbook.xlsx.write(res).then(() => res.end());
+}
+
+// ═══════════════════════ REPORTE: CARTAS PORTE ═══════════════════════════
 
 // Encabezados del reporte, en el orden exacto pedido, con el nombre de
 // columna que devuelve Empresa2.fn_CartaPorteDetalle (o el join extra para
@@ -60,26 +175,7 @@ const COLUMNAS_CARTAPORTE = [
   { header: 'Cancelo',     campo: 'WhoCancela',   tipo: 'texto' },
 ];
 
-// El resultado de la función trae las fechas convertidas a varchar formato
-// dd/mm/yyyy (CONVERT(...,103)) -- se reconvierten a Date real para que
-// Excel las trate como fecha, no como texto.
-function parseFechaDDMMYYYY(v) {
-  const s = trim(v);
-  if (!s) return null;
-  const [d, m, y] = s.split('/');
-  if (!d || !m || !y) return null;
-  return new Date(Number(y), Number(m) - 1, Number(d));
-}
-
-// Convierte 'YYYY-MM-DD' (como llega en el query string) a 'DD/MM/YYYY' para
-// mostrar en el título del reporte.
-function fmtFechaTitulo(v) {
-  const [y, m, d] = trim(v).split('-');
-  if (!y || !m || !d) return trim(v);
-  return `${d}/${m}/${y}`;
-}
-
-router.get('/cartaporte/excel', async (req, res) => {
+router.get('/cartaporte/excel', requierePermiso('reportes.cartaporte.ver'), async (req, res) => {
   try {
     const fechaIni = trim(req.query.fechaIni);
     const fechaFin = trim(req.query.fechaFin);
@@ -114,94 +210,74 @@ router.get('/cartaporte/excel', async (req, res) => {
       ORDER BY fd.Serie, fd.CartaPorte`;
     const result = await request.query(query);
 
-    const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet('Cartas Porte');
-    const numCols = COLUMNAS_CARTAPORTE.length;
-    const FILA_ENCABEZADOS = 4;
-
-    // Ancho y formato por columna (independiente de los títulos de las filas
-    // 1-2, que solo ocupan la celda A de su fila dentro del rango combinado).
-    COLUMNAS_CARTAPORTE.forEach((c, idx) => {
-      const columna = sheet.getColumn(idx + 1);
-      columna.width = 16;
-      if (c.tipo === 'fecha') columna.numFmt = 'dd/mm/yyyy';
-      else if (c.tipo === 'moneda') columna.numFmt = '$#,##0.00';
+    const workbook = construirWorkbookReporte({
+      nombreHoja: 'Cartas Porte',
+      titulo: 'Reporte de Cartas Porte',
+      subtitulo: `Del ${fmtFechaTitulo(fechaIni)} al ${fmtFechaTitulo(fechaFin)}`,
+      columnas: COLUMNAS_CARTAPORTE,
+      filas: result.recordset,
+      columnasTotales: ['Flete', 'Renta', 'Kilometros', 'Maniobras', 'Casetas', 'Pension', 'Estadias', 'Demoras', 'Otros', 'CargoExtra', 'Subtotal', 'IVA', 'Retención', 'Total', 'Depositos'],
     });
-
-    // Fila 1: título del reporte.
-    sheet.mergeCells(1, 1, 1, numCols);
-    const celdaTitulo = sheet.getCell(1, 1);
-    celdaTitulo.value = 'Reporte de Cartas Porte';
-    celdaTitulo.font = { bold: true, size: 18 };
-    celdaTitulo.alignment = { horizontal: 'left' };
-
-    // Fila 2: rango de fechas, también como título.
-    sheet.mergeCells(2, 1, 2, numCols);
-    const celdaRango = sheet.getCell(2, 1);
-    celdaRango.value = `Del ${fmtFechaTitulo(fechaIni)} al ${fmtFechaTitulo(fechaFin)}`;
-    celdaRango.font = { bold: true, size: 14 };
-    celdaRango.alignment = { horizontal: 'left' };
-
-    // Fila 3 se deja en blanco a propósito -- los encabezados arrancan en la 4.
-
-    // Fila 4: encabezados, sombreados de amarillo, con filtro habilitado.
-    const filaEncabezados = sheet.getRow(FILA_ENCABEZADOS);
-    COLUMNAS_CARTAPORTE.forEach((c, idx) => {
-      const celda = filaEncabezados.getCell(idx + 1);
-      celda.value = c.header;
-      celda.font = { bold: true };
-      celda.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
-    });
-    sheet.autoFilter = { from: { row: FILA_ENCABEZADOS, column: 1 }, to: { row: FILA_ENCABEZADOS, column: numCols } };
-
-    // Columnas a totalizar: de "Flete" a "Depositos" (inclusive), por
-    // posición de encabezado -- así no se rompe si el orden cambia.
-    const idxFlete = COLUMNAS_CARTAPORTE.findIndex(c => c.header === 'Flete');
-    const idxDepositos = COLUMNAS_CARTAPORTE.findIndex(c => c.header === 'Depositos');
-    const sumas = new Array(numCols).fill(0);
-
-    // Datos a partir de la fila 5.
-    let filaActual = FILA_ENCABEZADOS + 1;
-    for (const row of result.recordset) {
-      const excelRow = sheet.getRow(filaActual);
-      COLUMNAS_CARTAPORTE.forEach((col, idx) => {
-        let valor = row[col.campo];
-        if (col.tipo === 'fecha') valor = parseFechaDDMMYYYY(valor);
-        else if (col.tipo === 'moneda' || col.tipo === 'numero') {
-          // Un NaN escrito en una celda numérica corrompe el .xlsx (Excel
-          // pide reparar) -- si el dato no convierte limpio, se deja vacío.
-          const n = valor == null ? null : Number(valor);
-          valor = (n == null || isNaN(n)) ? null : n;
-        }
-        else valor = valor == null ? '' : trim(valor);
-        excelRow.getCell(idx + 1).value = valor;
-        if (idx >= idxFlete && idx <= idxDepositos && typeof valor === 'number') sumas[idx] += valor;
-      });
-      filaActual++;
-    }
-
-    // Fila de totales, justo después del último dato.
-    const filaTotales = sheet.getRow(filaActual);
-    filaTotales.getCell(1).value = 'Totales:';
-    filaTotales.getCell(1).font = { bold: true };
-    for (let idx = idxFlete; idx <= idxDepositos; idx++) {
-      const celda = filaTotales.getCell(idx + 1);
-      celda.value = Math.round(sumas[idx] * 100) / 100;
-      celda.font = { bold: true };
-      celda.numFmt = '$#,##0.00';
-    }
-
-    // Hora incluida en el nombre -- si se vuelve a generar el mismo rango de
-    // fechas, cada descarga queda con un nombre distinto.
-    const ahora = new Date();
-    const hhmmss = ahora.toTimeString().slice(0, 8).replace(/:/g, '');
-    const nombreArchivo = `CartasPorte_${fechaIni}_a_${fechaFin}_${hhmmss}.xlsx`;
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="${nombreArchivo}"`);
-    await workbook.xlsx.write(res);
-    res.end();
+    await enviarWorkbook(res, workbook, 'CartasPorte', fechaIni, fechaFin);
   } catch (err) {
     console.error('reportes/cartaporte/excel error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ═══════════════════════ REPORTE: FACTURAS ═══════════════════════════════
+
+// fn_ReporteFacturas devuelve Facturas + Notas de Crédito/Débito en una sola
+// tabla (columna TipoDocumento distingue F/NC/ND).
+const COLUMNAS_FACTURAS = [
+  { header: 'Tipo',           campo: 'TipoDocumento',  tipo: 'texto' },
+  { header: 'No. Documento',  campo: 'Id_Documento',   tipo: 'entero' },
+  { header: 'Fecha',          campo: 'Fecha',          tipo: 'fecha' },
+  { header: 'Carta Porte',    campo: 'CartaPorte',     tipo: 'texto' },
+  { header: 'Pedido Cliente', campo: 'NoPedidoCliente', tipo: 'texto' },
+  // Id_Camion NO siempre es numérico (unidades con código alfanumérico como
+  // "TR01"/"TR02") -- mismo caso ya visto en el reporte de Cartas Porte.
+  { header: 'No Camion',      campo: 'Id_Camion',      tipo: 'texto' },
+  { header: 'Cliente',        campo: 'NombreCom',      tipo: 'texto' },
+  { header: 'Moneda',         campo: 'MonFactura',     tipo: 'texto' },
+  { header: 'TipoCambio',     campo: 'TipoCambio',     tipo: 'numero' },
+  { header: 'Subtotal',       campo: 'SubTotal',       tipo: 'moneda' },
+  { header: 'IVA',            campo: 'IVA',            tipo: 'moneda' },
+  { header: 'Retención',      campo: 'Retencion',      tipo: 'moneda' },
+  { header: 'Total',          campo: 'Total',          tipo: 'moneda' },
+  { header: 'UUID',           campo: 'UUID',           tipo: 'texto' },
+  { header: 'Status',         campo: 'Status',         tipo: 'texto' },
+  { header: 'F.Cancela',      campo: 'FechaCancela',   tipo: 'fecha' },
+  { header: 'Cancelo',        campo: 'Cancelo',        tipo: 'texto' },
+  { header: 'FlagWeb',        campo: 'FlagWeb',        tipo: 'entero' },
+  { header: 'Realizo',        campo: 'Realizo',        tipo: 'texto' },
+];
+
+router.get('/facturas/excel', requierePermiso('reportes.facturas.ver'), async (req, res) => {
+  try {
+    const fechaIni = trim(req.query.fechaIni);
+    const fechaFin = trim(req.query.fechaFin);
+    if (!fechaIni || !fechaFin) return res.status(400).json({ error: 'El rango de fechas es obligatorio.' });
+
+    const tipoDocumento = trim(req.query.tipoDocumento) || 'T'; // T/F/NC/ND
+
+    const pool = await getPool();
+    const result = await pool.request()
+      .input('fechaIni', sql.Date, fechaIni).input('fechaFin', sql.Date, fechaFin)
+      .input('tipoDocumento', sql.VarChar(2), tipoDocumento)
+      .query(`SELECT * FROM Empresa2.fn_ReporteFacturas(@fechaIni, @fechaFin, @tipoDocumento) ORDER BY TipoDocumento, Id_Documento`);
+
+    const workbook = construirWorkbookReporte({
+      nombreHoja: 'Facturas',
+      titulo: 'Reporte de Facturas',
+      subtitulo: `Del ${fmtFechaTitulo(fechaIni)} al ${fmtFechaTitulo(fechaFin)}`,
+      columnas: COLUMNAS_FACTURAS,
+      filas: result.recordset,
+      columnasTotales: ['Subtotal', 'IVA', 'Retención', 'Total'],
+    });
+    await enviarWorkbook(res, workbook, 'Facturas', fechaIni, fechaFin);
+  } catch (err) {
+    console.error('reportes/facturas/excel error:', err);
     res.status(500).json({ error: err.message });
   }
 });

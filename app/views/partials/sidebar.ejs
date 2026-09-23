@@ -93,14 +93,15 @@
     </div>
     <% } %>
 
-    <% if (typeof tienePermiso === 'function' && tienePermiso('reportes.ver')) { %>
+    <% if (typeof tienePermiso === 'function' && (tienePermiso('reportes.cartaporte.ver') || tienePermiso('reportes.facturas.ver'))) { %>
     <div class="sidebar-group" data-group="reportes">
       <div class="sidebar-section sidebar-toggle">
         <span>Reportes</span>
         <i class="bi bi-chevron-down sidebar-chevron"></i>
       </div>
       <div class="sidebar-group-body">
-        <a href="/reportes" class="sidebar-link <%= modulo==='reportes' ?'active':'' %>"><i class="bi bi-file-earmark-excel"></i> Cartas Porte</a>
+        <% if (tienePermiso('reportes.cartaporte.ver')) { %><a href="/reportes/cartaporte" class="sidebar-link <%= modulo==='reportes-cartaporte' ?'active':'' %>"><i class="bi bi-file-earmark-excel"></i> Cartas Porte</a><% } %>
+        <% if (tienePermiso('reportes.facturas.ver')) { %><a href="/reportes/facturas" class="sidebar-link <%= modulo==='reportes-facturas' ?'active':'' %>"><i class="bi bi-file-earmark-excel"></i> Facturas</a><% } %>
       </div>
     </div>
     <% } %>

@@ -1,0 +1,57 @@
+<%- include('partials/header', { titulo: 'Reportes' }) %>
+<%- include('partials/sidebar') %>
+<div id="page-content">
+  <div class="d-flex align-items-center mb-3">
+    <button class="btn btn-sm btn-outline-secondary me-3 d-md-none" id="sidebarToggle"><i class="bi bi-list fs-5"></i></button>
+    <h4 class="mb-0 fw-bold flex-grow-1">Reportes — Facturas</h4>
+  </div>
+
+  <div class="card border-0 shadow-sm">
+    <div class="card-body">
+      <div id="fac_Error" class="alert alert-danger d-none py-2 small"></div>
+      <div class="row g-3">
+        <div class="col-md-3">
+          <label class="form-label small mb-1">Fecha inicio <span class="text-danger">*</span></label>
+          <input type="date" id="fac_FechaIni" class="form-control form-control-sm">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small mb-1">Fecha fin <span class="text-danger">*</span></label>
+          <input type="date" id="fac_FechaFin" class="form-control form-control-sm">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small mb-1">Tipo de documento</label>
+          <select id="fac_TipoDocumento" class="form-select form-select-sm">
+            <option value="T">Todos</option>
+            <option value="F">Facturas</option>
+            <option value="NC">Notas de Crédito</option>
+            <option value="ND">Notas de Débito</option>
+          </select>
+        </div>
+        <div class="col-md-2 d-flex align-items-end">
+          <button class="btn btn-sm btn-success w-100" id="fac_BtnGenerar" onclick="generarExcelFacturas()"><i class="bi bi-file-earmark-excel me-1"></i> Generar Excel</button>
+        </div>
+      </div>
+      <div id="fac_Progreso" class="mt-3 d-none">
+        <div class="small text-muted mb-1"><span class="spinner-border spinner-border-sm text-success me-1"></span> Generando el reporte, esto puede tardar unos segundos...</div>
+        <div class="progress" style="height:6px">
+          <div class="progress-bar progress-bar-striped progress-bar-animated bg-success" style="width:100%"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<%- include('partials/footer') %>
+<script>
+function generarExcelFacturas(){
+  const fechaIni=document.getElementById('fac_FechaIni').value;
+  const fechaFin=document.getElementById('fac_FechaFin').value;
+  const errorEl=document.getElementById('fac_Error'); errorEl.classList.add('d-none');
+  if(!fechaIni || !fechaFin){ errorEl.textContent='El rango de fechas es obligatorio.'; errorEl.classList.remove('d-none'); return; }
+  const params=new URLSearchParams({
+    fechaIni, fechaFin,
+    tipoDocumento: document.getElementById('fac_TipoDocumento').value,
+  });
+  descargarReporte({ url:'/reportes/facturas/excel', params, btnId:'fac_BtnGenerar', progresoId:'fac_Progreso', errorId:'fac_Error', nombrePorDefecto:'Facturas.xlsx' });
+}
+</script>
