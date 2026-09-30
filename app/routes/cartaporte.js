@@ -186,7 +186,7 @@ router.get('/get', async (req, res) => {
       CostoOtros: r.CostoOtros||0,
       Status: fmt(r.Status), Observaciones: fmt(r.Observaciones),
       Booking: fmt(r.Booking), Contenedor: fmt(r.Contenedor),
-      RealizoPedido: fmt(r.RealizoPedido)
+      RealizoPedido: fmt(r.RealizoPedido), MotCamPrecio: fmt(r.MotCamPrecio)
     });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -843,6 +843,7 @@ router.post('/guardar', requierePermiso('cartaporte.editar'), async (req, res) =
         .input('unidPeso', sql.VarChar(10),  f.UnidadPeso||null)
         .input('whoMod',   sql.VarChar(60),  [req.session.usuario.nombre, req.session.usuario.apellido].filter(Boolean).join(' '))
         .input('realizo',  sql.VarChar(60),  [req.session.usuario.nombre, req.session.usuario.apellido].filter(Boolean).join(' '))
+        .input('motCam',   sql.VarChar(255), f.MotCamPrecio||null)
         .query(`UPDATE Empresa2.CartaPorte SET
           FechaPedido=@fechaPed,RealizoPedido=@realizo,
           FehcaCarga=@fehcaCar,HoraCarga=@horaCar,FechaDesCarta=@fechaDes,HorarioDesCarta=@horaDes,
@@ -866,7 +867,7 @@ router.post('/guardar', requierePermiso('cartaporte.editar'), async (req, res) =
           CostoPension=@cPen,CostoRefacciones=@cRef,CostoOtros=@cOtrosOp,
           Status=@status,Observaciones=@obs,Booking=@booking2,Contenedor=@cont,
           TotalMercancias=@totMerc,PesoBrutoTotal=@pesoBruto,UnidadPeso=@unidPeso,
-          WhoModifica=@whoMod
+          WhoModifica=@whoMod,MotCamPrecio=@motCam
           WHERE Serie=@serie AND CartaPorte=@cp`);
       res.json({ ok: true });
     }

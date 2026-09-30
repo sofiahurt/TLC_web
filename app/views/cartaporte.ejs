@@ -331,11 +331,14 @@
           <div class="tab-pane fade" id="tabCostos">
             <div class="row g-3">
 
-              <div class="col-12"><h6 class="text-primary fw-bold border-bottom pb-1 mb-1">Costos de venta</h6></div>
+              <div class="col-12 d-flex align-items-center justify-content-between border-bottom pb-1 mb-1">
+                <h6 class="text-primary fw-bold mb-0">Costos de venta</h6>
+                <button type="button" class="btn btn-sm btn-warning d-none" id="btnDesbloquearCostos" onclick="desbloquearEdicionEmitido()"><i class="bi bi-unlock"></i> Desbloquear edición (CP Emitida)</button>
+              </div>
 
               <div class="col-6">
                 <label class="form-label fw-semibold small mb-1">Flete</label>
-                <input type="number" id="f_CostoFlete" class="form-control form-control-sm bg-light" step="0.01" readonly>
+                <input type="number" id="f_CostoFlete" class="form-control form-control-sm bg-light" step="0.01" readonly oninput="if (_costosDesbloqueados) recalcular()">
               </div>
               <div class="col-6">
                 <label class="form-label fw-semibold small mb-1">Renta</label>
@@ -343,7 +346,7 @@
               </div>
               <div class="col-6">
                 <label class="form-label fw-semibold small mb-1">Costo kilómetros</label>
-                <input type="number" id="f_Kilometros" class="form-control form-control-sm bg-light" step="0.01" readonly>
+                <input type="number" id="f_Kilometros" class="form-control form-control-sm bg-light" step="0.01" readonly oninput="if (_costosDesbloqueados) recalcular()">
               </div>
               <div class="col-6">
                 <label class="form-label fw-semibold small mb-1">Km tarifa</label>
@@ -351,7 +354,7 @@
               </div>
               <div class="col-6">
                 <label class="form-label fw-semibold small mb-1">Retención/km</label>
-                <input type="number" id="f_RetenKilo" class="form-control form-control-sm bg-light" step="0.01" readonly>
+                <input type="number" id="f_RetenKilo" class="form-control form-control-sm bg-light" step="0.01" readonly oninput="if (_costosDesbloqueados) recalcular()">
               </div>
               <div class="col-6">
                 <label class="form-label fw-semibold small mb-1">Moneda</label>
@@ -379,6 +382,11 @@
               <div class="col-6">
                 <label class="form-label fw-semibold small mb-1 text-primary fw-bold">TOTAL MX</label>
                 <input type="number" id="f_TOTALMX" class="form-control form-control-sm bg-primary bg-opacity-10 fw-bold" readonly>
+              </div>
+
+              <div class="col-12">
+                <label class="form-label fw-semibold small mb-1">Motivo de cambio de precio</label>
+                <input type="text" id="f_MotCamPrecio" class="form-control form-control-sm bg-light" maxlength="255" readonly placeholder="Solo aplica al desbloquear la edición de una Carta Porte Emitida">
               </div>
 
             </div>
@@ -679,6 +687,9 @@ let _mode = 'add';
 const _usuarioNombre = '<%= usuario.nombre.trim() %><%= usuario.apellido ? " " + usuario.apellido.trim() : "" %>';
 let _readOnly = false;
 let _statusLocked = false;
+// true solo mientras el botón "Desbloquear edición (CP Emitida)" está activo
+// en esta sesión de edición -- exige Motivo de cambio de precio al guardar.
+let _costosDesbloqueados = false;
 let _currentSerie = '';
 let _currentCP = '';
 let _currentIdCliente = '';
@@ -923,12 +934,25 @@ function loadForm(cp, serie, ro) {
         document.getElementById('f_RealizoPedido').value = _usuarioNombre;
       }
       _statusLocked = false;
+      // Reset del desbloqueo de costos -- cada apertura del formulario arranca
+      // bloqueada, sin importar cómo haya quedado una edición anterior.
+      _costosDesbloqueados = false;
+      const motEl = document.getElementById('f_MotCamPrecio');
+      if (motEl) { motEl.readOnly = true; motEl.style.backgroundColor = ''; motEl.style.borderColor = ''; }
+      const btnDesb = document.getElementById('btnDesbloquearCostos');
+      if (btnDesb) btnDesb.classList.add('d-none');
       setReadOnly(ro);
       applyRequiredHighlight(!ro);
       _currentIdCliente = String(d.Id_Cliente || '');
       toggleSeccionCliente();
       const st = (d.Status || '').trim().toUpperCase();
-      if (_mode === 'edit' && st === 'EMITIDO') lockEmitidoFields();
+      if (_mode === 'edit' && st === 'EMITIDO') {
+        lockEmitidoFields();
+        // Solo se puede desbloquear editando (no en modo Visualizar) una CP
+        // que sigue en EMITIDO -- FACTURADO/TRASLADO ya la bloquean aparte
+        // (lockStatusFields) y no deben poder reabrirse por aquí.
+        if (btnDesb) btnDesb.classList.remove('d-none');
+      }
       if (st === 'FACTURADO' || st === 'TRASLADO') lockStatusFields();
       loadMercancias(serie, cp);
       loadDepositos(serie, cp);
@@ -981,7 +1005,7 @@ function populateForm(d) {
   ['CostoFlete','CostoManiobras','CostoRenta','CostoAutopistas','CostoDobOpe','CostoDisel',
    'NoParadas','CostoParada','CostosOtros','CargoExtraTrans','Kilometros','KilometrosTar',
    'RetenKilo','c_Moneda','TipoCambio','DesOtrosCostos',
-   'PorIVAMX','SubTotalMX','IVAMX','RetenMX','TOTALMX',
+   'PorIVAMX','SubTotalMX','IVAMX','RetenMX','TOTALMX','MotCamPrecio',
    'CostoPrestamo','CostoTalacha','CostoCompllanta','CostoDiesel','CostoCasetas',
    'CostoComidas','CostoManiobrasExt','CostoBascula','CostoPension','CostoRefacciones','CostoOtros'
   ].forEach(k => set('f_' + k, d[k]));
@@ -1051,6 +1075,47 @@ function lockEmitidoFields() {
   });
 }
 
+// ── Desbloquear edición de una CP ya EMITIDA (botón en tab Costos) ─────────
+// Revierte exactamente lo que bloquea lockEmitidoFields() y además habilita
+// los 3 campos de costo editables (Flete, Costo kilómetros, Retención/km).
+// Exige capturar el Motivo de cambio de precio al guardar -- ver guardar().
+function desbloquearEdicionEmitido() {
+  if (!confirm('Esta Carta Porte ya está EMITIDA.\n\n¿Desbloquear la edición de los datos de carga/cliente/tarifa y de los costos (Flete, Costo kilómetros, Retención/km)?\n\nVas a tener que indicar el motivo del cambio de precio para poder guardar.')) return;
+
+  _costosDesbloqueados = true;
+
+  // Revierte lockEmitidoFields()
+  ['f_FehcaCarga','f_HoraCarga','f_FechaDesCarta','f_HorarioDesCarta',
+   'f_NombreComunCli','f_ClienteEnt','f_ClienteCarga','f_DesFlete'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.readOnly = false; el.style.backgroundColor = ''; }
+  });
+  ['btnLkCliente','btnClearCliente','btnLkClienteEnt','btnLkClienteCarga',
+   'btnLkTarifa','btnLkDomCarga','btnLkDomDescarga'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = false;
+  });
+
+  // Campos de costo editables (recalculan subtotal/IVA/retención/total vía
+  // el oninput ya puesto en cada input, que llama a recalcular()).
+  ['f_CostoFlete','f_Kilometros','f_RetenKilo'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.readOnly = false; el.classList.remove('bg-light'); }
+  });
+
+  // Motivo de cambio de precio: ahora requerido y resaltado.
+  const mot = document.getElementById('f_MotCamPrecio');
+  if (mot) {
+    mot.readOnly = false;
+    mot.classList.remove('bg-light');
+    mot.style.backgroundColor = '#FFF8DC';
+    mot.style.borderColor = '#E8A020';
+    mot.focus();
+  }
+
+  document.getElementById('btnDesbloquearCostos')?.classList.add('d-none');
+}
+
 function lockStatusFields() {
   _statusLocked = true;
   // Bloquear toda la tab Carta Porte
@@ -1092,7 +1157,7 @@ function clearCliente() {
    'f_CostoDobOpe','f_CostoDisel','f_NoParadas','f_CostoParada','f_CostosOtros',
    'f_DesOtrosCostos','f_CargoExtraTrans','f_Kilometros','f_KilometrosTar',
    'f_RetenKilo','f_c_Moneda','f_TipoCambio',
-   'f_SubTotalMX','f_IVAMX','f_RetenMX','f_TOTALMX'].forEach(id => {
+   'f_SubTotalMX','f_IVAMX','f_RetenMX','f_TOTALMX','f_MotCamPrecio'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
   });
   // Flags IVA/Ret
@@ -1124,6 +1189,8 @@ function guardar() {
   if (!req('f_Id_Operador'))   miss.push('Operador');
   if (!req('f_Id_DomCarga'))   miss.push('Dom. Carga');
   if (!req('f_Id_DomDescarga1')) miss.push('Dom. Descarga');
+  // Solo exige el motivo si se usó el botón "Desbloquear edición (CP Emitida)".
+  if (_costosDesbloqueados && !req('f_MotCamPrecio')) miss.push('Motivo de cambio de precio');
   if (miss.length) { errEl.textContent = 'Campos requeridos: ' + miss.join(', '); errEl.classList.remove('d-none'); return; }
   errEl.classList.add('d-none');
 
@@ -1160,6 +1227,7 @@ function guardar() {
     FlagIVA: chk('f_FlagIVA'), FlagRet: chk('f_FlagRet'),
     SubTotalMX: v('f_SubTotalMX'), PorIVAMX: v('f_PorIVAMX'),
     IVAMX: v('f_IVAMX'), RetenMX: v('f_RetenMX'), TOTALMX: v('f_TOTALMX'),
+    MotCamPrecio: v('f_MotCamPrecio'),
     SubTotalUSD: 0, PorIVAUSD: 16, IVAUSD: 0, RetenUSD: 0, TOTALUSD: 0,
     CostoPrestamo: v('f_CostoPrestamo'), CostoTalacha: v('f_CostoTalacha'),
     CostoCompllanta: v('f_CostoCompllanta'), CostoDiesel: v('f_CostoDiesel'),
