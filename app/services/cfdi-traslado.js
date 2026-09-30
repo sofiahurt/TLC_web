@@ -59,18 +59,19 @@ function flagMaterialPeligrosoCatalogo(bienesTransp) {
   return row ? fmt(row.flag) : null;
 }
 
-// Solo se declaran Municipio, Estado, País y Código Postal -- el resto de
-// los datos del domicilio (Calle, NumeroExterior, NumeroInterior, Localidad)
-// ya no se incluyen en el armado del XML (Carta Porte y Factura con CP).
+// Solo se declaran Calle, NumeroExterior, NumeroInterior (si tiene), Estado,
+// País y Código Postal -- Municipio y Localidad no se incluyen en el armado
+// del XML (Carta Porte y Factura con CP). Municipio se quitó porque el SAT
+// lo valida contra el catálogo c_Municipio (clave numérica), no como texto
+// libre, y DomCarDes solo guarda el nombre en texto.
 function domAttrs(dom) {
   if (!dom) return {};
   const attrs = {};
-  // Municipio es texto libre (t_Descrip120, sin catálogo restringido --
-  // verificado contra el XSD oficial CartaPorte31.xsd), por eso es seguro
-  // declararlo con el texto tal cual viene de DomCarDes.
-  if (fmt(dom.MUNICIPIO)) attrs.Municipio = fmt(dom.MUNICIPIO);
-  if (fmt(dom.ESTADO))  attrs.Estado   = fmt(dom.ESTADO);
-  if (fmt(dom.CP))      attrs.CodigoPostal = fmt(dom.CP);
+  if (fmt(dom.CALLE)) attrs.Calle = fmt(dom.CALLE);
+  if (fmt(dom.NOEXT)) attrs.NumeroExterior = fmt(dom.NOEXT);
+  if (fmt(dom.NOINT)) attrs.NumeroInterior = fmt(dom.NOINT);
+  if (fmt(dom.ESTADO)) attrs.Estado = fmt(dom.ESTADO);
+  if (fmt(dom.CP)) attrs.CodigoPostal = fmt(dom.CP);
   attrs.Pais = normPais(dom.PAIS || 'MEX');
   return attrs;
 }

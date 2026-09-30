@@ -768,7 +768,9 @@ router.get('/acuse-notacredito', async (req, res) => {
 });
 
 // ── XML timbrado ─────────────────────────────────────────────────────────────
-// GET /cfdi/xml?serie=&cartaporte= — solo disponible si Status=TRASLADO y hay UUID.
+// GET /cfdi/xml?serie=&cartaporte= — solo disponible una vez timbrada (con UUID),
+// igual que /cfdi/xml-factura -- un timbrado de prueba no avanza el Status a
+// TRASLADO, pero el XML de prueba sí debe poder descargarse.
 router.get('/xml', async (req, res) => {
   try {
     const serie      = (req.query.serie || '').trim();
@@ -782,7 +784,7 @@ router.get('/xml', async (req, res) => {
       .query(`SELECT Status, UUID FROM Empresa2.CartaPorte WHERE Serie=@serie AND CartaPorte=@cp`);
     const cp = cpRes.recordset[0];
     if (!cp) return res.status(404).json({ error: 'Carta Porte no encontrada' });
-    if ((cp.Status || '').trim().toUpperCase() !== 'TRASLADO' || !(cp.UUID || '').trim()) {
+    if (!(cp.UUID || '').trim()) {
       return res.status(400).json({ error: 'Esta Carta Porte todavía no está timbrada' });
     }
 

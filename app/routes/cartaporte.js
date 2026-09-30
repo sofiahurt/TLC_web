@@ -49,7 +49,7 @@ router.get('/data', async (req, res) => {
     const fmt = v => v ? (v instanceof Date ? v.toISOString().slice(0,10) : String(v).trim()) : '';
     const fmtDate = v => { if (!v) return ''; const iso = v instanceof Date ? v.toISOString().slice(0,10) : String(v).trim().slice(0,10); return iso.length >= 10 ? `${iso.slice(8,10)}/${iso.slice(5,7)}/${iso.slice(0,4)}` : iso; };
     const rows = dataRes.recordset.map(r => {
-      const timbrada = fmt(r.Status).toUpperCase() === 'TRASLADO' && !!fmt(r.UUID);
+      const timbrada = !!fmt(r.UUID);
       const statusUp = fmt(r.Status).toUpperCase();
       const canceladaConAcuse = (statusUp === 'CANCELADO' || statusUp === 'CANCELAD0') && !!fmt(r.UUID);
       const qs = `serie=${encodeURIComponent(fmt(r.Serie))}&cartaporte=${encodeURIComponent(fmt(r.CartaPorte))}`;
