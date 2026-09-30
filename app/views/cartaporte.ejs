@@ -329,64 +329,69 @@
 
           <!-- ── TAB 4: COSTOS ──────────────────────────────────────────── -->
           <div class="tab-pane fade" id="tabCostos">
-            <div class="row g-3">
+            <div class="row g-2">
 
               <div class="col-12 d-flex align-items-center justify-content-between border-bottom pb-1 mb-1">
                 <h6 class="text-primary fw-bold mb-0">Costos de venta</h6>
+                <% if (tienePermiso('cartaporte.btn_desbloquear')) { %>
                 <button type="button" class="btn btn-sm btn-warning d-none" id="btnDesbloquearCostos" onclick="desbloquearEdicionEmitido()"><i class="bi bi-unlock"></i> Desbloquear edición (CP Emitida)</button>
+                <% } %>
               </div>
 
-              <div class="col-6">
+              <div class="col-4">
                 <label class="form-label fw-semibold small mb-1">Flete</label>
-                <input type="number" id="f_CostoFlete" class="form-control form-control-sm bg-light" step="0.01" readonly oninput="if (_costosDesbloqueados) recalcular()">
-              </div>
-              <div class="col-6">
-                <label class="form-label fw-semibold small mb-1">Renta</label>
-                <input type="number" id="f_CostoRenta" class="form-control form-control-sm bg-light" step="0.01" readonly>
-              </div>
-              <div class="col-6">
-                <label class="form-label fw-semibold small mb-1">Costo kilómetros</label>
-                <input type="number" id="f_Kilometros" class="form-control form-control-sm bg-light" step="0.01" readonly oninput="if (_costosDesbloqueados) recalcular()">
-              </div>
-              <div class="col-6">
-                <label class="form-label fw-semibold small mb-1">Km tarifa</label>
-                <input type="number" id="f_KilometrosTar" class="form-control form-control-sm bg-light" readonly>
-              </div>
-              <div class="col-6">
-                <label class="form-label fw-semibold small mb-1">Retención/km</label>
-                <input type="number" id="f_RetenKilo" class="form-control form-control-sm bg-light" step="0.01" readonly oninput="if (_costosDesbloqueados) recalcular()">
-              </div>
-              <div class="col-6">
-                <label class="form-label fw-semibold small mb-1">Moneda</label>
-                <input type="text" id="f_c_Moneda" class="form-control form-control-sm bg-light" maxlength="10" readonly>
-              </div>
-              <div class="col-6">
-                <label class="form-label fw-semibold small mb-1">Tipo cambio</label>
-                <input type="number" id="f_TipoCambio" class="form-control form-control-sm bg-light" step="0.01" readonly>
-              </div>
-
-              <div class="col-12"><h6 class="text-primary fw-bold border-bottom pb-1 mb-1 mt-1">Totales MXN</h6></div>
-
-              <div class="col-6">
-                <label class="form-label fw-semibold small mb-1">SubTotal MX</label>
-                <input type="number" id="f_SubTotalMX" class="form-control form-control-sm bg-light" readonly>
-              </div>
-              <div class="col-6">
-                <label class="form-label fw-semibold small mb-1">IVA MX (16%)</label>
-                <input type="number" id="f_IVAMX" class="form-control form-control-sm bg-light" readonly>
-              </div>
-              <div class="col-6">
-                <label class="form-label fw-semibold small mb-1">Retención MX (4%)</label>
-                <input type="number" id="f_RetenMX" class="form-control form-control-sm bg-light" readonly>
-              </div>
-              <div class="col-6">
-                <label class="form-label fw-semibold small mb-1 text-primary fw-bold">TOTAL MX</label>
-                <input type="number" id="f_TOTALMX" class="form-control form-control-sm bg-primary bg-opacity-10 fw-bold" readonly>
+                <div class="input-group input-group-sm mb-2">
+                  <input type="text" inputmode="decimal" id="f_CostoFlete" class="form-control form-control-sm bg-light" readonly oninput="if (_costosDesbloqueados) recalcular()">
+                </div>
+                <label class="form-label small mb-1">Renta</label>
+                <div class="input-group input-group-sm mb-2">
+                  <input type="text" inputmode="decimal" id="f_CostoRenta" class="form-control form-control-sm bg-light" readonly>
+                </div>
+                <label class="form-label small mb-1">Costo kilómetros</label>
+                <div class="input-group input-group-sm mb-2">
+                  <input type="text" inputmode="decimal" id="f_Kilometros" class="form-control form-control-sm bg-light" readonly oninput="if (_costosDesbloqueados) recalcular()">
+                </div>
+                <label class="form-label small mb-1">Km tarifa</label>
+                <div class="input-group input-group-sm mb-2">
+                  <input type="number" id="f_KilometrosTar" class="form-control form-control-sm bg-light" readonly>
+                </div>
+                <label class="form-label small mb-1">Retención/km</label>
+                <div class="input-group input-group-sm mb-2">
+                  <input type="text" inputmode="decimal" id="f_RetenKilo" class="form-control form-control-sm bg-light" readonly oninput="if (_costosDesbloqueados) recalcular()">
+                </div>
+                <label class="form-label small mb-1">Moneda</label>
+                <div class="input-group input-group-sm mb-2">
+                  <input type="text" id="f_c_Moneda" class="form-control form-control-sm bg-light" maxlength="10" readonly>
+                </div>
+                <label class="form-label small mb-1">Tipo cambio</label>
+                <div class="input-group input-group-sm mb-2">
+                  <input type="number" id="f_TipoCambio" class="form-control form-control-sm bg-light" step="0.01" readonly>
+                </div>
               </div>
 
-              <div class="col-12">
+              <div class="col-4">
+                <h6 class="text-primary fw-bold border-bottom pb-1 mb-2">Totales</h6>
+                <label class="form-label fw-semibold small mb-1">SubTotal</label>
+                <div class="input-group input-group-sm mb-2">
+                  <input type="text" id="f_SubTotalMX" class="form-control form-control-sm bg-primary bg-opacity-10 fw-semibold" readonly>
+                </div>
+                <label class="form-label fw-semibold small mb-1">IVA (16%)</label>
+                <div class="input-group input-group-sm mb-2">
+                  <input type="text" id="f_IVAMX" class="form-control form-control-sm bg-primary bg-opacity-10 fw-semibold" readonly>
+                </div>
+                <label class="form-label fw-semibold small mb-1">Retención (4%)</label>
+                <div class="input-group input-group-sm mb-2">
+                  <input type="text" id="f_RetenMX" class="form-control form-control-sm bg-primary bg-opacity-10 fw-semibold" readonly>
+                </div>
+                <label class="form-label fw-semibold small mb-1 text-primary fw-bold">TOTAL</label>
+                <div class="input-group input-group-sm mb-2">
+                  <input type="text" id="f_TOTALMX" class="form-control form-control-sm bg-primary bg-opacity-25 fw-bold" readonly>
+                </div>
+              </div>
+
+              <div class="col-4">
                 <label class="form-label fw-semibold small mb-1">Motivo de cambio de precio</label>
-                <input type="text" id="f_MotCamPrecio" class="form-control form-control-sm bg-light" maxlength="255" readonly placeholder="Solo aplica al desbloquear la edición de una Carta Porte Emitida">
+                <textarea id="f_MotCamPrecio" class="form-control form-control-sm bg-light" rows="10" maxlength="255" readonly placeholder="Solo aplica al desbloquear la edición de una Carta Porte Emitida"></textarea>
               </div>
 
             </div>
@@ -694,6 +699,16 @@ let _currentSerie = '';
 let _currentCP = '';
 let _currentIdCliente = '';
 let _tarifaTipo = 'flete';
+
+// ── Máscara de dinero para los campos de Costos ($1,234.56) ────────────────
+function fmtMoney(v) {
+  const n = parseFloat(v) || 0;
+  const signo = n < 0 ? '-' : '';
+  return signo + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function parseMoneyInput(v) {
+  return parseFloat(String(v == null ? '' : v).replace(/[^0-9.-]/g, '')) || 0;
+}
 let _mercMode = 'add';
 let _mercEditId = null;
 let _depoMode = 'add';
@@ -1002,13 +1017,16 @@ function populateForm(d) {
   set('f_Status', d.Status); set('f_RealizoPedido', d.RealizoPedido);
   set('f_Observaciones', d.Observaciones);
   // costos
-  ['CostoFlete','CostoManiobras','CostoRenta','CostoAutopistas','CostoDobOpe','CostoDisel',
-   'NoParadas','CostoParada','CostosOtros','CargoExtraTrans','Kilometros','KilometrosTar',
-   'RetenKilo','c_Moneda','TipoCambio','DesOtrosCostos',
-   'PorIVAMX','SubTotalMX','IVAMX','RetenMX','TOTALMX','MotCamPrecio',
+  ['CostoManiobras','CostoAutopistas','CostoDobOpe','CostoDisel',
+   'NoParadas','CostoParada','CostosOtros','CargoExtraTrans','KilometrosTar',
+   'c_Moneda','TipoCambio','DesOtrosCostos',
+   'PorIVAMX','MotCamPrecio',
    'CostoPrestamo','CostoTalacha','CostoCompllanta','CostoDiesel','CostoCasetas',
    'CostoComidas','CostoManiobrasExt','CostoBascula','CostoPension','CostoRefacciones','CostoOtros'
   ].forEach(k => set('f_' + k, d[k]));
+  // Campos de costo con máscara de dinero ($1,234.56)
+  ['CostoFlete','CostoRenta','Kilometros','RetenKilo','SubTotalMX','IVAMX','RetenMX','TOTALMX']
+    .forEach(k => set('f_' + k, fmtMoney(d[k])));
   ['FlagCobMan','FlagCobDem','FlagCobAuto','FlagCobDO','FlagConDis','FlagCobParada',
    'FlagCobOtros','FlagCobCE','FlagIVA','FlagRet'
   ].forEach(k => chk('f_' + k, d[k]));
@@ -1052,8 +1070,8 @@ function setReadOnly(ro) {
     const elSt = document.getElementById('f_Status');
     if (elSt) { elSt.readOnly = true; elSt.disabled = false; }
   }
-  // Tab Costos siempre de solo lectura
-  document.querySelectorAll('#tabCostos input').forEach(el => {
+  // Tab Costos siempre de solo lectura (incluye el textarea de Motivo de cambio de precio)
+  document.querySelectorAll('#tabCostos input, #tabCostos textarea').forEach(el => {
     if (el.type !== 'hidden' && el.type !== 'checkbox') { el.readOnly = true; el.disabled = false; }
   });
 }
@@ -1097,10 +1115,15 @@ function desbloquearEdicionEmitido() {
   });
 
   // Campos de costo editables (recalculan subtotal/IVA/retención/total vía
-  // el oninput ya puesto en cada input, que llama a recalcular()).
+  // el oninput ya puesto en cada input, que llama a recalcular()). Como
+  // tienen máscara de dinero, en foco se muestra el número plano para
+  // editar cómodo, y al perder el foco se vuelve a formatear.
   ['f_CostoFlete','f_Kilometros','f_RetenKilo'].forEach(id => {
     const el = document.getElementById(id);
-    if (el) { el.readOnly = false; el.classList.remove('bg-light'); }
+    if (!el) return;
+    el.readOnly = false; el.classList.remove('bg-light');
+    el.addEventListener('focus', () => { const v = parseMoneyInput(el.value); el.value = v ? v.toFixed(2) : ''; });
+    el.addEventListener('blur', () => { el.value = fmtMoney(parseMoneyInput(el.value)); });
   });
 
   // Motivo de cambio de precio: ahora requerido y resaltado.
@@ -1212,21 +1235,21 @@ function guardar() {
     Id_Operador: v('f_Id_Operador'), Operador: v('f_Operador'),
     Id_DomCarga: v('f_Id_DomCarga'), DomCarga: v('f_DomCarga'),
     Id_DomDescarga1: v('f_Id_DomDescarga1'), DomDescarga: v('f_DomDescarga'),
-    CostoFlete: v('f_CostoFlete'), CostoManiobras: v('f_CostoManiobras'),
-    CostoRenta: v('f_CostoRenta'), CostoAutopistas: v('f_CostoAutopistas'),
+    CostoFlete: parseMoneyInput(v('f_CostoFlete')), CostoManiobras: v('f_CostoManiobras'),
+    CostoRenta: parseMoneyInput(v('f_CostoRenta')), CostoAutopistas: v('f_CostoAutopistas'),
     CostoDobOpe: v('f_CostoDobOpe'), CostoDisel: v('f_CostoDisel'),
     NoParadas: v('f_NoParadas'), CostoParada: v('f_CostoParada'),
     CostosOtros: v('f_CostosOtros'), DesOtrosCostos: v('f_DesOtrosCostos'),
-    CargoExtraTrans: v('f_CargoExtraTrans'), Kilometros: v('f_Kilometros'),
-    KilometrosTar: v('f_KilometrosTar'), RetenKilo: v('f_RetenKilo'),
+    CargoExtraTrans: v('f_CargoExtraTrans'), Kilometros: parseMoneyInput(v('f_Kilometros')),
+    KilometrosTar: v('f_KilometrosTar'), RetenKilo: parseMoneyInput(v('f_RetenKilo')),
     c_Moneda: v('f_c_Moneda'), TipoCambio: v('f_TipoCambio'),
     FlagCobMan: chk('f_FlagCobMan'), FlagCobDem: chk('f_FlagCobDem'),
     FlagCobAuto: chk('f_FlagCobAuto'), FlagCobDO: chk('f_FlagCobDO'),
     FlagConDis: chk('f_FlagConDis'), FlagCobParada: chk('f_FlagCobParada'),
     FlagCobOtros: chk('f_FlagCobOtros'), FlagCobCE: chk('f_FlagCobCE'),
     FlagIVA: chk('f_FlagIVA'), FlagRet: chk('f_FlagRet'),
-    SubTotalMX: v('f_SubTotalMX'), PorIVAMX: v('f_PorIVAMX'),
-    IVAMX: v('f_IVAMX'), RetenMX: v('f_RetenMX'), TOTALMX: v('f_TOTALMX'),
+    SubTotalMX: parseMoneyInput(v('f_SubTotalMX')), PorIVAMX: v('f_PorIVAMX'),
+    IVAMX: parseMoneyInput(v('f_IVAMX')), RetenMX: parseMoneyInput(v('f_RetenMX')), TOTALMX: parseMoneyInput(v('f_TOTALMX')),
     MotCamPrecio: v('f_MotCamPrecio'),
     SubTotalUSD: 0, PorIVAUSD: 16, IVAUSD: 0, RetenUSD: 0, TOTALUSD: 0,
     CostoPrestamo: v('f_CostoPrestamo'), CostoTalacha: v('f_CostoTalacha'),
@@ -1262,7 +1285,9 @@ function confirmDelete() {
 
 // ── RECALCULAR ────────────────────────────────────────────────────────────────
 function recalcular() {
-  const n   = id => parseFloat(document.getElementById(id)?.value) || 0;
+  // parseMoneyInput tolera tanto "$1,234.56" (campos con máscara) como
+  // números planos (los campos ocultos de compatibilidad con BD).
+  const n   = id => parseMoneyInput(document.getElementById(id)?.value);
   const chk = id => !!document.getElementById(id)?.checked;
   const sub = n('f_CostoFlete') + n('f_CostoManiobras') + n('f_CostoRenta') +
               n('f_CostoAutopistas') + n('f_CostoDobOpe') + n('f_CostoDisel') +
@@ -1278,10 +1303,10 @@ function recalcular() {
   const iva   = chk('f_FlagIVA') ? 0 : base * (porIVA / 100);
   const reten = chk('f_FlagRet') ? 0 : base * 0.04;
   const tot   = sub + iva - reten;
-  document.getElementById('f_SubTotalMX').value = sub.toFixed(2);
-  document.getElementById('f_IVAMX').value      = iva.toFixed(2);
-  document.getElementById('f_RetenMX').value    = reten.toFixed(2);
-  document.getElementById('f_TOTALMX').value    = tot.toFixed(2);
+  document.getElementById('f_SubTotalMX').value = fmtMoney(sub);
+  document.getElementById('f_IVAMX').value      = fmtMoney(iva);
+  document.getElementById('f_RetenMX').value    = fmtMoney(reten);
+  document.getElementById('f_TOTALMX').value    = fmtMoney(tot);
 }
 
 // ── CARGA AUTOMÁTICA TABS ─────────────────────────────────────────────────────
@@ -1629,13 +1654,13 @@ function openLkTarifa() {
 
       document.getElementById('f_Id_Tarifa').value = row.ID_TARIFA;
       document.getElementById('f_DesFlete').value  = (row.DESFLETE||'').trim();
-      document.getElementById('f_CostoFlete').value     = cFlete.toFixed(2);
-      document.getElementById('f_CostoRenta').value     = cRenta.toFixed(2);
+      document.getElementById('f_CostoFlete').value     = fmtMoney(cFlete);
+      document.getElementById('f_CostoRenta').value     = fmtMoney(cRenta);
       document.getElementById('f_KilometrosTar').value  = kmTar;
-      document.getElementById('f_Kilometros').value     = kmVal.toFixed(2);
+      document.getElementById('f_Kilometros').value     = fmtMoney(kmVal);
       document.getElementById('f_CostoAutopistas').value= autoVal.toFixed(2);
-      const retenK = (kmVal * 0.04).toFixed(2);
-      document.getElementById('f_RetenKilo').value      = retenK;
+      const retenK = kmVal * 0.04;
+      document.getElementById('f_RetenKilo').value      = fmtMoney(retenK);
       document.getElementById('f_c_Moneda').value       = (row.MONVENTA||'').trim();
       document.getElementById('f_TipoCambio').value     = row.TIPOCAMBIO||0;
       document.getElementById('f_FlagIVA').checked      = parseInt(row.FLAGIVA) === 1;
