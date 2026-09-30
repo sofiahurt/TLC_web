@@ -28,7 +28,7 @@
           <button class="btn btn-sm btn-primary" id="btnEditar" data-requires-selection disabled onclick="openEdit()"><i class="bi bi-pencil"></i> Editar</button>
           <button class="btn btn-sm btn-outline-primary" data-requires-selection disabled onclick="openVisualizar()"><i class="bi bi-eye"></i> Visualizar</button>
           <% if (tienePermiso('cartaporte.btn_timbrar')) { %>
-          <button class="btn btn-sm btn-warning" id="btnTimbrar" disabled onclick="openTimbrar()"><i class="bi bi-file-earmark-check"></i> Timbrar</button>
+          <button class="btn btn-sm btn-warning" id="btnTimbrar" disabled onclick="openTimbrar()"><i class="bi bi-file-earmark-check"></i> Traslado</button>
           <% } %>
           <% if (tienePermiso('cartaporte.btn_cancelar')) { %>
           <button class="btn btn-sm btn-danger" id="btnCancelarCP" data-requires-selection disabled onclick="confirmCancelarCP()"><i class="bi bi-x-circle"></i> Cancelar</button>
@@ -181,6 +181,7 @@
                   <label class="form-label fw-semibold small mb-1">Tarifa / Descripción flete <span class="text-danger">*</span></label>
                   <div class="input-group input-group-sm">
                     <input type="hidden" id="f_Id_Tarifa">
+                    <input type="hidden" id="f_DesFlete_raw">
                     <input type="text" id="f_DesFlete" class="form-control form-control-sm" readonly placeholder="Seleccionar tarifa...">
                     <button class="btn btn-outline-secondary" type="button" id="btnLkTarifa" onclick="openLkTarifa()"><i class="bi bi-search"></i></button>
                   </div>
@@ -192,6 +193,7 @@
                   <label class="form-label fw-semibold small mb-1">Camión <span class="text-danger">*</span></label>
                   <div class="input-group input-group-sm">
                     <input type="hidden" id="f_Id_Camion">
+                    <input type="hidden" id="f_NoCamion_raw">
                     <input type="text" id="f_NoCamion" class="form-control form-control-sm" readonly placeholder="Seleccionar...">
                     <button class="btn btn-outline-secondary" type="button" onclick="openLkCamion()"><i class="bi bi-search"></i></button>
                   </div>
@@ -1004,9 +1006,11 @@ function populateForm(d) {
   set('f_Booking', d.Booking); set('f_NoRainde', d.NoRainde);
   set('f_Contenedor', d.Contenedor);
   document.getElementById('f_Id_Tarifa').value = d.Id_Tarifa;
-  set('f_DesFlete', d.DesFlete);
+  set('f_DesFlete_raw', d.DesFlete);
+  set('f_DesFlete', d.Id_Tarifa ? (d.Id_Tarifa + ' - ' + (d.DesFlete||'')) : d.DesFlete);
   document.getElementById('f_Id_Camion').value = d.Id_Camion;
-  set('f_NoCamion', d.NoCamion); set('f_NoPlacas', d.NoPlacas);
+  set('f_NoCamion_raw', d.NoCamion);
+  set('f_NoCamion', d.Id_Camion ? (d.Id_Camion + ' - ' + (d.NoCamion||'')) : d.NoCamion); set('f_NoPlacas', d.NoPlacas);
   set('f_NoCaja', d.NoCaja); set('f_NoCaja2', d.NoCaja2);
   document.getElementById('f_Id_Operador').value = d.Id_Operador;
   set('f_Operador', d.Operador);
@@ -1161,9 +1165,11 @@ function clearCliente() {
   document.getElementById('f_NombreComunCli').value = '';
   // Tarifa
   document.getElementById('f_Id_Tarifa').value = '';
+  document.getElementById('f_DesFlete_raw').value = '';
   document.getElementById('f_DesFlete').value = '';
   // Camión, placas, cajas
   document.getElementById('f_Id_Camion').value = '';
+  document.getElementById('f_NoCamion_raw').value = '';
   document.getElementById('f_NoCamion').value = '';
   document.getElementById('f_NoPlacas').value = '';
   document.getElementById('f_NoCaja').value = '';
@@ -1229,8 +1235,8 @@ function guardar() {
     Id_ClienteEnt: v('f_Id_ClienteEnt'), ClienteEnt: v('f_ClienteEnt'),
     Id_ClienteCarga: v('f_Id_ClienteCarga'), ClienteCarga: v('f_ClienteCarga'),
     Booking: v('f_Booking'), NoRainde: v('f_NoRainde'), Contenedor: v('f_Contenedor'),
-    Id_Tarifa: v('f_Id_Tarifa'), DesFlete: v('f_DesFlete'),
-    Id_Camion: v('f_Id_Camion'), NoCamion: v('f_NoCamion'), NoPlacas: v('f_NoPlacas'),
+    Id_Tarifa: v('f_Id_Tarifa'), DesFlete: v('f_DesFlete_raw'),
+    Id_Camion: v('f_Id_Camion'), NoCamion: v('f_NoCamion_raw'), NoPlacas: v('f_NoPlacas'),
     NoCaja: v('f_NoCaja'), NoCaja2: v('f_NoCaja2'),
     Id_Operador: v('f_Id_Operador'), Operador: v('f_Operador'),
     Id_DomCarga: v('f_Id_DomCarga'), DomCarga: v('f_DomCarga'),
@@ -1484,7 +1490,7 @@ function openAddDepo() {
   document.getElementById('d_CartaPorte').value = _currentCP;
   document.getElementById('d_Id_Operador').value = document.getElementById('f_Id_Operador').value;
   document.getElementById('d_OPERADOR').value    = document.getElementById('f_Operador').value;
-  document.getElementById('d_TC').value          = document.getElementById('f_NoCamion').value;
+  document.getElementById('d_TC').value          = document.getElementById('f_NoCamion_raw').value;
   document.getElementById('d_Origen').value      = document.getElementById('f_DomCarga').value;
   document.getElementById('d_Destino').value     = document.getElementById('f_DomDescarga').value;
   document.getElementById('d_Turno').value = 'Mañana';
@@ -1653,7 +1659,8 @@ function openLkTarifa() {
       if (!valid) { alert('La tarifa seleccionada no cuenta con costos configurados'); return; }
 
       document.getElementById('f_Id_Tarifa').value = row.ID_TARIFA;
-      document.getElementById('f_DesFlete').value  = (row.DESFLETE||'').trim();
+      document.getElementById('f_DesFlete_raw').value = (row.DESFLETE||'').trim();
+      document.getElementById('f_DesFlete').value  = row.ID_TARIFA + ' - ' + (row.DESFLETE||'').trim();
       document.getElementById('f_CostoFlete').value     = fmtMoney(cFlete);
       document.getElementById('f_CostoRenta').value     = fmtMoney(cRenta);
       document.getElementById('f_KilometrosTar').value  = kmTar;
@@ -1673,7 +1680,8 @@ function openLkCamion() {
   openGenericLookup('Buscar camión', ['ID Camión','Descripción','Placas'],
     '/cartaporte/lookup/camiones', {}, row => {
       document.getElementById('f_Id_Camion').value = row.ID_CAMION;
-      document.getElementById('f_NoCamion').value  = (row.DESCRIPCION||'').trim();
+      document.getElementById('f_NoCamion_raw').value = (row.DESCRIPCION||'').trim();
+      document.getElementById('f_NoCamion').value  = String(row.ID_CAMION).trim() + ' - ' + (row.DESCRIPCION||'').trim();
       document.getElementById('f_NoPlacas').value  = (row.PLACA||'').trim();
       if (row.ID_OPERADOR) {
         document.getElementById('f_Id_Operador').value = row.ID_OPERADOR;
