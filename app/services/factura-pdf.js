@@ -258,9 +258,10 @@ function tablaPorLinea(d) {
     const otros = num(l.COSTOAUTOPISTAS) + num(l.CostoPension) + num(l.CostoEstadias) + num(l.COSTOSOTROS) + num(l.KILOMETROS) + num(l.COSTODEMORAS);
     const prefijo = flete > 0 ? 'FLETE' : (renta > 0 ? 'RENTA' : '');
     const descripcion = [prefijo, fmt(l.DESFLETE)].filter(Boolean).join(' ');
+    const textoAdd = fmt(l.TEXTOADD);
     return [
       { text: fmt(l.C_CLAVEPRODSERV), fontSize: 8 },
-      { text: descripcion, fontSize: 8 },
+      { text: textoAdd ? `${descripcion}\n${textoAdd}` : descripcion, fontSize: 8 },
       { text: `$${numFmt(flete, 2)}`, fontSize: 8, alignment: 'right' },
       { text: `$${numFmt(maniobras, 2)}`, fontSize: 8, alignment: 'right' },
       { text: `$${numFmt(renta, 2)}`, fontSize: 8, alignment: 'right' },

@@ -302,12 +302,35 @@
   </div>
 </div>
 
+<div class="modal fade" id="textoAddModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title"><i class="bi bi-chat-left-text me-2 text-info"></i>Texto adicional de la partida</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="textoAddError" class="alert alert-danger d-none py-2 small"></div>
+        <label class="form-label small mb-1">Este texto se agrega a la descripción de esta partida en el PDF de la factura.</label>
+        <textarea id="textoAddInput" class="form-control form-control-sm" rows="4" maxlength="999"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-info btn-sm" id="btnGuardarTextoAdd" onclick="guardarTextoAdd()">
+          <i class="bi bi-check-lg me-1"></i>Guardar
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <%- include('partials/footer') %>
 <script>
 const browse=initBrowse({searchInput:document.getElementById('searchInput'),searchColumn:document.getElementById('searchCol'),tableBody:document.getElementById('tableBody'),paginationEl:document.getElementById('pagination'),infoEl:document.getElementById('pageInfo'),fetchUrl:'/facturas/data',defaultSort:'Id_NoFactura',defaultDir:'desc'});
 const modal=new bootstrap.Modal(document.getElementById('frmModal'));
 const timbraFacModal=new bootstrap.Modal(document.getElementById('timbraFacModal'));
 const cancelarFacModal=new bootstrap.Modal(document.getElementById('cancelarFacModal'));
+const textoAddModal=new bootstrap.Modal(document.getElementById('textoAddModal'));
 const errEl=document.getElementById('frmError'), warnEl=document.getElementById('frmWarning');
 let _factura={idNoFactura:null, confirmada:false, cliente:null};
 const USUARIO_ACTUAL="<%= usuario.nombre.trim() %> <%= usuario.apellido ? usuario.apellido.trim() : '' %>".trim();
@@ -582,8 +605,13 @@ const CONCEPTOS=[
 // Nota: idNoFactura por sí solo NO identifica de forma única una factura
 // (la clave real es SerieFac+Id_NoFactura); toggleFlag/eliminarLinea toman
 // la SerieFac de _factura.serieFac (la factura abierta en el modal), no de la fila.
+function escAttr(s){
+  return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
 function filaDetalleHtml(l){
   const cp=(l.CARTAPORTE||'').trim(), desc=(l.DESFLETE||'').trim();
+  const textoAdd=(l.TEXTOADD||'').trim();
   const celdas=CONCEPTOS.map(c=>{
     const activo=Number(l[c.flagCol])===1;
     const monto=parseFloat(l[c.montoCol])||0;
@@ -601,8 +629,39 @@ function filaDetalleHtml(l){
     <td class="text-end" data-col="IVA">${fmtN(l.IVA)}</td>
     <td class="text-end" data-col="RETEN">${fmtN(l.RETEN)}</td>
     <td class="text-end" data-col="TOTAL">${fmtN(l.TOTAL)}</td>
-    <td class="text-center"><button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="eliminarLinea(${l.ID_NOFACTURA},${l.ID_NODETAFAC})"><i class="bi bi-trash"></i></button></td>
+    <td class="text-center">
+      <button class="btn btn-sm ${textoAdd?'btn-info':'btn-outline-secondary'} py-0 px-1 me-1" title="${textoAdd?'Editar texto adicional':'Agregar texto adicional'}" data-texto="${escAttr(textoAdd)}" onclick="abrirTextoAdd(${l.ID_NOFACTURA},${l.ID_NODETAFAC},this)"><i class="bi bi-chat-left-text"></i></button>
+      <button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="eliminarLinea(${l.ID_NOFACTURA},${l.ID_NODETAFAC})"><i class="bi bi-trash"></i></button>
+    </td>
   </tr>`;
+}
+
+let _textoAddCtx=null;
+function abrirTextoAdd(idNoFactura, idNoDetaFac, btnEl){
+  _textoAddCtx={idNoFactura, idNoDetaFac};
+  document.getElementById('textoAddInput').value=btnEl.dataset.texto||'';
+  document.getElementById('textoAddError').classList.add('d-none');
+  textoAddModal.show();
+}
+function guardarTextoAdd(){
+  if(!_textoAddCtx) return;
+  const textoAdd=document.getElementById('textoAddInput').value.trim();
+  const serieFac=_factura.serieFac||'';
+  const btn=document.getElementById('btnGuardarTextoAdd');
+  btn.disabled=true;
+  fetch('/facturas/detalle/textoadd',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({idNoFactura:_textoAddCtx.idNoFactura, idNoDetaFac:_textoAddCtx.idNoDetaFac, serieFac, textoAdd})})
+    .then(r=>r.json()).then(d=>{
+      btn.disabled=false;
+      if(d.error){
+        const e=document.getElementById('textoAddError'); e.textContent=d.error; e.classList.remove('d-none'); return;
+      }
+      textoAddModal.hide();
+      cargarFactura(_textoAddCtx.idNoFactura, serieFac);
+    }).catch(()=>{
+      btn.disabled=false;
+      const e=document.getElementById('textoAddError'); e.textContent='Error de comunicación con el servidor.'; e.classList.remove('d-none');
+    });
 }
 
 function pintarDetalle(lineas){

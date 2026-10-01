@@ -740,6 +740,27 @@ router.post('/detalle/toggle-flag', requierePermiso('facturas.editar'), async (r
 
 function ISNULLtoBool(v) { return v === 1 || v === true; }
 
+// ── TEXTO ADICIONAL POR LÍNEA (DFAC:TextoAdd) ────────────────────────────────
+// Texto libre que, si se captura, se agrega a la descripción de esa línea en
+// el PDF de la factura. No afecta subtotal/IVA/retención/total, así que no
+// necesita transacción ni recálculo de cabecera.
+router.post('/detalle/textoadd', requierePermiso('facturas.editar'), async (req, res) => {
+  const idNoFactura = parseInt(req.body.idNoFactura);
+  const idNoDetaFac = parseInt(req.body.idNoDetaFac);
+  const serieFac = req.body.serieFac;
+  const textoAdd = trim(req.body.textoAdd).slice(0, 999);
+  if (!idNoFactura || !idNoDetaFac) return res.status(400).json({ error: 'Faltan parámetros' });
+  try {
+    const pool = await getPool();
+    const result = await reqSerieFac(pool.request(), serieFac)
+      .input('idf', sql.Decimal(9), idNoFactura).input('idd', sql.Decimal(6), idNoDetaFac)
+      .input('texto', sql.VarChar(999), textoAdd || null)
+      .query(`UPDATE Empresa2.FacDeta SET TEXTOADD=@texto WHERE ID_NOFACTURA=@idf AND ID_NODETAFAC=@idd AND ${SERIEFAC_EQ}`);
+    if (!result.rowsAffected[0]) return res.status(404).json({ error: 'Línea no encontrada.' });
+    res.json({ ok: true, textoAdd });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ── CANCELAR FACTURA RECIÉN CREADA SIN CONFIRMAR (punto 4) ───────────────────
 router.post('/cabecera/cancelar-sin-confirmar', requierePermiso('facturas.editar'), async (req, res) => {
   const idNoFactura = parseInt(req.body.idNoFactura);
