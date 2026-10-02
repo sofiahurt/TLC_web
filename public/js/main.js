@@ -1,7 +1,10 @@
 // Row selection
 document.addEventListener('click', function(e) {
   const row = e.target.closest('tr[data-id]');
-  if (!row) return;
+  // [data-local-browse]: sub-browses embebidos dentro de otro formulario (ej.
+  // Domicilios dentro de Clientes) manejan su propia selección/edición y no
+  // deben pisar window._selectedRow/_selectedId del browse principal de la página.
+  if (!row || e.target.closest('[data-local-browse]')) return;
   const table = row.closest('table');
   table.querySelectorAll('tr.selected').forEach(r => r.classList.remove('selected'));
   row.classList.add('selected');
@@ -20,7 +23,7 @@ document.addEventListener('click', function(e) {
 // Double-click to edit
 document.addEventListener('dblclick', function(e) {
   const row = e.target.closest('tr[data-id]');
-  if (!row || e.target.closest('.modal-lookup')) return;
+  if (!row || e.target.closest('.modal-lookup, [data-local-browse]')) return;
   if (typeof openEdit === 'function') openEdit();
 });
 
