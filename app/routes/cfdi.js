@@ -268,7 +268,7 @@ router.post('/timbrar-factura', requierePermiso('facturas.btn_timbrar'), async (
     const { xml, idCCP } = await buildCFDIFactura(idNoFactura, serieFacKey, central, pool);
 
     // 3. Sellar con CSD y guardar en disco
-    const nombreBase = `FAC_${serieFacKey || 'SF'}${idNoFactura}`;
+    const nombreBase = `FAC_${serieFacKey || ''}${idNoFactura}`;
     const { xml: xmlSellado, noCertificado } = await sellarXML(xml, central, nombreBase, pool);
 
     // Punto 3 pedido por el usuario: el NoCertificado del emisor se guarda en
@@ -366,7 +366,7 @@ router.post('/timbrar-notacredito', requierePermiso('notacred.btn_timbrar'), asy
     const { xml } = await buildCFDINotaCredito(tipo, serieKey, idNotaCredito, central, pool);
 
     // 3. Sellar con CSD y guardar en disco
-    const nombreBase = `NC_${tipo}${serieKey || 'SF'}${idNotaCredito}`;
+    const nombreBase = `NC_${tipo}${serieKey || ''}${idNotaCredito}`;
     const { xml: xmlSellado, noCertificado } = await sellarXML(xml, central, nombreBase, pool);
     await pool.request()
       .input('tipo', sql.VarChar(3), tipo).input('serie', sql.VarChar(10), serieKey).input('id', sql.Decimal(7), idNotaCredito)
@@ -474,7 +474,7 @@ router.post('/cancelar-notacredito', requierePermiso('notacred.btn_cancelar'), a
     // Acuse de cancelación (XML firmado por el SAT) -- se guarda en disco
     // como evidencia fiscal, mismo criterio que el XML timbrado.
     if (cancelacion.acuseXml) {
-      const nombreBase = `NC_${tipo}${serieKey || 'SF'}${idNotaCredito}`;
+      const nombreBase = `NC_${tipo}${serieKey || ''}${idNotaCredito}`;
       fs.mkdirSync(RUTA_XML, { recursive: true });
       fs.writeFileSync(path.join(RUTA_XML, `${nombreBase}_Acuse.xml`), cancelacion.acuseXml, 'utf8');
     }
@@ -638,7 +638,7 @@ router.post('/cancelar-factura', requierePermiso('facturas.btn_cancelar'), async
     }
 
     if (acuseXml) {
-      const nombreBase = `FAC_${serieFacKey || 'SF'}${idNoFactura}`;
+      const nombreBase = `FAC_${serieFacKey || ''}${idNoFactura}`;
       fs.mkdirSync(RUTA_XML, { recursive: true });
       fs.writeFileSync(path.join(RUTA_XML, `${nombreBase}_Acuse.xml`), acuseXml, 'utf8');
     }
@@ -819,7 +819,7 @@ router.get('/xml-factura', async (req, res) => {
     if (!fac) return res.status(404).json({ error: 'Factura no encontrada' });
     if (!(fac.UUID || '').trim()) return res.status(400).json({ error: 'Esta Factura todavía no está timbrada' });
 
-    const nombreBase = `FAC_${serieFacKey || 'SF'}${idNoFactura}`;
+    const nombreBase = `FAC_${serieFacKey || ''}${idNoFactura}`;
     const rutaTimbrada = path.join(RUTA_XML, `${nombreBase}_Timbrada.xml`);
     const rutaPrueba   = path.join(RUTA_XML, `${nombreBase}_Prueba.xml`);
     const ruta = fs.existsSync(rutaTimbrada) ? rutaTimbrada : (fs.existsSync(rutaPrueba) ? rutaPrueba : null);
@@ -851,7 +851,7 @@ router.get('/xml-notacredito', async (req, res) => {
     if (!nc) return res.status(404).json({ error: 'Nota no encontrada' });
     if (!(nc.UUID || '').trim()) return res.status(400).json({ error: 'Esta nota todavía no está timbrada' });
 
-    const nombreBase = `NC_${tipo}${serieKey || 'SF'}${idNotaCredito}`;
+    const nombreBase = `NC_${tipo}${serieKey || ''}${idNotaCredito}`;
     const rutaTimbrada = path.join(RUTA_XML, `${nombreBase}_Timbrada.xml`);
     const rutaPrueba   = path.join(RUTA_XML, `${nombreBase}_Prueba.xml`);
     const ruta = fs.existsSync(rutaTimbrada) ? rutaTimbrada : (fs.existsSync(rutaPrueba) ? rutaPrueba : null);
