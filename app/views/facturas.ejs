@@ -254,6 +254,49 @@
   </div>
 </div>
 
+<!-- Editar partida (FacDeta): va ANTES de lookupSat en el DOM a propósito --
+     Bootstrap da el mismo z-index (1055) a todos los .modal, así que el que
+     queda "encima" es el que aparece MÁS ABAJO en el HTML. Como este modal
+     abre la lupa SAT por encima de sí mismo, lookupSat debe venir después
+     en el documento (mismo criterio que el fix de ESC más abajo). -->
+<div class="modal fade" id="editarLineaModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-lg">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h6 class="modal-title"><i class="bi bi-pencil me-2 text-primary"></i>Editar partida</h6>
+      <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+    </div>
+    <div class="modal-body">
+      <div id="editarLineaError" class="alert alert-danger d-none py-2 small"></div>
+      <div class="row g-2 mb-3">
+        <div class="col-md-12">
+          <label class="form-label fw-semibold small mb-1">Clave de Producto/Servicio (SAT)</label>
+          <input type="hidden" id="dl_C_CLAVEPRODSERV">
+          <div class="input-group input-group-sm">
+            <input type="text" id="dl_PRODSERV_disp" class="form-control form-control-sm" placeholder="Seleccionar..." readonly>
+            <button class="btn btn-outline-secondary btn-sm" type="button" onclick="openLookupSat('lineaProdServ')"><i class="bi bi-search"></i></button>
+          </div>
+        </div>
+        <div class="col-md-12">
+          <label class="form-label fw-semibold small mb-1">Descripción</label>
+          <input type="text" id="dl_DESCRIPCION" class="form-control form-control-sm" maxlength="100">
+        </div>
+        <div class="col-md-12">
+          <label class="form-label fw-semibold small mb-1">Texto adicional (se agrega a la descripción en el PDF)</label>
+          <textarea id="dl_TEXTOADD" class="form-control form-control-sm" rows="3" maxlength="999"></textarea>
+        </div>
+      </div>
+      <label class="form-label fw-semibold small mb-1">Conceptos cobrables</label>
+      <div id="dl_flags" class="row g-2"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cerrar</button>
+      <button type="button" class="btn btn-primary btn-sm" id="btnGuardarEditarLinea" onclick="guardarEditarLinea()">
+        <i class="bi bi-check-lg me-1"></i>Guardar
+      </button>
+    </div>
+  </div>
+</div></div>
+
 <!-- Lookup SAT (modal compartido para Moneda / Forma de Pago / Método de Pago / Uso CFDI) -->
 <div class="modal fade modal-lookup" id="lookupSat" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-lg">
   <div class="modal-content">
@@ -302,35 +345,12 @@
   </div>
 </div>
 
-<div class="modal fade" id="textoAddModal" tabindex="-1">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h6 class="modal-title"><i class="bi bi-chat-left-text me-2 text-info"></i>Texto adicional de la partida</h6>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <div id="textoAddError" class="alert alert-danger d-none py-2 small"></div>
-        <label class="form-label small mb-1">Este texto se agrega a la descripción de esta partida en el PDF de la factura.</label>
-        <textarea id="textoAddInput" class="form-control form-control-sm" rows="4" maxlength="999"></textarea>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
-        <button type="button" class="btn btn-info btn-sm" id="btnGuardarTextoAdd" onclick="guardarTextoAdd()">
-          <i class="bi bi-check-lg me-1"></i>Guardar
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
-
 <%- include('partials/footer') %>
 <script>
 const browse=initBrowse({searchInput:document.getElementById('searchInput'),searchColumn:document.getElementById('searchCol'),tableBody:document.getElementById('tableBody'),paginationEl:document.getElementById('pagination'),infoEl:document.getElementById('pageInfo'),fetchUrl:'/facturas/data',defaultSort:'Id_NoFactura',defaultDir:'desc'});
 const modal=new bootstrap.Modal(document.getElementById('frmModal'));
 const timbraFacModal=new bootstrap.Modal(document.getElementById('timbraFacModal'));
 const cancelarFacModal=new bootstrap.Modal(document.getElementById('cancelarFacModal'));
-const textoAddModal=new bootstrap.Modal(document.getElementById('textoAddModal'));
 const errEl=document.getElementById('frmError'), warnEl=document.getElementById('frmWarning');
 let _factura={idNoFactura:null, confirmada:false, cliente:null};
 const USUARIO_ACTUAL="<%= usuario.nombre.trim() %> <%= usuario.apellido ? usuario.apellido.trim() : '' %>".trim();
@@ -541,6 +561,7 @@ function cargarFactura(idNoFactura, serieFac){
     document.getElementById('f_Facturo_disp').textContent=(c.Facturo||'').trim()||USUARIO_ACTUAL;
     pintarDetalle(d.lineas);
     pintarTotales(c);
+    syncEditarLineaModal(d.lineas);
   });
 }
 
@@ -605,13 +626,20 @@ const CONCEPTOS=[
 // Nota: idNoFactura por sí solo NO identifica de forma única una factura
 // (la clave real es SerieFac+Id_NoFactura); toggleFlag/eliminarLinea toman
 // la SerieFac de _factura.serieFac (la factura abierta en el modal), no de la fila.
-function escAttr(s){
-  return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
 function filaDetalleHtml(l){
   const cp=(l.CARTAPORTE||'').trim(), desc=(l.DESFLETE||'').trim();
   const textoAdd=(l.TEXTOADD||'').trim();
+  const lineData=JSON.stringify({
+    C_CLAVEPRODSERV:(l.C_CLAVEPRODSERV||'').trim(),
+    DESCRIPCION:(l.DESCRIPCION||'').trim(),
+    TEXTOADD:textoAdd,
+    FlagCobFlete:l.FlagCobFlete, FlagRenta:l.FlagRenta, FLAGKILOMETROS:l.FLAGKILOMETROS,
+    FLAGCOBAUTO:l.FLAGCOBAUTO, FLAGCOBMAN:l.FLAGCOBMAN, FlagCostoPension:l.FlagCostoPension,
+    FlagCostoEstadias:l.FlagCostoEstadias, FLAGCOBOTROS:l.FLAGCOBOTROS, FLAGCOBDEM:l.FLAGCOBDEM,
+    COSTOFLETE:l.COSTOFLETE, CostoRenta:l.CostoRenta, KILOMETROS:l.KILOMETROS, COSTOAUTOPISTAS:l.COSTOAUTOPISTAS,
+    COSTOMANIOBRAS:l.COSTOMANIOBRAS, CostoPension:l.CostoPension, CostoEstadias:l.CostoEstadias,
+    COSTOSOTROS:l.COSTOSOTROS, COSTODEMORAS:l.COSTODEMORAS,
+  }).replace(/'/g,'&#39;');
   const celdas=CONCEPTOS.map(c=>{
     const activo=Number(l[c.flagCol])===1;
     const monto=parseFloat(l[c.montoCol])||0;
@@ -630,43 +658,85 @@ function filaDetalleHtml(l){
     <td class="text-end" data-col="RETEN">${fmtN(l.RETEN)}</td>
     <td class="text-end" data-col="TOTAL">${fmtN(l.TOTAL)}</td>
     <td class="text-center">
-      <button class="btn btn-sm ${textoAdd?'btn-info':'btn-outline-secondary'} py-0 px-1 me-1" title="${textoAdd?'Editar texto adicional':'Agregar texto adicional'}" data-texto="${escAttr(textoAdd)}" onclick="abrirTextoAdd(${l.ID_NOFACTURA},${l.ID_NODETAFAC},this)"><i class="bi bi-chat-left-text"></i></button>
+      <button class="btn btn-sm btn-outline-primary py-0 px-1 me-1" title="Editar partida" data-line='${lineData}' onclick="abrirEditarLinea(${l.ID_NOFACTURA},${l.ID_NODETAFAC},this)"><i class="bi bi-pencil"></i></button>
       <button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="eliminarLinea(${l.ID_NOFACTURA},${l.ID_NODETAFAC})"><i class="bi bi-trash"></i></button>
     </td>
   </tr>`;
 }
 
-let _textoAddCtx=null;
-function abrirTextoAdd(idNoFactura, idNoDetaFac, btnEl){
-  _textoAddCtx={idNoFactura, idNoDetaFac};
-  document.getElementById('textoAddInput').value=btnEl.dataset.texto||'';
-  document.getElementById('textoAddError').classList.add('d-none');
-  textoAddModal.show();
+// ── Formulario "Editar línea" (FacDeta): Clave Prod/Serv, Descripción,
+// Texto adicional y los conceptos cobrables ya existentes (reutiliza
+// toggleFlag() tal cual, sin duplicar su lógica de recálculo). ────────────
+const editarLineaModal=new bootstrap.Modal(document.getElementById('editarLineaModal'));
+let _editarLineaCtx=null;
+function renderDlFlags(data){
+  document.getElementById('dl_flags').innerHTML=CONCEPTOS.map(c=>{
+    const checked=Number(data[c.flagCol])===1;
+    const monto=parseFloat(data[c.montoCol])||0;
+    return `<div class="col-6 col-md-4">
+      <div class="form-check">
+        <input type="checkbox" class="form-check-input" id="dlflag_${c.key}" ${checked?'checked':''} onchange="toggleFlag(_editarLineaCtx.idNoFactura,_editarLineaCtx.idNoDetaFac,'${c.key}')">
+        <label class="form-check-label small" for="dlflag_${c.key}">${c.label}${monto?' ('+fmtN(monto)+')':''}</label>
+      </div>
+    </div>`;
+  }).join('');
 }
-function guardarTextoAdd(){
-  if(!_textoAddCtx) return;
-  const textoAdd=document.getElementById('textoAddInput').value.trim();
+function abrirEditarLinea(idNoFactura, idNoDetaFac, btnEl){
+  const data=JSON.parse(btnEl.dataset.line);
+  _editarLineaCtx={idNoFactura, idNoDetaFac};
+  document.getElementById('editarLineaError').classList.add('d-none');
+  document.getElementById('dl_C_CLAVEPRODSERV').value=data.C_CLAVEPRODSERV||'';
+  document.getElementById('dl_PRODSERV_disp').value=data.C_CLAVEPRODSERV||'';
+  document.getElementById('dl_DESCRIPCION').value=data.DESCRIPCION||'';
+  document.getElementById('dl_TEXTOADD').value=data.TEXTOADD||'';
+  renderDlFlags(data);
+  editarLineaModal.show();
+}
+// Se llama tras cada recarga de la factura (incluida la que dispara
+// toggleFlag ya existente) para que, si este modal está abierto, sus
+// casillas de conceptos reflejen el estado real recién guardado.
+function syncEditarLineaModal(lineas){
+  if(!_editarLineaCtx) return;
+  if(!document.getElementById('editarLineaModal').classList.contains('show')) return;
+  const l=lineas.find(x=>x.ID_NOFACTURA===_editarLineaCtx.idNoFactura && x.ID_NODETAFAC===_editarLineaCtx.idNoDetaFac);
+  if(l) renderDlFlags(l);
+}
+function guardarEditarLinea(){
+  if(!_editarLineaCtx) return;
   const serieFac=_factura.serieFac||'';
-  const btn=document.getElementById('btnGuardarTextoAdd');
+  const body={
+    idNoFactura:_editarLineaCtx.idNoFactura, idNoDetaFac:_editarLineaCtx.idNoDetaFac, serieFac,
+    C_CLAVEPRODSERV:document.getElementById('dl_C_CLAVEPRODSERV').value.trim(),
+    DESCRIPCION:document.getElementById('dl_DESCRIPCION').value.trim(),
+    TEXTOADD:document.getElementById('dl_TEXTOADD').value.trim(),
+  };
+  const btn=document.getElementById('btnGuardarEditarLinea');
   btn.disabled=true;
-  fetch('/facturas/detalle/textoadd',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({idNoFactura:_textoAddCtx.idNoFactura, idNoDetaFac:_textoAddCtx.idNoDetaFac, serieFac, textoAdd})})
+  fetch('/facturas/detalle/editar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
     .then(r=>r.json()).then(d=>{
       btn.disabled=false;
       if(d.error){
-        const e=document.getElementById('textoAddError'); e.textContent=d.error; e.classList.remove('d-none'); return;
+        const e=document.getElementById('editarLineaError'); e.textContent=d.error; e.classList.remove('d-none'); return;
       }
-      textoAddModal.hide();
-      cargarFactura(_textoAddCtx.idNoFactura, serieFac);
+      editarLineaModal.hide();
+      cargarFactura(_editarLineaCtx.idNoFactura, serieFac);
     }).catch(()=>{
       btn.disabled=false;
-      const e=document.getElementById('textoAddError'); e.textContent='Error de comunicación con el servidor.'; e.classList.remove('d-none');
+      const e=document.getElementById('editarLineaError'); e.textContent='Error de comunicación con el servidor.'; e.classList.remove('d-none');
     });
 }
 
 function pintarDetalle(lineas){
   document.getElementById('detBody').innerHTML=lineas.map(filaDetalleHtml).join('');
 }
+// Doble clic en la fila -> abre el mismo formulario "Editar partida" que el
+// botón de lápiz (toma los mismos datos de ese botón, sin duplicar lógica).
+document.getElementById('detBody').addEventListener('dblclick', e => {
+  const tr = e.target.closest('tr[data-idf]');
+  if (!tr) return;
+  const btn = tr.querySelector('button[data-line]');
+  if (btn) abrirEditarLinea(Number(tr.dataset.idf), Number(tr.dataset.idd), btn);
+});
 
 // ── Cliente lookup ────────────────────────────────────────────────────────
 let lkCliPage=1;const lkCliModal=new bootstrap.Modal(document.getElementById('lookupCliente'));
@@ -820,7 +890,8 @@ const _satLkCfg={
   moneda:{title:'Moneda',url:'/clientes/lookup/sat/moneda',onSelect:(clave,desc)=>{document.getElementById('f_MonFactura').value=clave;document.getElementById('f_MonFactura_disp').value=`${clave} - ${desc}`;onCabeceraFieldChange();}},
   formaPago:{title:'Forma de Pago',url:'/clientes/lookup/sat/forma-pago',onSelect:(clave,desc)=>{document.getElementById('f_c_FormaPago').value=clave;document.getElementById('f_c_FormaPago_disp').value=`${clave} - ${desc}`;onCabeceraFieldChange();}},
   metodoPago:{title:'Método de Pago',url:'/clientes/lookup/sat/metodo-pago',onSelect:(clave,desc)=>{document.getElementById('f_ClaveMP').value=clave;document.getElementById('f_MetodoPago').value=desc;document.getElementById('f_ClaveMP_disp').value=`${clave} - ${desc}`;onCabeceraFieldChange();}},
-  usoCfdi:{title:'Uso CFDI',url:'/clientes/lookup/sat/uso-cfdi',onSelect:(clave,desc)=>{document.getElementById('f_c_UsoCFDI').value=clave;document.getElementById('f_c_UsoCFDI_disp').value=`${clave} - ${desc}`;onCabeceraFieldChange();}}
+  usoCfdi:{title:'Uso CFDI',url:'/clientes/lookup/sat/uso-cfdi',onSelect:(clave,desc)=>{document.getElementById('f_c_UsoCFDI').value=clave;document.getElementById('f_c_UsoCFDI_disp').value=`${clave} - ${desc}`;onCabeceraFieldChange();}},
+  lineaProdServ:{title:'Clave de Producto/Servicio',url:'/clientes/lookup/sat/prodserv',onSelect:(clave,desc)=>{document.getElementById('dl_C_CLAVEPRODSERV').value=clave;document.getElementById('dl_PRODSERV_disp').value=clave;document.getElementById('dl_DESCRIPCION').value=desc;}}
 };
 let _satLkModal=null,_satLkPage=1,_satLkCur=null;
 function openLookupSat(type){
@@ -857,4 +928,22 @@ function setSatField(hiddenId,dispId,type,clave){
     if(m)document.getElementById(dispId).value=`${clave} - ${m.descripcion}`;
   });
 }
+
+// Con modales apilados (lookupCliente/lookupCP/lookupSat/editarLineaModal
+// sobre frmModal), el focus-trap de Bootstrap hace que ESC cierre el modal
+// de abajo en vez del que está encima. Todos los modales comparten el mismo
+// z-index (1055), así que el que se ve arriba es el que aparece MÁS ABAJO en
+// el HTML. Si hay más de uno abierto, cerramos solo el último del DOM.
+// (Mismo fix que cartaporte.ejs/notacred.ejs.)
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Escape') return;
+  const shown = document.querySelectorAll('.modal.show');
+  if (shown.length <= 1) return;
+  const top = bootstrap.Modal.getInstance(shown[shown.length - 1]);
+  if (top) {
+    e.preventDefault();
+    e.stopPropagation();
+    top.hide();
+  }
+}, true);
 </script>

@@ -740,24 +740,30 @@ router.post('/detalle/toggle-flag', requierePermiso('facturas.editar'), async (r
 
 function ISNULLtoBool(v) { return v === 1 || v === true; }
 
-// ── TEXTO ADICIONAL POR LÍNEA (DFAC:TextoAdd) ────────────────────────────────
-// Texto libre que, si se captura, se agrega a la descripción de esa línea en
-// el PDF de la factura. No afecta subtotal/IVA/retención/total, así que no
-// necesita transacción ni recálculo de cabecera.
-router.post('/detalle/textoadd', requierePermiso('facturas.editar'), async (req, res) => {
+// ── FORMULARIO "EDITAR LÍNEA" (FacDeta) ──────────────────────────────────────
+// Edita Clave de Producto/Servicio, Descripción y Texto adicional de una
+// partida ya existente. Los conceptos cobrables (flags) se siguen editando
+// con el endpoint /detalle/toggle-flag ya existente (este formulario solo
+// los muestra y reutiliza ese mismo mecanismo, sin duplicar su lógica de
+// recálculo de subtotal/IVA/retención/total).
+router.post('/detalle/editar', requierePermiso('facturas.editar'), async (req, res) => {
   const idNoFactura = parseInt(req.body.idNoFactura);
   const idNoDetaFac = parseInt(req.body.idNoDetaFac);
   const serieFac = req.body.serieFac;
-  const textoAdd = trim(req.body.textoAdd).slice(0, 999);
+  const claveProdServ = trim(req.body.C_CLAVEPRODSERV).slice(0, 20);
+  const descripcion = trim(req.body.DESCRIPCION).slice(0, 100);
+  const textoAdd = trim(req.body.TEXTOADD).slice(0, 999);
   if (!idNoFactura || !idNoDetaFac) return res.status(400).json({ error: 'Faltan parámetros' });
   try {
     const pool = await getPool();
     const result = await reqSerieFac(pool.request(), serieFac)
       .input('idf', sql.Decimal(9), idNoFactura).input('idd', sql.Decimal(6), idNoDetaFac)
+      .input('cve', sql.VarChar(20), claveProdServ || null)
+      .input('desc', sql.VarChar(100), descripcion || null)
       .input('texto', sql.VarChar(999), textoAdd || null)
-      .query(`UPDATE Empresa2.FacDeta SET TEXTOADD=@texto WHERE ID_NOFACTURA=@idf AND ID_NODETAFAC=@idd AND ${SERIEFAC_EQ}`);
+      .query(`UPDATE Empresa2.FacDeta SET C_CLAVEPRODSERV=@cve, DESCRIPCION=@desc, TEXTOADD=@texto WHERE ID_NOFACTURA=@idf AND ID_NODETAFAC=@idd AND ${SERIEFAC_EQ}`);
     if (!result.rowsAffected[0]) return res.status(404).json({ error: 'Línea no encontrada.' });
-    res.json({ ok: true, textoAdd });
+    res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
