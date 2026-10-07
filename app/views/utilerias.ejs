@@ -1,0 +1,165 @@
+<%- include('partials/header', { titulo: 'Utilerías' }) %>
+<%- include('partials/sidebar') %>
+<div id="page-content">
+  <div class="d-flex align-items-center mb-3">
+    <button class="btn btn-sm btn-outline-secondary me-3 d-md-none" id="sidebarToggle"><i class="bi bi-list fs-5"></i></button>
+    <h4 class="mb-0 fw-bold flex-grow-1">Utilerías</h4>
+  </div>
+
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white">
+      <h6 class="mb-0 fw-bold"><i class="bi bi-file-earmark-zip me-2 text-primary"></i>Copiar y renombrar XML</h6>
+    </div>
+    <div class="card-body">
+      <p class="text-muted small">
+        Copia archivos XML desde otra carpeta (con un formato de nombre distinto) a la carpeta de XML
+        del sistema (<code><%= rutaXml %></code>), renombrándolos al formato que usa TLC Web.
+        Nunca se modifica ni se elimina nada en la carpeta origen, y si el archivo destino ya existe, se omite.
+      </p>
+      <div id="copiarXmlError" class="alert alert-danger d-none py-2 small"></div>
+
+      <div class="row g-3">
+        <div class="col-md-8">
+          <label class="form-label fw-semibold small mb-1">Carpeta origen</label>
+          <div class="input-group">
+            <input type="text" id="cx_CarpetaOrigen" class="form-control" placeholder="Ej. E:\Exportados\XML">
+            <button class="btn btn-outline-secondary" type="button" onclick="openFsBrowser()"><i class="bi bi-search"></i></button>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label fw-semibold small mb-1">Prefijo destino</label>
+          <input type="text" id="cx_PrefijoDestino" class="form-control" placeholder="Ej. FAC_">
+          <div class="form-text">Ejemplos usados en el sistema: <code>FAC_</code>, <code>NC_NC</code>, <code>NC_ND</code>, <code>CP_</code>, <code>PAGO_</code>.</div>
+        </div>
+        <div class="col-md-8">
+          <label class="form-label fw-semibold small mb-1">Patrón de archivo origen</label>
+          <input type="text" id="cx_PatronOrigen" class="form-control" placeholder="Ej. FACTURA*_Timbrada.xml">
+          <div class="form-text">
+            Usa un solo <code>*</code> donde está el número de folio. Lo que esté antes del <code>*</code> se
+            reemplaza por el prefijo destino; lo que esté después (el sufijo, ej. <code>_Timbrada.xml</code>) se conserva igual.
+          </div>
+        </div>
+        <div class="col-md-4 d-flex align-items-end">
+          <button class="btn btn-primary w-100" id="btnCopiarXml" onclick="ejecutarCopiarXml()"><i class="bi bi-copy me-1"></i>Copiar archivos</button>
+        </div>
+      </div>
+
+      <div id="copiarXmlResultado" class="mt-4 d-none">
+        <hr>
+        <div id="copiarXmlResumen" class="mb-2 small"></div>
+        <div id="copiarXmlDetalle"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Explorador de carpetas del servidor -->
+<div class="modal fade modal-lookup" id="fsBrowserModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-lg">
+  <div class="modal-content">
+    <div class="modal-header py-2">
+      <h6 class="modal-title">Seleccionar carpeta</h6>
+      <button class="btn-close" data-bs-dismiss="modal"></button>
+    </div>
+    <div class="modal-body">
+      <div id="fsBrowserError" class="alert alert-danger d-none py-2 small"></div>
+      <div class="input-group input-group-sm mb-2">
+        <span class="input-group-text">Ruta actual</span>
+        <input type="text" id="fsCurrentPath" class="form-control" readonly>
+      </div>
+      <div class="list-group" id="fsEntries" style="max-height:320px;overflow-y:auto"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+      <button type="button" class="btn btn-primary btn-sm" id="btnUsarCarpeta" onclick="usarCarpetaActual()" disabled>
+        <i class="bi bi-check-lg me-1"></i>Usar esta carpeta
+      </button>
+    </div>
+  </div>
+</div></div>
+
+<%- include('partials/footer') %>
+<script>
+const fsBrowserModal = new bootstrap.Modal(document.getElementById('fsBrowserModal'));
+let _fsCurrentPath = '';
+
+function openFsBrowser(){
+  document.getElementById('fsBrowserError').classList.add('d-none');
+  const inicial = document.getElementById('cx_CarpetaOrigen').value.trim();
+  fsBrowserModal.show();
+  fsLoad(inicial);
+}
+
+function fsLoad(rutaPedida){
+  fetch(`/utilerias/fs/list?path=${encodeURIComponent(rutaPedida||'')}`).then(r=>r.json()).then(d=>{
+    const errEl=document.getElementById('fsBrowserError');
+    if(d.error){ errEl.textContent=d.error; errEl.classList.remove('d-none'); return; }
+    errEl.classList.add('d-none');
+    _fsCurrentPath = d.path || '';
+    document.getElementById('fsCurrentPath').value = _fsCurrentPath || '(unidades de disco)';
+    document.getElementById('btnUsarCarpeta').disabled = !_fsCurrentPath;
+
+    const entries = [];
+    if (d.parent !== null && d.parent !== undefined) {
+      entries.push(`<button type="button" class="list-group-item list-group-item-action" onclick="fsLoad(${JSON.stringify(d.parent).replace(/"/g,'&quot;')})"><i class="bi bi-arrow-90deg-up me-2"></i>..</button>`);
+    }
+    (d.entries||[]).forEach(en=>{
+      entries.push(`<button type="button" class="list-group-item list-group-item-action" onclick="fsLoad(${JSON.stringify(en.ruta).replace(/"/g,'&quot;')})"><i class="bi bi-folder me-2 text-warning"></i>${en.nombre}</button>`);
+    });
+    document.getElementById('fsEntries').innerHTML = entries.join('') || '<div class="text-muted small p-2">Sin subcarpetas.</div>';
+  }).catch(()=>{
+    const errEl=document.getElementById('fsBrowserError');
+    errEl.textContent='Error de comunicación con el servidor.'; errEl.classList.remove('d-none');
+  });
+}
+
+function usarCarpetaActual(){
+  if(!_fsCurrentPath) return;
+  document.getElementById('cx_CarpetaOrigen').value = _fsCurrentPath;
+  fsBrowserModal.hide();
+}
+
+function ejecutarCopiarXml(){
+  const errEl=document.getElementById('copiarXmlError');
+  errEl.classList.add('d-none');
+  const carpetaOrigen=document.getElementById('cx_CarpetaOrigen').value.trim();
+  const patronOrigen=document.getElementById('cx_PatronOrigen').value.trim();
+  const prefijoDestino=document.getElementById('cx_PrefijoDestino').value.trim();
+  if(!carpetaOrigen||!patronOrigen||!prefijoDestino){
+    errEl.textContent='Carpeta origen, patrón y prefijo destino son requeridos.'; errEl.classList.remove('d-none'); return;
+  }
+  const btn=document.getElementById('btnCopiarXml');
+  btn.disabled=true; btn.innerHTML='<span class="spinner-border spinner-border-sm me-1"></span>Copiando...';
+  fetch('/utilerias/copiar-xml',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({carpetaOrigen,patronOrigen,prefijoDestino})})
+    .then(r=>r.json()).then(d=>{
+      btn.disabled=false; btn.innerHTML='<i class="bi bi-copy me-1"></i>Copiar archivos';
+      if(d.error){ errEl.textContent=d.error; errEl.classList.remove('d-none'); return; }
+      pintarResultadoCopiarXml(d);
+    }).catch(()=>{
+      btn.disabled=false; btn.innerHTML='<i class="bi bi-copy me-1"></i>Copiar archivos';
+      errEl.textContent='Error de comunicación con el servidor.'; errEl.classList.remove('d-none');
+    });
+}
+
+function pintarResultadoCopiarXml(d){
+  document.getElementById('copiarXmlResultado').classList.remove('d-none');
+  document.getElementById('copiarXmlResumen').innerHTML =
+    `Archivos que coincidieron con el patrón: <strong>${d.totalEncontrados}</strong> — `+
+    `<span class="text-success">${d.copiados.length} copiados</span>, `+
+    `<span class="text-warning">${d.omitidos.length} omitidos (ya existían)</span>, `+
+    `<span class="text-danger">${d.errores.length} con error</span>.`;
+
+  const tabla = (titulo, filas, cols) => {
+    if (!filas.length) return '';
+    const head = cols.map(c=>`<th>${c.label}</th>`).join('');
+    const body = filas.map(f=>`<tr>${cols.map(c=>`<td class="small">${f[c.key]||''}</td>`).join('')}</tr>`).join('');
+    return `<div class="mb-3"><div class="fw-semibold small mb-1">${titulo}</div>
+      <table class="table table-sm table-bordered mb-0"><thead class="table-light"><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+  };
+
+  document.getElementById('copiarXmlDetalle').innerHTML =
+    tabla('Copiados', d.copiados, [{key:'origen',label:'Archivo origen'},{key:'destino',label:'Archivo destino'}]) +
+    tabla('Omitidos', d.omitidos, [{key:'origen',label:'Archivo origen'},{key:'destino',label:'Archivo destino'},{key:'motivo',label:'Motivo'}]) +
+    tabla('Errores', d.errores, [{key:'origen',label:'Archivo origen'},{key:'motivo',label:'Motivo'}]);
+}
+</script>

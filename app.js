@@ -69,6 +69,10 @@ app.use('/dieselpre',   requierePermiso('dieselpre.ver'),  require('./app/routes
 // su propio permiso, gateado ruta por ruta dentro de app/routes/reportes.js.
 app.use('/reportes',    require('./app/routes/reportes'));
 app.use('/cfdi',        require('./app/routes/cfdi'));
+// Sin gate único a nivel módulo: la página usa utilerias.ver y la acción de
+// copiar usa el permiso más sensible utilerias.copiarxml, gateados dentro de
+// app/routes/utilerias.js.
+app.use('/utilerias',   require('./app/routes/utilerias'));
 
 const { RUTA_XML } = require('./app/config/storage');
 const PORT = process.env.PORT || 3000;
