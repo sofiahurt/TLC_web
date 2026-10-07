@@ -78,7 +78,7 @@ async function datosParaImpresionNotaCredito(tipo, serie, idNotaCredito, central
 
   const uuid = fmt(nc.UUID);
   const timbrada = !!uuid;
-  const nombreBase = `NC_${tipo}${serieKey || ''}${idNotaCredito}`;
+  const nombreBase = `${tipo}_${serieKey || ''}${idNotaCredito}`;
 
   let xmlString;
   if (timbrada) {

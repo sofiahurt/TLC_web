@@ -366,7 +366,7 @@ router.post('/timbrar-notacredito', requierePermiso('notacred.btn_timbrar'), asy
     const { xml } = await buildCFDINotaCredito(tipo, serieKey, idNotaCredito, central, pool);
 
     // 3. Sellar con CSD y guardar en disco
-    const nombreBase = `NC_${tipo}${serieKey || ''}${idNotaCredito}`;
+    const nombreBase = `${tipo}_${serieKey || ''}${idNotaCredito}`;
     const { xml: xmlSellado, noCertificado } = await sellarXML(xml, central, nombreBase, pool);
     await pool.request()
       .input('tipo', sql.VarChar(3), tipo).input('serie', sql.VarChar(10), serieKey).input('id', sql.Decimal(7), idNotaCredito)
@@ -474,7 +474,7 @@ router.post('/cancelar-notacredito', requierePermiso('notacred.btn_cancelar'), a
     // Acuse de cancelación (XML firmado por el SAT) -- se guarda en disco
     // como evidencia fiscal, mismo criterio que el XML timbrado.
     if (cancelacion.acuseXml) {
-      const nombreBase = `NC_${tipo}${serieKey || ''}${idNotaCredito}`;
+      const nombreBase = `${tipo}_${serieKey || ''}${idNotaCredito}`;
       fs.mkdirSync(RUTA_XML, { recursive: true });
       fs.writeFileSync(path.join(RUTA_XML, `${nombreBase}_Acuse.xml`), cancelacion.acuseXml, 'utf8');
     }
@@ -851,7 +851,7 @@ router.get('/xml-notacredito', async (req, res) => {
     if (!nc) return res.status(404).json({ error: 'Nota no encontrada' });
     if (!(nc.UUID || '').trim()) return res.status(400).json({ error: 'Esta nota todavía no está timbrada' });
 
-    const nombreBase = `NC_${tipo}${serieKey || ''}${idNotaCredito}`;
+    const nombreBase = `${tipo}_${serieKey || ''}${idNotaCredito}`;
     const rutaTimbrada = path.join(RUTA_XML, `${nombreBase}_Timbrada.xml`);
     const rutaPrueba   = path.join(RUTA_XML, `${nombreBase}_Prueba.xml`);
     const ruta = fs.existsSync(rutaTimbrada) ? rutaTimbrada : (fs.existsSync(rutaPrueba) ? rutaPrueba : null);
@@ -917,8 +917,10 @@ router.post('/timbrar-pago', requierePermiso('pagos.btn_timbrar'), async (req, r
       .input('provTim', sql.VarChar(20), pacResult.rfcProvCertif || null)
       .query(`UPDATE Empresa2.Pagos SET UUID=@uuid, FechaTimbrado=@fecha, ProvTim=@provTim WHERE Id_NoPago=@id`);
 
-    // 6. Guardar el XML timbrado final.
-    const sufijoArchivo = conexion.testFel ? 'Prueba' : 'Timbrada';
+    // 6. Guardar el XML timbrado final. "TIMBRADO" (no "Timbrada") porque
+    // Pago es masculino -- a diferencia de Carta Porte/Factura/Nota, que sí
+    // usan "Timbrada".
+    const sufijoArchivo = conexion.testFel ? 'Prueba' : 'TIMBRADO';
     fs.mkdirSync(RUTA_XML, { recursive: true });
     fs.writeFileSync(path.join(RUTA_XML, `${nombreBase}_${sufijoArchivo}.xml`), pacResult.xmlTimbrado, 'utf8');
     const rutaSellado = path.join(RUTA_XML, `${nombreBase}_sellado.xml`);
@@ -1048,7 +1050,7 @@ router.get('/xml-pago', async (req, res) => {
     if (!(pago.UUID || '').trim()) return res.status(400).json({ error: 'Este cobro todavía no está timbrado' });
 
     const nombreBase = `PAGO_${idNoPago}`;
-    const rutaTimbrada = path.join(RUTA_XML, `${nombreBase}_Timbrada.xml`);
+    const rutaTimbrada = path.join(RUTA_XML, `${nombreBase}_TIMBRADO.xml`);
     const rutaPrueba   = path.join(RUTA_XML, `${nombreBase}_Prueba.xml`);
     const ruta = fs.existsSync(rutaTimbrada) ? rutaTimbrada : (fs.existsSync(rutaPrueba) ? rutaPrueba : null);
     if (!ruta) return res.status(404).json({ error: `No se encontró el archivo XML en ${RUTA_XML}` });

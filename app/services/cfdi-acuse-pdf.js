@@ -109,7 +109,7 @@ async function datosAcuse(tipoDoc, params, pool) {
     docRow = r.recordset[0];
     if (!docRow) throw new Error(`Nota ${idNotaCredito} no encontrada`);
     centralOperativo = central || 'CUA';
-    nombreBaseAcuse = `NC_${tipo}${serieKey || ''}${idNotaCredito}`;
+    nombreBaseAcuse = `${tipo}_${serieKey || ''}${idNotaCredito}`;
     tituloDoc = tipo === 'ND' ? 'NOTA DE DÉBITO' : 'NOTA DE CRÉDITO';
     folioDoc = `${serieKey ? serieKey + '-' : ''}${idNotaCredito}`;
   } else if (tipoDoc === 'pago') {

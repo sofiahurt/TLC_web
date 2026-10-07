@@ -75,7 +75,7 @@ async function datosParaImpresionPago(idNoPago, pool, centralOperativo = 'CUA') 
 
   let xmlString;
   if (timbrado) {
-    const rutaTimbrada = path.join(RUTA_XML, `${nombreBase}_Timbrada.xml`);
+    const rutaTimbrada = path.join(RUTA_XML, `${nombreBase}_TIMBRADO.xml`);
     const rutaPrueba   = path.join(RUTA_XML, `${nombreBase}_Prueba.xml`);
     const rutaFinal = fs.existsSync(rutaTimbrada) ? rutaTimbrada : (fs.existsSync(rutaPrueba) ? rutaPrueba : null);
     if (!rutaFinal) throw new Error(`Este Cobro está marcado como timbrado pero no se encontró el XML en ${RUTA_XML}`);
