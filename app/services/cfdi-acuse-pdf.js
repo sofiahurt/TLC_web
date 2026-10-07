@@ -98,7 +98,7 @@ async function datosAcuse(tipoDoc, params, pool) {
     const lin = await pool.request().input('id', sql.Decimal(9), idNoFactura).input('serieFac', sql.VarChar(20), serieFacKey)
       .query(`SELECT TOP 1 LTRIM(RTRIM(SERIE)) SERIE FROM Empresa2.FacDeta WHERE ID_NOFACTURA=@id AND ISNULL(LTRIM(RTRIM(SerieFac)),'')=ISNULL(@serieFac,'')`);
     centralOperativo = fmt(lin.recordset[0]?.SERIE) || 'CUA';
-    nombreBaseAcuse = `FAC_${serieFacKey || 'SF'}${idNoFactura}`;
+    nombreBaseAcuse = `FAC_${serieFacKey || ''}${idNoFactura}`;
     tituloDoc = 'FACTURA';
     folioDoc = `${serieFacKey ? serieFacKey + '-' : ''}${idNoFactura}`;
   } else if (tipoDoc === 'notacredito') {
@@ -109,7 +109,7 @@ async function datosAcuse(tipoDoc, params, pool) {
     docRow = r.recordset[0];
     if (!docRow) throw new Error(`Nota ${idNotaCredito} no encontrada`);
     centralOperativo = central || 'CUA';
-    nombreBaseAcuse = `NC_${tipo}${serieKey || 'SF'}${idNotaCredito}`;
+    nombreBaseAcuse = `NC_${tipo}${serieKey || ''}${idNotaCredito}`;
     tituloDoc = tipo === 'ND' ? 'NOTA DE DÉBITO' : 'NOTA DE CRÉDITO';
     folioDoc = `${serieKey ? serieKey + '-' : ''}${idNotaCredito}`;
   } else if (tipoDoc === 'pago') {
