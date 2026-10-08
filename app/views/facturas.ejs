@@ -87,7 +87,7 @@
             </div>
             <div class="row g-2 mt-1 align-items-center">
               <div class="col-md-5 d-flex gap-3">
-                <div class="form-check"><input type="checkbox" id="f_FlagResFac" class="form-check-input" onchange="onToggleResumen()"><label class="form-check-label small" for="f_FlagResFac">Un Concepto</label></div>
+                <div class="form-check"><input type="checkbox" id="f_FlagResFac" class="form-check-input" <%= tienePermiso('facturas.campo_unconcepto') ? '' : 'disabled' %> onchange="onToggleResumen()"><label class="form-check-label small" for="f_FlagResFac">Un Concepto</label></div>
                 <div class="form-check"><input type="checkbox" id="f_IncluirCP" class="form-check-input" <%= tienePermiso('facturas.campo_incluircp') ? '' : 'disabled' %> onchange="onCabeceraFieldChange()"><label class="form-check-label small" for="f_IncluirCP">Incluir CP</label></div>
               </div>
               <div class="col-md-4"><label class="form-label small mb-1">Ref. Cliente</label><input type="text" id="f_RefCliente" class="form-control form-control-sm bg-light" readonly></div>
@@ -113,6 +113,16 @@
               </div>
               <div class="col-md-5">
                 <button class="btn btn-sm btn-primary" onclick="openLookupCP()"><i class="bi bi-search"></i> Buscar Carta Porte...</button>
+              </div>
+            </div>
+            <div class="row g-2 mt-1 align-items-end">
+              <div class="col-md-3">
+                <label class="form-label small mb-1">Cartas Porte agregadas</label>
+                <input type="text" id="cp_Contador" class="form-control form-control-sm bg-light text-center fw-semibold" readonly value="0">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label small mb-1">Buscar entre las agregadas</label>
+                <input type="text" id="cp_BuscarAgregada" class="form-control form-control-sm" placeholder="Folio o descripción..." oninput="filtrarPartidasAgregadas()">
               </div>
             </div>
           </div>
@@ -245,7 +255,7 @@
       </div>
       <div class="modal-body" id="timbraFacBody"></div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="btnCerrarTimbrarFac" data-bs-dismiss="modal">Cancelar</button>
         <button type="button" class="btn btn-warning btn-sm" id="btnConfirmTimbrarFac" onclick="ejecutarTimbradoFactura()">
           <i class="bi bi-file-earmark-check me-1"></i>Confirmar timbrado
         </button>
@@ -354,6 +364,7 @@ const cancelarFacModal=new bootstrap.Modal(document.getElementById('cancelarFacM
 const errEl=document.getElementById('frmError'), warnEl=document.getElementById('frmWarning');
 let _factura={idNoFactura:null, confirmada:false, cliente:null};
 const USUARIO_ACTUAL="<%= usuario.nombre.trim() %> <%= usuario.apellido ? usuario.apellido.trim() : '' %>".trim();
+const PUEDE_INCLUIR_CP=<%= tienePermiso('facturas.campo_incluircp') ? 'true' : 'false' %>;
 
 // Habilita "Timbrar" solo cuando hay una factura seleccionada, sin UUID
 // todavía (no timbrada) y que no esté cancelada.
@@ -377,6 +388,7 @@ function openTimbrarFactura(){
   const btn=document.getElementById('btnConfirmTimbrarFac');
   btn.style.display=''; btn.disabled=false;
   btn.innerHTML='<i class="bi bi-file-earmark-check me-1"></i>Confirmar timbrado';
+  document.getElementById('btnCerrarTimbrarFac').textContent='Cancelar';
   timbraFacModal.show();
 }
 
@@ -393,6 +405,7 @@ function ejecutarTimbradoFactura(){
       if(d.ok){
         document.getElementById('timbraFacBody').innerHTML=
           `<div class="alert alert-success mb-0"><i class="bi bi-check-circle-fill me-2"></i><strong>${d.mensaje}</strong></div>`;
+        document.getElementById('btnCerrarTimbrarFac').textContent='Cerrar';
         // El UUID (y el XML en disco) ya quedan guardados aunque sea modo
         // prueba -- hay que refrescar el browse siempre para que la columna
         // XML habilite su descarga. Solo el botón "Timbrar" se deja activo en
@@ -491,12 +504,15 @@ function clearForm(){
   document.getElementById('f_c_UsoCFDI_disp').value='';
   document.getElementById('f_Status').value='EMITIDA';
   document.getElementById('f_FlagResFac').checked=false;
-  document.getElementById('f_IncluirCP').checked=false;
+  document.getElementById('f_IncluirCP').checked=PUEDE_INCLUIR_CP;
   document.getElementById('f_Descripcion').value='';
   document.getElementById('f_Descripcion').disabled=true;
   document.getElementById('f_Observaciones').value='';
   document.getElementById('f_Facturo_disp').textContent=USUARIO_ACTUAL;
   document.getElementById('detBody').innerHTML='';
+  _todasLasLineas=[];
+  document.getElementById('cp_Contador').value='0';
+  document.getElementById('cp_BuscarAgregada').value='';
   pintarTotales({SubTotal:0,IVA:0,Retencion:0,TOTAL:0});
   hideError(); hideWarning();
 }
@@ -726,8 +742,23 @@ function guardarEditarLinea(){
     });
 }
 
+let _todasLasLineas=[];
 function pintarDetalle(lineas){
+  _todasLasLineas=lineas;
+  const contador=document.getElementById('cp_Contador');
+  if(contador)contador.value=lineas.length;
+  const buscar=document.getElementById('cp_BuscarAgregada');
+  if(buscar)buscar.value='';
+  renderFilaDetalle(lineas);
+}
+function renderFilaDetalle(lineas){
   document.getElementById('detBody').innerHTML=lineas.map(filaDetalleHtml).join('');
+}
+function filtrarPartidasAgregadas(){
+  const q=(document.getElementById('cp_BuscarAgregada').value||'').trim().toLowerCase();
+  const filtradas=!q?_todasLasLineas:_todasLasLineas.filter(l=>
+    (l.CARTAPORTE||'').toLowerCase().includes(q) || (l.DESFLETE||'').toLowerCase().includes(q));
+  renderFilaDetalle(filtradas);
 }
 // Doble clic en la fila -> abre el mismo formulario "Editar partida" que el
 // botón de lápiz (toma los mismos datos de ese botón, sin duplicar lógica).

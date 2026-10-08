@@ -321,9 +321,28 @@ router.get('/get', async (req, res) => {
     const cabRes = await reqSerieFac(pool.request(), serieFac).input('id', sql.Decimal(9), id)
       .query(`SELECT * FROM Empresa2.Factura WHERE Id_NoFactura=@id AND ${SERIEFAC_EQ}`);
     if (!cabRes.recordset[0]) return res.status(404).json({ error: 'No encontrada' });
+    const cab = cabRes.recordset[0];
+
+    // RFC: facturas migradas del sistema anterior nunca guardaron esta
+    // columna -- se completa desde el cliente (siempre vigente).
+    if (!trim(cab.RFC) && cab.Id_Cliente) {
+      const cliRes = await pool.request().input('id', sql.Decimal(7), cab.Id_Cliente)
+        .query(`SELECT RFC FROM Empresa2.Clientes WHERE ID_CLIENTE=@id`);
+      cab.RFC = trim(cliRes.recordset[0]?.RFC);
+    }
+
+    // Importe en letras: si la factura migrada no lo trae, se calcula y se
+    // deja guardado (así la próxima vez ya no hace falta recalcularlo).
+    if (!trim(cab.ImporteLetras) && num(cab.TOTAL) > 0) {
+      const letras = importeALetras(cab.TOTAL, cab.MonFactura);
+      await reqSerieFac(pool.request(), serieFac).input('id', sql.Decimal(9), id).input('letras', sql.VarChar(150), letras)
+        .query(`UPDATE Empresa2.Factura SET ImporteLetras=@letras WHERE Id_NoFactura=@id AND ${SERIEFAC_EQ}`);
+      cab.ImporteLetras = letras;
+    }
+
     const detRes = await reqSerieFac(pool.request(), serieFac).input('id', sql.Decimal(9), id)
       .query(`SELECT * FROM Empresa2.FacDeta WHERE ID_NOFACTURA=@id AND ${SERIEFAC_EQ} ORDER BY ID_NODETAFAC`);
-    res.json({ cabecera: cabRes.recordset[0], lineas: detRes.recordset });
+    res.json({ cabecera: cab, lineas: detRes.recordset });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
