@@ -26,6 +26,7 @@ const QRCode = require('qrcode');
 const {
   fmt, numFmt, fechaCorta, horaCorta, partirLargo, resolverLogo,
   porLocalName, todosPorLocalName, attr, extraerComplementoCartaPorte,
+  lugarExpedicionDesdeCP, monedaTxt, encabezadoEmpresa,
 } = require('./pdf-utils');
 
 const PdfPrinter  = require('pdfmake/js/Printer.js').default;
@@ -125,31 +126,6 @@ async function datosParaImpresionFactura(idNoFactura, serieFac, pool) {
   };
 }
 
-// ── encabezado de la empresa (logo + razón social + domicilio) ─────────────
-function encabezadoEmpresa(emp, logo) {
-  const domicilio = [fmt(emp.CALLE), 'N°', fmt(emp.NOEXT)].filter(Boolean).join(' ');
-  const ciudad = `${fmt(emp.COLONIA)}, C.P. ${fmt(emp.CP)}, ${fmt(emp.MUNICIPIO)}, ${fmt(emp.ESTADO) === 'CDMX' ? 'CDMX' : fmt(emp.CIUDAD)}.`;
-  return {
-    stack: [
-      {
-        columns: [
-          logo ? { image: logo, width: 60, height: 60 } : { text: '', width: 60 },
-          { text: fmt(emp.NOMBRECORTO), bold: true, fontSize: 13, alignment: 'center', width: '*', margin: [0, 18, 0, 0] },
-          { text: '', width: 60 },
-        ],
-      },
-      { text: `Registro Federal de Contribuyentes ${fmt(emp.RFC)}`, fontSize: 8, alignment: 'center', margin: [0, 2, 0, 0] },
-      // Texto fijo -- el sistema legado no lo deriva del catálogo de régimen
-      // fiscal de la Empresa (esa columna trae datos obsoletos/inconsistentes
-      // con C_REGIMENFISCAL); confirmado igual en ambos PDF de referencia.
-      { text: 'Regimen Fiscal: Ley Genral de Personas Morales', fontSize: 8, alignment: 'center' },
-      { text: domicilio, fontSize: 8, alignment: 'center' },
-      { text: ciudad, fontSize: 8, alignment: 'center' },
-      { text: 'Conmutador: 55.30.09.49 con 12 Lineas Ext. 109 y 110 Fax:55.19.07.54', fontSize: 8, alignment: 'center' },
-    ],
-  };
-}
-
 function celda(label, value, opts = {}) {
   return { text: [{ text: label + ' ', bold: true }, { text: value || '', bold: !!opts.boldValue }], fontSize: opts.fontSize || 8, margin: opts.margin || [0, 1, 0, 1] };
 }
@@ -189,7 +165,7 @@ function cajaFolio(d) {
           { text: folioFmt, bold: true, fontSize: 11, color: ROJO, width: 'auto' },
         ]}],
         [{ border: [true,false,true,false], margin: [4,2,4,2], stack: [
-          { text: [{ text: 'Lugar Expedición: ', bold: true, fontSize: 7 }, { text: lugarExpedicionTxt(d.emp), fontSize: 7 }] },
+          { text: [{ text: 'Lugar Expedición: ', bold: true, fontSize: 7 }, { text: lugarExpedicionDesdeCP(d.fac.LugarExpedicion, d.emp), fontSize: 7 }] },
           { columns: [
             { text: fechaCorta(d.fac.FechaFactura), fontSize: 8, bold: true, width: '*' },
             { text: horaCorta(d.fac.Hora), fontSize: 8, width: 'auto' },
@@ -215,10 +191,6 @@ function cajaFolio(d) {
     },
   };
 }
-function lugarExpedicionTxt(emp) {
-  return `${fmt(emp.ESTADO) === 'CDMX' ? 'CDMX' : fmt(emp.ESTADO)}, A`;
-}
-
 // ── tabla "Un Concepto" (FlagResFac=1) ──────────────────────────────────────
 function tablaUnConcepto(d) {
   return {
@@ -303,15 +275,12 @@ function bloqueTotales(d) {
     layout: NOBORDER,
   };
 
-  if (parseInt(d.fac.FlagResFac) === 1) {
-    return { margin: [0, 8, 0, 0], columns: [{ text: '', width: '*' }, totalesBox] };
-  }
-
   return {
     margin: [0, 8, 0, 0],
     columns: [
       { width: '*', fontSize: 8, stack: [
-        { text: [{ text: 'MONEDA: ', bold: true }, `${fmt(d.fac.MonFactura)} ${fmt(d.fac.MonFactura) === 'MXN' ? 'Peso Mexicano' : ''}`], margin: [0,0,0,3] },
+        { text: fmt(d.fac.ImporteLetras), bold: true, margin: [0,0,0,5] },
+        { text: [{ text: 'MONEDA: ', bold: true }, monedaTxt(d.fac.MonFactura)], margin: [0,0,0,3] },
         { text: [{ text: 'FORMA PAGO: ', bold: true }, `${fmt(d.fac.c_FormaPago)} ${fmt(d.fac.FormaPago)}`], margin: [0,0,0,3] },
         { text: [{ text: 'METODO PAGO: ', bold: true }, `${fmt(d.fac.ClaveMP)} ${fmt(d.fac.MetodoPago)}`] },
       ]},

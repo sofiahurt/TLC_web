@@ -173,9 +173,61 @@ function extraerComplementoCartaPorte(doc) {
   };
 }
 
+// Texto "Lugar Expedición" a partir del domicilio fiscal del emisor -- usado
+// solo como respaldo cuando el documento no trae su propio campo
+// LugarExpedicion.
+function lugarExpedicionTxt(emp) {
+  return fmt(emp.ESTADO) === 'CDMX' ? 'CDMX' : fmt(emp.ESTADO);
+}
+
+// Texto "Lugar Expedición" real del documento: el campo LugarExpedicion de
+// Factura/NotaCred es un Código Postal -- se muestra tal cual (solo el
+// código, sin nada más), sin resolverlo contra ningún catálogo. Si el
+// documento no lo trae capturado, cae al domicilio del emisor.
+function lugarExpedicionDesdeCP(cp, emp) {
+  const codigo = fmt(cp);
+  if (codigo) return codigo;
+  return lugarExpedicionTxt(emp);
+}
+
+// Texto de moneda para el bloque de totales (Factura/NotaCred).
+function monedaTxt(mon) {
+  const m = fmt(mon) || 'MXN';
+  if (m === 'USD') return 'USD Dolar';
+  if (m === 'MXN') return 'MXN Pesos Mexicanos';
+  return m;
+}
+
+// Encabezado de empresa compartido por Factura y Notas de Crédito/Débito:
+// logo + nombre, RFC, régimen fiscal (texto fijo -- el sistema legado no lo
+// deriva del catálogo de régimen fiscal de la Empresa, esa columna trae
+// datos obsoletos/inconsistentes con C_REGIMENFISCAL; confirmado igual en
+// ambos PDF de referencia), domicilio y conmutador.
+function encabezadoEmpresa(emp, logo) {
+  const domicilio = [fmt(emp.CALLE), 'N°', fmt(emp.NOEXT)].filter(Boolean).join(' ');
+  const ciudad = `${fmt(emp.COLONIA)}, C.P. ${fmt(emp.CP)}, ${fmt(emp.MUNICIPIO)}, ${fmt(emp.ESTADO) === 'CDMX' ? 'CDMX' : fmt(emp.CIUDAD)}.`;
+  return {
+    stack: [
+      {
+        columns: [
+          logo ? { image: logo, width: 60, height: 60 } : { text: '', width: 60 },
+          { text: fmt(emp.NOMBRECORTO), bold: true, fontSize: 13, alignment: 'center', width: '*', margin: [0, 18, 0, 0] },
+          { text: '', width: 60 },
+        ],
+      },
+      { text: `Registro Federal de Contribuyentes ${fmt(emp.RFC)}`, fontSize: 8, alignment: 'center', margin: [0, 2, 0, 0] },
+      { text: 'Regimen Fiscal: Ley Genral de Personas Morales', fontSize: 8, alignment: 'center' },
+      { text: domicilio, fontSize: 8, alignment: 'center' },
+      { text: ciudad, fontSize: 8, alignment: 'center' },
+      { text: 'Conmutador: 55.30.09.49 con 12 Lineas Ext. 109 y 110 Fax:55.19.07.54', fontSize: 8, alignment: 'center' },
+    ],
+  };
+}
+
 module.exports = {
   fmt, numFmt, fechaCorta, fechaHora, horaCorta, partirLargo,
   resolverLogo, LOGO_PROYECTO,
   porLocalName, todosPorLocalName, attr,
   extraerComplementoCartaPorte,
+  lugarExpedicionTxt, lugarExpedicionDesdeCP, monedaTxt, encabezadoEmpresa,
 };

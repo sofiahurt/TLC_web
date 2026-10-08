@@ -16,7 +16,7 @@ const { DOMParser } = require('@xmldom/xmldom');
 const QRCode = require('qrcode');
 const {
   fmt, numFmt, fechaCorta, horaCorta, resolverLogo, partirLargo,
-  porLocalName, attr,
+  porLocalName, attr, lugarExpedicionDesdeCP, monedaTxt, encabezadoEmpresa,
 } = require('./pdf-utils');
 
 const PdfPrinter  = require('pdfmake/js/Printer.js').default;
@@ -25,6 +25,7 @@ const vfs         = require('pdfmake/js/virtual-fs.js').default;
 
 const FONTS = { Helvetica: require('pdfmake/standard-fonts/Helvetica.js').Helvetica };
 const ROJO  = '#c00000';
+const AZUL  = '#1a3f6f';
 const NOBORDER = { hLineWidth: () => 0, vLineWidth: () => 0 };
 
 function extraerDatosXMLNotaCredito(xmlString) {
@@ -48,6 +49,28 @@ function extraerDatosXMLNotaCredito(xmlString) {
       selloSAT: attr(tfd, 'SelloSAT'),
     } : null,
   };
+}
+
+// Documentos relacionados (Serie + Folio Fiscal) de cada línea -- misma
+// fuente y mismo criterio que cfdi:CfdiRelacionados en cfdi-notacredito.js
+// (Factura vía l.UUIDFac, o ND previa resuelta por Id_NotaDebito/SerieND),
+// pero conservando también la Serie de cada documento para mostrarla en el
+// PDF. Se arma siempre desde NotaCredDeta, independiente de si la nota se
+// muestra "resumida" (Un Concepto) o detallada línea por línea.
+async function documentosRelacionados(lineas, pool) {
+  const mapa = new Map(); // uuid -> serie
+  for (const l of lineas) {
+    if (Number(l.ID_NOFACTURA) > 0 && fmt(l.UUIDFac)) {
+      mapa.set(fmt(l.UUIDFac), fmt(l.SerieFac));
+    } else if (Number(l.Id_NotaDebito) > 0) {
+      const ndRes = await pool.request()
+        .input('id', sql.Decimal(7), l.Id_NotaDebito).input('serie', sql.VarChar(10), fmt(l.SerieND) || null)
+        .query(`SELECT UUID FROM Empresa2.NotaCred WHERE Id_NotaCredito=@id AND LTRIM(RTRIM(Tipo))='ND' AND ISNULL(LTRIM(RTRIM(Serie)),'')=ISNULL(@serie,'')`);
+      const u = fmt(ndRes.recordset[0]?.UUID);
+      if (u) mapa.set(u, fmt(l.SerieND));
+    }
+  }
+  return Array.from(mapa, ([uuid, serie]) => ({ serie, uuid }));
 }
 
 async function datosParaImpresionNotaCredito(tipo, serie, idNotaCredito, centralOperativo, pool) {
@@ -93,25 +116,9 @@ async function datosParaImpresionNotaCredito(tipo, serie, idNotaCredito, central
   }
 
   const datosXml = extraerDatosXMLNotaCredito(xmlString);
+  const relacionados = await documentosRelacionados(lineas, pool);
 
-  return { nc, lineas, emp, cliente, logo: resolverLogo(emp.LOGOEMPRESA), ...datosXml };
-}
-
-function encabezadoEmpresa(emp, logo) {
-  const domicilio = [fmt(emp.CALLE), 'N°', fmt(emp.NOEXT)].filter(Boolean).join(' ');
-  const ciudad = `${fmt(emp.COLONIA)}, C.P. ${fmt(emp.CP)}, ${fmt(emp.MUNICIPIO)}, ${fmt(emp.ESTADO) === 'CDMX' ? 'CDMX' : fmt(emp.CIUDAD)}.`;
-  return {
-    stack: [
-      { columns: [
-        logo ? { image: logo, width: 60, height: 60 } : { text: '', width: 60 },
-        { text: fmt(emp.NOMBRECORTO), bold: true, fontSize: 13, alignment: 'center', width: '*', margin: [0, 18, 0, 0] },
-        { text: '', width: 60 },
-      ]},
-      { text: `Registro Federal de Contribuyentes ${fmt(emp.RFC)}`, fontSize: 8, alignment: 'center', margin: [0, 2, 0, 0] },
-      { text: domicilio, fontSize: 8, alignment: 'center' },
-      { text: ciudad, fontSize: 8, alignment: 'center' },
-    ],
-  };
+  return { nc, lineas, emp, cliente, logo: resolverLogo(emp.LOGOEMPRESA), relacionados, ...datosXml };
 }
 
 function cajaCliente(d) {
@@ -138,6 +145,7 @@ function cajaFolio(d) {
         { text: tipoTxt, bold: true, fontSize: 8, width: '*' },
         { text: folioFmt, bold: true, fontSize: 11, color: ROJO, width: 'auto' },
       ]}],
+      [{ border: [true,false,true,false], margin: [4,2,4,2], text: [{ text: 'Lugar Expedición: ', bold: true, fontSize: 7 }, { text: lugarExpedicionDesdeCP(d.nc.LugarExpedicion, d.emp), fontSize: 7 }] }],
       [{ border: [true,false,true,false], margin: [4,2,4,2], columns: [
         { text: fechaCorta(d.nc.Fecha), fontSize: 8, bold: true, width: '*' },
         { text: horaCorta(d.nc.Hora), fontSize: 8, width: 'auto' },
@@ -154,6 +162,29 @@ function cajaFolio(d) {
   };
 }
 
+// Documentos relacionados: siempre se muestra, incluso con FlagResNota=1
+// (Un Concepto) -- la condensación del concepto es solo visual, la nota
+// sigue estando relacionada con los mismos CFDI de origen.
+function tablaRelacionados(d) {
+  // Solo aplica en modo "Un Concepto" (FlagResNota=1): ahí la tabla de
+  // Conceptos queda resumida en una sola línea y no se ve a qué documentos
+  // se refiere la nota. En modo detallado (FlagResNota=0) cada línea de la
+  // tabla de Conceptos ya muestra su propia referencia (Factura #.../ND #...).
+  if (parseInt(d.nc.FlagResNota) !== 1) return [];
+  if (!d.relacionados || !d.relacionados.length) return [];
+  return [{
+    margin: [0, 10, 0, 0],
+    table: {
+      widths: [90, '*'],
+      body: [
+        [{ text: `DOCUMENTOS RELACIONADOS (${d.relacionados.length})`, fillColor: AZUL, color: 'white', bold: true, fontSize: 8, colSpan: 2 }, {}],
+        [{ text: 'SERIE', fillColor: AZUL, color: 'white', bold: true, fontSize: 8 }, { text: 'FOLIO FISCAL', fillColor: AZUL, color: 'white', bold: true, fontSize: 8 }],
+        ...d.relacionados.map(r => [{ text: r.serie, fontSize: 8 }, { text: r.uuid, fontSize: 8 }]),
+      ],
+    },
+  }];
+}
+
 function tablaConceptos(d) {
   const esResumen = parseInt(d.nc.FlagResNota) === 1;
   const filas = esResumen
@@ -167,7 +198,7 @@ function tablaConceptos(d) {
     table: {
       widths: [65, '*', 75],
       body: [
-        [{ text: 'Clave', fillColor: '#e0e0e0', bold: true, fontSize: 8 }, { text: 'Descripción', fillColor: '#e0e0e0', bold: true, fontSize: 8 }, { text: 'Importe', fillColor: '#e0e0e0', bold: true, fontSize: 8, alignment: 'right' }],
+        [{ text: 'Clave', fillColor: AZUL, color: 'white', bold: true, fontSize: 8 }, { text: 'Descripción', fillColor: AZUL, color: 'white', bold: true, fontSize: 8 }, { text: 'Importe', fillColor: AZUL, color: 'white', bold: true, fontSize: 8, alignment: 'right' }],
         ...filas.map(f => [{ text: f[0], fontSize: 8 }, { text: f[1], fontSize: 8 }, { text: f[2], fontSize: 8, alignment: 'right' }]),
       ],
     },
@@ -175,18 +206,30 @@ function tablaConceptos(d) {
 }
 
 function bloqueTotales(d) {
+  const totalesBox = {
+    width: 190,
+    table: { widths: ['*', 80], body: [
+      [{ text: 'SUBTOTAL:', bold: true, fontSize: 8 }, { text: `$${numFmt(d.nc.Subtotal, 2)}`, fontSize: 8, alignment: 'right' }],
+      [{ text: 'RETENCIÓN:', bold: true, fontSize: 8 }, { text: `$${numFmt(d.nc.Retencion, 2)}`, fontSize: 8, alignment: 'right' }],
+      [{ text: 'IVA:', bold: true, fontSize: 8 }, { text: `$${numFmt(d.nc.IVA, 2)}`, fontSize: 8, alignment: 'right' }],
+      [{ text: 'TOTAL:', bold: true, fontSize: 9 }, { text: `$${numFmt(d.nc.ImporteTotal, 2)}`, fontSize: 9, bold: true, alignment: 'right' }],
+    ]},
+    layout: NOBORDER,
+  };
+
+  // NotaCred no tiene columna de moneda propia (el XML siempre declara
+  // Moneda="MXN" en cfdi-notacredito.js) -- se muestra fija, igual que ahí.
   return {
     margin: [0, 8, 0, 0],
-    columns: [{ text: '', width: '*' }, {
-      width: 190,
-      table: { widths: ['*', 80], body: [
-        [{ text: 'SUBTOTAL:', bold: true, fontSize: 8 }, { text: `$${numFmt(d.nc.Subtotal, 2)}`, fontSize: 8, alignment: 'right' }],
-        [{ text: 'RETENCIÓN:', bold: true, fontSize: 8 }, { text: `$${numFmt(d.nc.Retencion, 2)}`, fontSize: 8, alignment: 'right' }],
-        [{ text: 'IVA:', bold: true, fontSize: 8 }, { text: `$${numFmt(d.nc.IVA, 2)}`, fontSize: 8, alignment: 'right' }],
-        [{ text: 'TOTAL:', bold: true, fontSize: 9 }, { text: `$${numFmt(d.nc.ImporteTotal, 2)}`, fontSize: 9, bold: true, alignment: 'right' }],
+    columns: [
+      { width: '*', fontSize: 8, stack: [
+        { text: fmt(d.nc.ImporteLetras), bold: true, margin: [0,0,0,5] },
+        { text: [{ text: 'MONEDA: ', bold: true }, monedaTxt('MXN')], margin: [0,0,0,3] },
+        { text: [{ text: 'FORMA PAGO: ', bold: true }, `${fmt(d.nc.c_FormaPago)} ${fmt(d.nc.FormaPago)}`], margin: [0,0,0,3] },
+        { text: [{ text: 'METODO PAGO: ', bold: true }, `${fmt(d.nc.ClaveMP)} ${fmt(d.nc.MetodoPago)}`] },
       ]},
-      layout: NOBORDER,
-    }],
+      totalesBox,
+    ],
   };
 }
 
@@ -219,6 +262,7 @@ async function renderPDFDesdeDatos(d) {
   content.push({ columns: [cajaCliente(d), { width: 8, text: '' }, { width: 200, ...cajaFolio(d) }] });
   content.push(tablaConceptos(d));
   content.push(bloqueTotales(d));
+  content.push(...tablaRelacionados(d));
   content.push(...(await bloqueSellos(d)));
 
   const docDefinition = {
