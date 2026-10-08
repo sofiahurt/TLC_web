@@ -26,7 +26,7 @@ const QRCode = require('qrcode');
 const {
   fmt, numFmt, fechaCorta, horaCorta, partirLargo, resolverLogo,
   porLocalName, todosPorLocalName, attr, extraerComplementoCartaPorte,
-  lugarExpedicionDesdeCP, monedaTxt, encabezadoEmpresa,
+  lugarExpedicionDesdeCP, monedaTxt, encabezadoEmpresa, formaPagoTxt, metodoPagoTxt,
 } = require('./pdf-utils');
 
 const PdfPrinter  = require('pdfmake/js/Printer.js').default;
@@ -281,8 +281,8 @@ function bloqueTotales(d) {
       { width: '*', fontSize: 8, stack: [
         { text: fmt(d.fac.ImporteLetras), bold: true, margin: [0,0,0,5] },
         { text: [{ text: 'MONEDA: ', bold: true }, monedaTxt(d.fac.MonFactura)], margin: [0,0,0,3] },
-        { text: [{ text: 'FORMA PAGO: ', bold: true }, `${fmt(d.fac.c_FormaPago)} ${fmt(d.fac.FormaPago)}`], margin: [0,0,0,3] },
-        { text: [{ text: 'METODO PAGO: ', bold: true }, `${fmt(d.fac.ClaveMP)} ${fmt(d.fac.MetodoPago)}`] },
+        { text: [{ text: 'FORMA PAGO: ', bold: true }, `${fmt(d.fac.c_FormaPago)} ${formaPagoTxt(d.fac.c_FormaPago, d.fac.FormaPago)}`], margin: [0,0,0,3] },
+        { text: [{ text: 'METODO PAGO: ', bold: true }, `${fmt(d.fac.ClaveMP)} ${metodoPagoTxt(d.fac.ClaveMP, d.fac.MetodoPago)}`] },
       ]},
       totalesBox,
     ],

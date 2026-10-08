@@ -5,6 +5,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { getSatDb } = require('../config/sat-db');
 
 function fmt(v) { return v ? String(v).trim() : ''; }
 
@@ -173,17 +174,17 @@ function extraerComplementoCartaPorte(doc) {
   };
 }
 
-// Texto "Lugar Expedición" a partir del domicilio fiscal del emisor -- usado
-// solo como respaldo cuando el documento no trae su propio campo
-// LugarExpedicion.
+// Código Postal del domicilio fiscal del emisor -- usado solo como respaldo
+// cuando el documento no trae su propio campo LugarExpedicion, para que el
+// resultado siempre sea un Código Postal (nunca texto).
 function lugarExpedicionTxt(emp) {
-  return fmt(emp.ESTADO) === 'CDMX' ? 'CDMX' : fmt(emp.ESTADO);
+  return fmt(emp.CP);
 }
 
 // Texto "Lugar Expedición" real del documento: el campo LugarExpedicion de
 // Factura/NotaCred es un Código Postal -- se muestra tal cual (solo el
 // código, sin nada más), sin resolverlo contra ningún catálogo. Si el
-// documento no lo trae capturado, cae al domicilio del emisor.
+// documento no lo trae capturado, cae al Código Postal del emisor.
 function lugarExpedicionDesdeCP(cp, emp) {
   const codigo = fmt(cp);
   if (codigo) return codigo;
@@ -196,6 +197,28 @@ function monedaTxt(mon) {
   if (m === 'USD') return 'USD Dolar';
   if (m === 'MXN') return 'MXN Pesos Mexicanos';
   return m;
+}
+
+// Descripción de una clave de catálogo SAT (Forma de Pago / Método de Pago),
+// buscando primero en la columna de texto ya capturada en la tabla y, si
+// viene vacía (hay Facturas/Notas con la clave pero sin su descripción),
+// cayendo al catálogo del SAT correspondiente.
+function descripcionCatalogo(tabla, columnaClave, claveBuscada, descripcionCapturada) {
+  const desc = fmt(descripcionCapturada);
+  if (desc) return desc;
+  const clave = fmt(claveBuscada);
+  if (!clave) return '';
+  try {
+    const db = getSatDb();
+    const row = db.prepare(`SELECT descripcion FROM ${tabla} WHERE ${columnaClave} = ?`).get(clave);
+    return row ? fmt(row.descripcion) : '';
+  } catch (e) { return ''; }
+}
+function formaPagoTxt(clave, descripcion) {
+  return descripcionCatalogo('sat_formas_pago', 'c_FormaPago', clave, descripcion);
+}
+function metodoPagoTxt(clave, descripcion) {
+  return descripcionCatalogo('sat_metodo_pago', 'c_metodopago', clave, descripcion);
 }
 
 // Encabezado de empresa compartido por Factura y Notas de Crédito/Débito:
@@ -230,4 +253,5 @@ module.exports = {
   porLocalName, todosPorLocalName, attr,
   extraerComplementoCartaPorte,
   lugarExpedicionTxt, lugarExpedicionDesdeCP, monedaTxt, encabezadoEmpresa,
+  formaPagoTxt, metodoPagoTxt,
 };

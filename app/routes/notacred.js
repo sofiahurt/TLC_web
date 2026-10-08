@@ -334,6 +334,12 @@ router.post('/partida/agregar', requierePermiso('notacred.editar'), async (req, 
         const cli = await new sql.Request(tx).input('id', sql.Decimal(7), idCliente).query(`SELECT NOMBRECOMUN, NOMBRECOM FROM Empresa2.Clientes WHERE ID_CLIENTE=@id`);
         const defaults = DEFAULTS_TIPO[tipo];
         const esResumen = f.esResumen ? 1 : 0;
+
+        // LugarExpedicion = CP de la Empresa (dbo.Empresas, SERIE='CUA' -- es
+        // siempre la misma razón social para todos los centrales, confirmado
+        // con el usuario; igual criterio que Factura).
+        const empRes = await new sql.Request(tx).query(`SELECT CP FROM dbo.Empresas WHERE LTRIM(RTRIM(SERIE))='CUA'`);
+        const lugarExpedicion = trim(empRes.recordset[0]?.CP);
         await reqNC(new sql.Request(tx), tipo, serieCab, idNotaCredito)
           .input('fecha', sql.Date, hoy()).input('hora', sql.VarChar(8), new Date().toTimeString().slice(0, 8))
           .input('idCli', sql.Decimal(7), idCliente).input('nombreCom', sql.VarChar(150), trim(cli.recordset[0]?.NOMBRECOMUN) || trim(cli.recordset[0]?.NOMBRECOM))
@@ -352,14 +358,15 @@ router.post('/partida/agregar', requierePermiso('notacred.editar'), async (req, 
           .input('descripcion', sql.VarChar(100), trim(f.Descripcion) || defaults.Descripcion)
           .input('flagres', sql.TinyInt, esResumen)
           .input('whois', sql.VarChar(80), [req.session.usuario.nombre, req.session.usuario.apellido].filter(Boolean).join(' '))
+          .input('lugarexp', sql.VarChar(10), lugarExpedicion || null)
           .query(`INSERT INTO Empresa2.NotaCred(
             Serie, Id_NotaCredito, Fecha, Hora, Id_Cliente, NombreCom, TipoFactura, Status,
             c_FormaPago, ClaveMP, c_UsoCFDI, c_TipoRelacion, c_ClaveProdServ, c_ClaveUnidad, Descripcion,
-            FlagResNota, Tipo, Subtotal, IVA, Retencion, ImporteTotal, SumaPartidas, WhoIs
+            FlagResNota, Tipo, Subtotal, IVA, Retencion, ImporteTotal, SumaPartidas, WhoIs, LugarExpedicion
           ) VALUES(
             ISNULL(@serie,''), @id, @fecha, @hora, @idCli, @nombreCom, 'Pesos', @status,
             @cformapago, @clavemp, @cusocfdi, @ctiporel, @cclaveprodserv, @cclaveunidad, @descripcion,
-            @flagres, @tipo, 0, 0, 0, 0, 0, @whois
+            @flagres, @tipo, 0, 0, 0, 0, 0, @whois, @lugarexp
           )`);
       } else {
         const cabRes = await reqNC(new sql.Request(tx), tipo, serieCab, idNotaCredito).query(`SELECT Status FROM Empresa2.NotaCred WHERE Id_NotaCredito=@id AND ${NC_EQ}`);

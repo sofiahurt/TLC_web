@@ -460,6 +460,12 @@ router.post('/partida/agregar', requierePermiso('facturas.editar'), async (req, 
           .query(`SELECT ISNULL(MAX(Id_NoFactura),0)+1 AS next FROM Empresa2.Factura WITH (UPDLOCK, HOLDLOCK) WHERE ${SERIEFAC_EQ}`);
         idNoFactura = nextRes.recordset[0].next;
 
+        // LugarExpedicion = CP de la Empresa (dbo.Empresas, SERIE='CUA' -- es
+        // siempre la misma razón social para todos los centrales, confirmado
+        // con el usuario).
+        const empRes = await new sql.Request(tx).query(`SELECT CP FROM dbo.Empresas WHERE LTRIM(RTRIM(SERIE))='CUA'`);
+        const lugarExpedicion = trim(empRes.recordset[0]?.CP);
+
         await reqSerieFac(new sql.Request(tx), serieFac)
           .input('id', sql.Decimal(9), idNoFactura)
           .input('fecha', sql.Date, trim(f.fecha) || hoy())
@@ -479,12 +485,13 @@ router.post('/partida/agregar', requierePermiso('facturas.editar'), async (req, 
           .input('descripcion', sql.VarChar(254), descripcion || null)
           .input('observaciones', sql.VarChar(1000), observaciones || null)
           .input('realizo', sql.VarChar(60), [req.session.usuario.nombre, req.session.usuario.apellido].filter(Boolean).join(' '))
+          .input('lugarexp', sql.VarChar(10), lugarExpedicion || null)
           .query(`INSERT INTO Empresa2.Factura(
             Id_NoFactura,FechaFactura,Hora,Id_Cliente,NombreCom,RFC,MonFactura,TipoCambio,Status,
-            c_FormaPago,ClaveMP,MetodoPago,c_UsoCFDI,FlagResFac,IncluirCP,Descripcion,Observaciones,SerieFac,Facturo,SubTotal,IVA,Retencion,TOTAL
+            c_FormaPago,ClaveMP,MetodoPago,c_UsoCFDI,FlagResFac,IncluirCP,Descripcion,Observaciones,SerieFac,Facturo,SubTotal,IVA,Retencion,TOTAL,LugarExpedicion
           ) VALUES(
             @id,@fecha,@hora,@idCli,@nombreCom,@rfc,@mon,@tc,@status,
-            @cformapago,@clavemp,@metodopago,@cusocfdi,@flagres,@incluircp,@descripcion,@observaciones,@serieFac,@realizo,0,0,0,0
+            @cformapago,@clavemp,@metodopago,@cusocfdi,@flagres,@incluircp,@descripcion,@observaciones,@serieFac,@realizo,0,0,0,0,@lugarexp
           )`);
       } else {
         const facRes = await reqSerieFac(new sql.Request(tx), serieFac).input('id', sql.Decimal(9), idNoFactura)
