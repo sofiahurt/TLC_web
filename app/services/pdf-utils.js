@@ -253,5 +253,5 @@ module.exports = {
   porLocalName, todosPorLocalName, attr,
   extraerComplementoCartaPorte,
   lugarExpedicionTxt, lugarExpedicionDesdeCP, monedaTxt, encabezadoEmpresa,
-  formaPagoTxt, metodoPagoTxt,
+  formaPagoTxt, metodoPagoTxt, descripcionCatalogo,
 };

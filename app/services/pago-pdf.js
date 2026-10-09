@@ -3,9 +3,9 @@
 // ── Representación impresa (PDF) de un Pago (Complemento de Pagos) ─────────
 // Mismo patrón que notacred-pdf.js/factura-pdf.js: funciona con o sin
 // timbre (lee el XML de disco si ya está timbrado, si no arma uno
-// equivalente en memoria vía buildCFDIPago). Diseño visual deliberadamente
-// simple por ahora, igual que los demás -- se ajusta contra un PDF de
-// referencia real si el usuario lo proporciona.
+// equivalente en memoria vía buildCFDIPago). La estructura sigue el formato
+// de referencia real (datos del comprobante, Conceptos, Información del pago,
+// CFDI Relacionados y bloque de sellos), con la paleta del resto de PDFs.
 
 const fs   = require('fs');
 const path = require('path');
@@ -15,15 +15,22 @@ const { serieFiscal } = require('../config/empresa-serie');
 const { buildCFDIPago } = require('./cfdi-pago');
 const { DOMParser } = require('@xmldom/xmldom');
 const QRCode = require('qrcode');
-const { fmt, numFmt, fechaCorta, horaCorta, resolverLogo, partirLargo, porLocalName, attr } = require('./pdf-utils');
+const {
+  fmt, numFmt, resolverLogo, partirLargo, porLocalName, todosPorLocalName, attr,
+  descripcionCatalogo, formaPagoTxt,
+} = require('./pdf-utils');
 
 const PdfPrinter  = require('pdfmake/js/Printer.js').default;
 const URLResolver = require('pdfmake/js/URLResolver.js').default;
 const vfs         = require('pdfmake/js/virtual-fs.js').default;
 
 const FONTS = { Helvetica: require('pdfmake/standard-fonts/Helvetica.js').Helvetica };
+const AZUL  = '#1a3f6f';
 const ROJO  = '#c00000';
+const GRIS  = '#e0e0e0';
 const NOBORDER = { hLineWidth: () => 0, vLineWidth: () => 0 };
+const MONEDAS = { MXN: 'Pesos Mexicanos', USD: 'Dolar Americano' };
+const TXT_SIN_MONEDA = 'Los códigos usados para las transacciones en que intervenga ninguna moneda';
 
 function num(v) { return parseFloat(v) || 0; }
 
@@ -33,14 +40,34 @@ function extraerDatosXMLPago(xmlString) {
   const emisor   = porLocalName(doc, 'Emisor');
   const receptor = porLocalName(doc, 'Receptor');
   const tfd      = porLocalName(doc, 'TimbreFiscalDigital');
+  // Un nodo pago20:Pago por forma de pago real; el de Compensación
+  // (FormaDePagoP=17) trae aparte sus propios DoctoRelacionado.
+  const pagos = todosPorLocalName(doc, 'Pago')
+    .filter(n => n.getAttribute('FormaDePagoP'))
+    .map(n => ({
+      formaPago: attr(n, 'FormaDePagoP'), fechaPago: attr(n, 'FechaPago'), moneda: attr(n, 'MonedaP'),
+      monto: attr(n, 'Monto'), numOperacion: attr(n, 'NumOperacion'),
+      docs: todosPorLocalName(n, 'DoctoRelacionado').map(dr => ({
+        uuid: attr(dr, 'IdDocumento'), serie: attr(dr, 'Serie'), folio: attr(dr, 'Folio'),
+        saldoAnt: attr(dr, 'ImpSaldoAnt'), pagado: attr(dr, 'ImpPagado'), saldoInsoluto: attr(dr, 'ImpSaldoInsoluto'),
+      })),
+    }));
   return {
+    fechaComprobante:  attr(comprobante, 'Fecha'),
+    lugarExpedicion:   attr(comprobante, 'LugarExpedicion'),
     noCertificado:     attr(comprobante, 'NoCertificado'),
     emisorRfc:         attr(emisor, 'Rfc'),
+    emisorNombre:      attr(emisor, 'Nombre'),
+    emisorRegimen:     attr(emisor, 'RegimenFiscal'),
     receptorRfc:       attr(receptor, 'Rfc'),
+    receptorNombre:    attr(receptor, 'Nombre'),
     receptorCP:        attr(receptor, 'DomicilioFiscalReceptor'),
     receptorRegFiscal: attr(receptor, 'RegimenFiscalReceptor'),
+    usoCfdi:           attr(receptor, 'UsoCFDI'),
+    pagos,
     timbre: tfd ? {
       uuid: attr(tfd, 'UUID'),
+      version: attr(tfd, 'Version'),
       fechaTimbrado: attr(tfd, 'FechaTimbrado'),
       rfcProvCertif: attr(tfd, 'RfcProvCertif'),
       noCertificadoSAT: attr(tfd, 'NoCertificadoSAT'),
@@ -106,125 +133,142 @@ function encabezadoEmpresa(emp, logo) {
   };
 }
 
-function cajaCliente(d) {
-  const clientePagaDistinto = Number(d.pago.Id_RealPago) !== Number(d.pago.Id_Cliente) && fmt(d.pago.NomClientePago);
+// Etiqueta en negrita + valor, como los pares del encabezado del formato.
+function par(etiqueta, valor, extra = {}) {
+  return { text: [{ text: `${etiqueta} `, bold: true }, { text: valor || '', ...extra }], fontSize: 8, margin: [0, 0, 0, 3] };
+}
+
+function barraSeccion(titulo) {
   return {
-    table: { widths: ['*'], body: [
-      [{ border: [true,true,true,false], margin: [4,3,4,2], text: [{ text: 'CLIENTE: ', bold: true, fontSize: 8 }, { text: fmt(d.pago.NombreCom), bold: true, fontSize: 9 }] }],
-      [{ border: [true,false,true,clientePagaDistinto ? false : true], margin: [4,2,4,2], columns: [
-        { text: [{ text: 'RFC: ', bold: true, fontSize: 8 }, { text: fmt(d.receptorRfc || d.cliente.RFC), bold: true, fontSize: 8 }], width: '*' },
-        { text: [{ text: 'C.P. ', bold: true, fontSize: 8 }, { text: fmt(d.cliente.CP), fontSize: 8 }], width: 90 },
-      ]}],
-      ...(clientePagaDistinto ? [[{ border: [true,false,true,true], margin: [4,2,4,3], text: [{ text: 'PAGA: ', bold: true, fontSize: 8 }, { text: fmt(d.pago.NomClientePago), fontSize: 8 }] }]] : []),
-    ]},
+    margin: [0, 10, 0, 4], layout: NOBORDER,
+    table: { widths: [150], body: [[{ text: titulo, bold: true, fontSize: 9, fillColor: GRIS, margin: [2, 3, 2, 3] }]] },
   };
 }
 
-function cajaFolio(d) {
-  const folioTxt = String(d.pago.Id_NoPago).padStart(6, ' ');
-  const folioFmt = folioTxt.length > 3 ? `${folioTxt.slice(0, -3)} ${folioTxt.slice(-3)}` : folioTxt;
-  return {
-    table: { widths: ['*'], body: [
-      [{ border: [true,true,true,false], margin: [4,3,4,2], columns: [
-        { text: 'C O M P R O B A N T E   D E   P A G O', bold: true, fontSize: 7, width: '*' },
-        { text: folioFmt, bold: true, fontSize: 11, color: ROJO, width: 'auto' },
-      ]}],
-      [{ border: [true,false,true,false], margin: [4,2,4,2], columns: [
-        { text: fechaCorta(d.pago.FechaPago || d.pago.Fecha), fontSize: 8, bold: true, width: '*' },
-        { text: horaCorta(d.pago.Hora), fontSize: 8, width: 'auto' },
-      ]}],
-      [{ border: [true,false,true,false], margin: [4,2,4,2], stack: [
-        { text: 'Folio Fiscal:', bold: true, fontSize: 7 },
-        { text: fmt(d.pago.UUID) || '(sin timbrar)', fontSize: 7 },
-      ]}],
-      [{ border: [true,false,true,true], margin: [4,2,4,3], columns: [
-        { text: [{ text: 'Fecha Timbre: ', bold: true, fontSize: 7 }], width: 'auto' },
-        { text: fmt(d.pago.FechaTimbrado), fontSize: 7, width: '*' },
-      ]}],
-    ]},
-  };
+function celdaEnc(texto, alignment = 'center') {
+  return { text: texto, fillColor: AZUL, color: 'white', bold: true, fontSize: 8, alignment };
 }
 
-function cajaDatosPago(d) {
+function bloqueDatosComprobante(d) {
+  const regimen = descripcionCatalogo('sat_regimenfiscal', 'c_regimenfiscal', d.emisorRegimen, '') || d.emisorRegimen;
+  const uso = descripcionCatalogo('sat_usoCDFI', 'c_usocfdi', d.usoCfdi, '');
   return {
     margin: [0, 8, 0, 0],
-    table: { widths: ['*', '*', '*'], body: [[
-      { border: [true,true,true,true], margin: [4,3,4,3], text: [{ text: 'Forma de pago: ', bold: true, fontSize: 7 }, { text: fmt(d.pago.FormaPago) || fmt(d.pago.c_FormaPago), fontSize: 7 }] },
-      { border: [true,true,true,true], margin: [4,3,4,3], text: [{ text: 'Banco: ', bold: true, fontSize: 7 }, { text: fmt(d.pago.BancoEmisor) || fmt(d.pago.BancoDeposito), fontSize: 7 }] },
-      { border: [true,true,true,true], margin: [4,3,4,3], text: [{ text: 'Referencia: ', bold: true, fontSize: 7 }, { text: fmt(d.pago.NoCheuqe), fontSize: 7 }] },
-    ]]},
+    columns: [
+      { width: '*', stack: [
+        par('RFC emisor:', d.emisorRfc),
+        par('Nombre emisor:', d.emisorNombre),
+        par('Folio:', String(d.pago.Id_NoPago), { color: ROJO, bold: true }),
+        par('RFC receptor:', d.receptorRfc || fmt(d.cliente.RFC)),
+        par('Nombre receptor:', d.receptorNombre || fmt(d.pago.NombreCom)),
+        par('Uso CFDI:', uso ? `${d.usoCfdi} - ${uso}` : d.usoCfdi),
+      ]},
+      { width: '*', stack: [
+        par('Folio Fiscal:', fmt(d.pago.UUID) || '(sin timbrar)'),
+        par('No. de Serie del CSD:', d.noCertificado),
+        par('C.P., Fecha y Hora:', `${d.lugarExpedicion}   ${d.fechaComprobante}`),
+        par('Efecto del comprobante:', 'Pago'),
+        par('Régimen fiscal:', regimen),
+      ]},
+    ],
   };
 }
 
-function tablaDocumentos(d) {
-  const filas = d.lineas.map(l => {
-    const ref = Number(l.NOFACTURA) > 0 ? `Factura #${l.NOFACTURA}` : `ND #${l.ID_NOTACREDITO}`;
-    return [ref, `$${numFmt(l.IMPRTE, 2)}`, num(l.COMPESACION) > 0.005 ? `$${numFmt(l.COMPESACION, 2)}` : '', `$${numFmt(l.TOTALPAGO, 2)}`];
-  });
-  return {
-    margin: [0, 10, 0, 0],
-    table: {
-      widths: ['*', 85, 85, 85],
-      body: [
-        [
-          { text: 'Documento', fillColor: '#e0e0e0', bold: true, fontSize: 8 },
-          { text: 'Pagado', fillColor: '#e0e0e0', bold: true, fontSize: 8, alignment: 'right' },
-          { text: 'Compensado', fillColor: '#e0e0e0', bold: true, fontSize: 8, alignment: 'right' },
-          { text: 'Total', fillColor: '#e0e0e0', bold: true, fontSize: 8, alignment: 'right' },
-        ],
-        ...filas.map(f => [
-          { text: f[0], fontSize: 8 }, { text: f[1], fontSize: 8, alignment: 'right' },
-          { text: f[2], fontSize: 8, alignment: 'right' }, { text: f[3], fontSize: 8, alignment: 'right' },
-        ]),
-      ],
-    },
-  };
-}
-
-function bloqueTotales(d) {
-  const filas = [
-    [{ text: 'IMPORTE PAGADO:', bold: true, fontSize: 8 }, { text: `$${numFmt(num(d.pago.SumaPartidas) - num(d.pago.TotalComp), 2)}`, fontSize: 8, alignment: 'right' }],
-  ];
-  if (num(d.pago.TotalComp) > 0.005) {
-    filas.push([{ text: 'COMPENSADO:', bold: true, fontSize: 8 }, { text: `$${numFmt(d.pago.TotalComp, 2)}`, fontSize: 8, alignment: 'right' }]);
-  }
-  filas.push([{ text: 'TOTAL:', bold: true, fontSize: 9 }, { text: `$${numFmt(d.pago.SumaPartidas, 2)}`, fontSize: 9, bold: true, alignment: 'right' }]);
-  return {
-    margin: [0, 8, 0, 0],
-    columns: [{ text: '', width: '*' }, { width: 190, table: { widths: ['*', 80], body: filas }, layout: NOBORDER }],
-  };
-}
-
-async function bloqueSellos(d) {
-  if (!d.timbre) return [];
-  let qrDataUrl = null;
-  try {
-    const feUrl = (d.timbre.selloCFD || '').slice(-8);
-    const qrTexto = `https://verificacfdi.facturaelectronica.sat.gob.mx/default.aspx?id=${d.timbre.uuid}&re=${d.emisorRfc}&rr=${d.receptorRfc}&tt=0&fe=${feUrl}`;
-    qrDataUrl = await QRCode.toDataURL(qrTexto, { margin: 1, width: 90 });
-  } catch (e) { /* si falla el QR, se omite sin tronar el PDF */ }
+function bloqueConceptos() {
+  const cel = (t, alignment = 'center') => ({ text: t, fontSize: 8, alignment });
   return [
-    { margin: [0, 10, 0, 0], text: 'SELLO CSD:', bold: true, fontSize: 7 },
-    { text: partirLargo(d.timbre.selloCFD), fontSize: 6, margin: [0, 2, 0, 6] },
-    { text: 'SELLO SAT:', bold: true, fontSize: 7 },
-    { text: partirLargo(d.timbre.selloSAT), fontSize: 6, margin: [0, 2, 0, 6] },
+    barraSeccion('Conceptos'),
+    { table: { widths: [60, 45, '*', 55, 70, 60], body: [
+      [celdaEnc('Código'), celdaEnc('Cantidad'), celdaEnc('No. Identificación'), celdaEnc('Unidad Medida'), celdaEnc('Precio Unitario'), celdaEnc('Importe')],
+      [cel('84111506'), cel('1'), cel(''), cel('ACT'), cel('$ 0.00', 'right'), cel('$ 0.00', 'right')],
+      [celdaEnc('Descripción'), { text: 'Pago', fontSize: 8, colSpan: 5 }, {}, {}, {}, {}],
+    ]}},
+    { margin: [0, 8, 0, 0], columns: [
+      { width: '*', text: [{ text: 'Moneda: ', bold: true }, TXT_SIN_MONEDA], fontSize: 8 },
+      { width: 150, layout: NOBORDER, table: { widths: ['*', 70], body: [
+        [{ text: 'Subtotal:', bold: true, alignment: 'right', fontSize: 8 }, { text: '$ 0.00', alignment: 'right', fontSize: 8 }],
+        [{ text: 'Total:', bold: true, alignment: 'right', fontSize: 8 }, { text: '$ 0.00', alignment: 'right', fontSize: 8 }],
+      ]}},
+    ]},
+  ];
+}
+
+function bloqueInfoPago(d) {
+  // Dato principal: el nodo de pago real; el de Compensación (17) solo se
+  // refleja en la columna "Compensación" de los CFDI relacionados.
+  const real = d.pagos.find(p => p.formaPago !== '17') || d.pagos[0] || {};
+  const forma = real.formaPago ? `${real.formaPago} - ${formaPagoTxt(real.formaPago, '')}` : '';
+  return [
+    barraSeccion('Información del pago'),
     { columns: [
-      qrDataUrl ? { width: 90, image: qrDataUrl, fit: [90, 90] } : { width: 90, text: '' },
-      { width: '*', margin: [10, 0, 0, 0], stack: [
-        { text: [{ text: 'No Certificado CSD: ', bold: true, fontSize: 7 }, { text: fmt(d.noCertificado), fontSize: 7 }], margin: [0,0,0,3] },
-        { text: [{ text: 'No Certificado SAT: ', bold: true, fontSize: 7 }, { text: fmt(d.timbre.noCertificadoSAT), fontSize: 7 }] },
+      { width: '*', stack: [par('Forma de Pago:', forma), par('No. de Operación:', real.numOperacion || fmt(d.pago.NoCheuqe))] },
+      { width: '*', stack: [
+        par('Fecha de Pago:', real.fechaPago),
+        par('Moneda de Pago:', MONEDAS[real.moneda] || real.moneda),
+        par('Monto:', numFmt(real.monto, 2)),
       ]},
     ]},
   ];
 }
 
+function tablaRelacionados(d) {
+  const real = d.pagos.find(p => p.formaPago !== '17');
+  const comp = d.pagos.find(p => p.formaPago === '17');
+  const clave = (x) => `${x.uuid}|${x.serie}|${x.folio}`;
+  const filas = new Map();
+  for (const x of (real ? real.docs : [])) filas.set(clave(x), { ...x, comp: 0 });
+  for (const x of (comp ? comp.docs : [])) {
+    const f = filas.get(clave(x));
+    if (f) { f.comp += num(x.pagado); f.saldoInsoluto = x.saldoInsoluto; }
+    else filas.set(clave(x), { ...x, pagado: '0', comp: num(x.pagado) });
+  }
+  const c = (t, alignment = 'right') => ({ text: t, fontSize: 7.5, alignment });
+  const body = [[celdaEnc('UUID', 'left'), celdaEnc('Folio'), celdaEnc('Saldo Ant.'), celdaEnc('Importe Pagado'), celdaEnc('Saldo Insoluto'), celdaEnc('Compensación')]];
+  for (const f of filas.values()) {
+    const folio = [f.serie, f.folio].filter(Boolean).join(' ');
+    body.push([c(f.uuid, 'left'), c(folio), c(`$${numFmt(f.saldoAnt, 2)}`), c(`$${numFmt(f.pagado, 2)}`), c(`$${numFmt(f.saldoInsoluto, 2)}`), c(`$${numFmt(f.comp, 2)}`)]);
+  }
+  return [
+    { text: 'CFDI Relacionados', bold: true, italics: true, fontSize: 9, margin: [0, 8, 0, 3] },
+    { table: { headerRows: 1, widths: [165, 50, 62, 70, 65, 65], body } },
+  ];
+}
+
+async function bloqueSellos(d) {
+  const t = d.timbre;
+  if (!t) return [];
+  let qrDataUrl = null;
+  try {
+    const feUrl = (t.selloCFD || '').slice(-8);
+    const qrTexto = `https://verificacfdi.facturaelectronica.sat.gob.mx/default.aspx?id=${t.uuid}&re=${d.emisorRfc}&rr=${d.receptorRfc}&tt=0&fe=${feUrl}`;
+    qrDataUrl = await QRCode.toDataURL(qrTexto, { margin: 1, width: 90 });
+  } catch (e) { /* si falla el QR, se omite sin tronar el PDF */ }
+  // Cadena original del complemento Timbre Fiscal Digital
+  const cadena = `||${t.version || '1.1'}|${t.uuid}|${t.fechaTimbrado}|${t.rfcProvCertif}|${t.selloCFD}|${t.noCertificadoSAT}||`;
+  const lbl = (txt) => ({ text: txt, bold: true, fontSize: 8, fillColor: GRIS });
+  const val = (txt, extra = {}) => ({ text: txt, fontSize: 6.5, ...extra });
+  return [
+    { margin: [0, 14, 0, 0], unbreakable: true, columns: [
+      { width: '*', table: { widths: [62, '*', 62, '*'], body: [
+        [lbl('Cadena Original:'), val(partirLargo(cadena), { colSpan: 3 }), {}, {}],
+        [lbl('Sello:'), val(partirLargo(t.selloCFD), { colSpan: 3 }), {}, {}],
+        [lbl('SelloSAT:'), val(partirLargo(t.selloSAT), { colSpan: 3 }), {}, {}],
+        [lbl('Fecha Timbrado:'), val(t.fechaTimbrado), lbl('Certificado SAT:'), val(t.noCertificadoSAT)],
+        [lbl('Versión:'), val(t.version || '1.1', { colSpan: 3 }), {}, {}],
+      ]}},
+      qrDataUrl ? { width: 90, margin: [8, 0, 0, 0], image: qrDataUrl, fit: [90, 90] } : { width: 0, text: '' },
+    ]},
+  ];
+}
+
 async function renderPDFDesdeDatos(d) {
-  const content = [];
-  content.push({ columns: [cajaCliente(d), { width: 8, text: '' }, { width: 200, ...cajaFolio(d) }] });
-  content.push(cajaDatosPago(d));
-  content.push(tablaDocumentos(d));
-  content.push(bloqueTotales(d));
-  content.push(...(await bloqueSellos(d)));
+  const content = [
+    bloqueDatosComprobante(d),
+    ...bloqueConceptos(),
+    ...bloqueInfoPago(d),
+    ...tablaRelacionados(d),
+    ...(await bloqueSellos(d)),
+  ];
 
   const docDefinition = {
     pageMargins: [30, 30, 30, 30],
