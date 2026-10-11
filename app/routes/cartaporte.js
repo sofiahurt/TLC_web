@@ -215,7 +215,8 @@ router.get('/lookup/tarifas', async (req, res) => {
     const idCliente = parseInt(req.query.idCliente) || 0;
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const pool = await getPool();
-    let where = idCliente ? `WHERE ID_CLIENTE = @idCli` : `WHERE 1=1`;
+    // Las tarifas marcadas como Ocultar no se ofrecen en la Carta Porte.
+    let where = `WHERE ISNULL(FLAGOCULTAR,0) = 0` + (idCliente ? ` AND ID_CLIENTE = @idCli` : '');
     if (q) where += ` AND (DESFLETE LIKE @q OR CAST(ID_TARIFA AS NVARCHAR) LIKE @q)`;
     const cr = pool.request().input('idCli', sql.Decimal(7), idCliente || null);
     if (q) cr.input('q', `%${q}%`);

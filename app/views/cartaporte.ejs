@@ -380,14 +380,20 @@
                 <label class="form-label fw-semibold small mb-1">IVA (16%)</label>
                 <div class="input-group input-group-sm mb-2">
                   <input type="text" id="f_IVAMX" class="form-control form-control-sm bg-primary bg-opacity-10 fw-semibold" readonly>
+                  <button type="button" class="btn btn-outline-secondary" id="btnToggleIVA" onclick="toggleExento('IVA')" disabled title="Quitar / restablecer IVA (requiere desbloquear la edición)">−</button>
                 </div>
                 <label class="form-label fw-semibold small mb-1">Retención (4%)</label>
                 <div class="input-group input-group-sm mb-2">
                   <input type="text" id="f_RetenMX" class="form-control form-control-sm bg-primary bg-opacity-10 fw-semibold" readonly>
+                  <button type="button" class="btn btn-outline-secondary" id="btnToggleRet" onclick="toggleExento('Ret')" disabled title="Quitar / restablecer retención (requiere desbloquear la edición)">−</button>
                 </div>
                 <label class="form-label fw-semibold small mb-1 text-primary fw-bold">TOTAL</label>
                 <div class="input-group input-group-sm mb-2">
                   <input type="text" id="f_TOTALMX" class="form-control form-control-sm bg-primary bg-opacity-25 fw-bold" readonly>
+                </div>
+                <div class="d-flex gap-4 flex-nowrap mt-1">
+                  <div class="form-check"><input type="checkbox" id="f_FlagIVA_vis" class="form-check-input" disabled><label class="form-check-label small text-nowrap" for="f_FlagIVA_vis">Sin IVA</label></div>
+                  <div class="form-check"><input type="checkbox" id="f_FlagRet_vis" class="form-check-input" disabled><label class="form-check-label small text-nowrap" for="f_FlagRet_vis">Sin Retención</label></div>
                 </div>
               </div>
 
@@ -959,6 +965,7 @@ function loadForm(cp, serie, ro) {
       const btnDesb = document.getElementById('btnDesbloquearCostos');
       if (btnDesb) btnDesb.classList.add('d-none');
       setReadOnly(ro);
+      syncFlagsImpuestos(); // después de setReadOnly: éste habilita todos los inputs/botones del modal
       applyRequiredHighlight(!ro);
       _currentIdCliente = String(d.Id_Cliente || '');
       toggleSeccionCliente();
@@ -1034,6 +1041,7 @@ function populateForm(d) {
   ['FlagCobMan','FlagCobDem','FlagCobAuto','FlagCobDO','FlagConDis','FlagCobParada',
    'FlagCobOtros','FlagCobCE','FlagIVA','FlagRet'
   ].forEach(k => chk('f_' + k, d[k]));
+  syncFlagsImpuestos();
   set('f_UnidadPeso', d.UnidadPeso || 'KGM');
   // Inferir tipo de tarifa para recalcular correctamente
   const renta = parseFloat(d.CostoRenta) || 0;
@@ -1080,8 +1088,23 @@ function setReadOnly(ro) {
   });
 }
 
+// La tarifa depende del cliente (el buscador filtra por él): sin cliente se
+// deshabilita el campo; al elegirlo se rehabilita, salvo que el formulario
+// esté en solo lectura (el bloqueo de EMITIDO/status se aplica después).
+let _tarifaDeshabPorCliente = false;
 function toggleSeccionCliente() {
   document.getElementById('seccionDependienteCliente').style.display = _currentIdCliente ? '' : 'none';
+  const btn = document.getElementById('btnLkTarifa');
+  const inp = document.getElementById('f_DesFlete');
+  if (!btn) return;
+  if (!_currentIdCliente) {
+    btn.disabled = true; _tarifaDeshabPorCliente = true;
+    if (inp) inp.placeholder = 'Seleccione primero un cliente';
+  } else {
+    if (_tarifaDeshabPorCliente && !_readOnly) btn.disabled = false;
+    _tarifaDeshabPorCliente = false;
+    if (inp) inp.placeholder = 'Seleccionar tarifa...';
+  }
 }
 
 function lockEmitidoFields() {
@@ -1105,6 +1128,7 @@ function desbloquearEdicionEmitido() {
   if (!confirm('Esta Carta Porte ya está EMITIDA.\n\n¿Desbloquear la edición de los datos de carga/cliente/tarifa y de los costos (Flete, Costo kilómetros, Retención/km)?\n\nVas a tener que indicar el motivo del cambio de precio para poder guardar.')) return;
 
   _costosDesbloqueados = true;
+  syncFlagsImpuestos();
 
   // Revierte lockEmitidoFields()
   ['f_FehcaCarga','f_HoraCarga','f_FechaDesCarta','f_HorarioDesCarta',
@@ -1193,6 +1217,7 @@ function clearCliente() {
   ['f_FlagIVA','f_FlagRet'].forEach(id => {
     const el = document.getElementById(id); if (el) el.checked = false;
   });
+  syncFlagsImpuestos();
   // Costos operativos
   ['f_CostoPrestamo','f_CostoTalacha','f_CostoCompllanta','f_CostoDiesel',
    'f_CostoCasetas','f_CostoComidas','f_CostoManiobrasExt','f_CostoBascula',
@@ -1290,6 +1315,35 @@ function confirmDelete() {
 }
 
 // ── RECALCULAR ────────────────────────────────────────────────────────────────
+// Refleja los flags reales (checkboxes ocultos que se guardan) en los check de
+// solo lectura bajo el Total, y deja los botones −/+ de IVA/Retención como
+// "−" (hay impuesto, se puede quitar) o "+" (exento, se puede restablecer).
+// Los botones solo se habilitan al desbloquear la edición de una CP emitida.
+function syncFlagsImpuestos() {
+  [['IVA','btnToggleIVA'],['Ret','btnToggleRet']].forEach(([k, btnId]) => {
+    const exento = !!document.getElementById('f_Flag' + k)?.checked;
+    const vis = document.getElementById('f_Flag' + k + '_vis');
+    if (vis) { vis.checked = exento; vis.disabled = true; } // siempre solo lectura
+    const btn = document.getElementById(btnId);
+    if (btn) { btn.textContent = exento ? '+' : '−'; btn.disabled = !_costosDesbloqueados; }
+  });
+}
+
+function toggleExento(k) {
+  if (!_costosDesbloqueados) return;
+  const flag = document.getElementById('f_Flag' + k);
+  if (!flag) return;
+  const nombre = k === 'IVA' ? 'IVA' : 'retención';
+  if (!flag.checked) {
+    if (!confirm('Se eliminará el ' + nombre + ' de la Carta Porte y se recalcularán los totales.\n\n¿Desea quitar el ' + nombre + '?')) return;
+    flag.checked = true;
+  } else {
+    if (!confirm('Se restablecerá el ' + nombre + ' de la Carta Porte y se recalcularán los totales.\n\n¿Desea restablecer el ' + nombre + '?')) return;
+    flag.checked = false;
+  }
+  recalcular();
+}
+
 function recalcular() {
   // parseMoneyInput tolera tanto "$1,234.56" (campos con máscara) como
   // números planos (los campos ocultos de compatibilidad con BD).
@@ -1298,7 +1352,7 @@ function recalcular() {
   const sub = n('f_CostoFlete') + n('f_CostoManiobras') + n('f_CostoRenta') +
               n('f_CostoAutopistas') + n('f_CostoDobOpe') + n('f_CostoDisel') +
               n('f_CostoParada') * n('f_NoParadas') + n('f_CostosOtros') +
-              n('f_CargoExtraTrans') + n('f_Kilometros') - n('f_RetenKilo');
+              n('f_CargoExtraTrans') + n('f_Kilometros');
   // Base para IVA y retención según tipo de tarifa
   let base;
   if (_tarifaTipo === 'renta')    base = n('f_CostoRenta');
@@ -1307,12 +1361,15 @@ function recalcular() {
   const porIVA = n('f_PorIVAMX') || 16;
   // FlagIVA=1 → exento de IVA; FlagRet=1 → exento de retención
   const iva   = chk('f_FlagIVA') ? 0 : base * (porIVA / 100);
-  const reten = chk('f_FlagRet') ? 0 : base * 0.04;
+  // La retención de kilómetros (f_RetenKilo) se suma a la retención (RetenMX);
+  // ya no se descuenta del subtotal. Sin Retención (FlagRet=1) elimina ambas.
+  const reten = chk('f_FlagRet') ? 0 : base * 0.04 + n('f_RetenKilo');
   const tot   = sub + iva - reten;
   document.getElementById('f_SubTotalMX').value = fmtMoney(sub);
   document.getElementById('f_IVAMX').value      = fmtMoney(iva);
   document.getElementById('f_RetenMX').value    = fmtMoney(reten);
   document.getElementById('f_TOTALMX').value    = fmtMoney(tot);
+  syncFlagsImpuestos();
 }
 
 // ── CARGA AUTOMÁTICA TABS ─────────────────────────────────────────────────────
@@ -1587,7 +1644,7 @@ function lkLoadPage() {
     .then(r => r.json())
     .then(d => {
       document.getElementById('lkBody').innerHTML = (d.rows || []).map(r =>
-        `<tr style="cursor:pointer" onclick="lkSelect(this)" data-row='${JSON.stringify(r)}'>
+        `<tr style="cursor:pointer" onclick="lkSelect(this)" data-row="${encodeURIComponent(JSON.stringify(r))}">
           ${Object.values(r).slice(0, _lkHeaders.length).map(v => `<td>${v??''}</td>`).join('')}
         </tr>`
       ).join('') || '<tr><td colspan="10" class="text-center text-muted small">Sin resultados</td></tr>';
@@ -1605,7 +1662,7 @@ document.getElementById('lkPrev').addEventListener('click', () => { if (_lkPage 
 document.getElementById('lkNext').addEventListener('click', () => { _lkPage++; lkLoadPage(); });
 
 function lkSelect(tr) {
-  const row = JSON.parse(tr.dataset.row);
+  const row = JSON.parse(decodeURIComponent(tr.dataset.row));
   lkModal.hide();
   if (_lkOnSelect) _lkOnSelect(row);
 }
