@@ -3,6 +3,7 @@ const router = express.Router();
 const { getPool, sql } = require('../config/db');
 const { browseQuery } = require('../config/browse');
 const { requierePermiso } = require('../middleware/permisos');
+const { getSatDb } = require('../config/sat-db');
 
 router.get('/', (req, res) => res.render('tarifas', { usuario: req.session.usuario, modulo: 'tarifas' }));
 
@@ -10,7 +11,7 @@ router.get('/data', async (req, res) => {
   try {
     const data = await browseQuery({
       table: 'Empresa2.Tarifas',
-      columns: ['ID_TARIFA','CDORIGEN','CDDESTINO','DESFLETE','FLETE','NOMBRECOMUNCLI','NOMBRECOMUNTRANS','COSTO','VENTA','MONCOMPRA','MONVENTA','TIPOCAMBIO','KILOMETROS','FLAGOCULTAR','ID_CIUDADORIGEN','ID_CIUDADDESTINO','ID_TIPOFLETE','ID_TRANSPORTISTA','ID_CLIENTE','FLAGIVA','FLAGRET'],
+      columns: ['ID_TARIFA','CDORIGEN','CDDESTINO','DESFLETE','FLETE','NOMBRECOMUNCLI','NOMBRECOMUNTRANS','COSTO','VENTA','MONCOMPRA','MONVENTA','TIPOCAMBIO','KILOMETROS','FLAGOCULTAR','ID_CIUDADORIGEN','ID_CIUDADDESTINO','ID_TIPOFLETE','ID_TRANSPORTISTA','ID_CLIENTE','FLAGIVA','FLAGRET','RENTA','COSTOKILOMTS','COSTOAUTOPISTAS','DIESELPERMITIDO','PAGOTARIFA'],
       searchableCols: ['ID_TARIFA','CDORIGEN','CDDESTINO','DESFLETE','NOMBRECOMUNCLI','NOMBRECOMUNTRANS','FLETE'],
       req
     });
@@ -32,6 +33,11 @@ router.get('/data', async (req, res) => {
         <td data-field="FLAGOCULTAR" data-value="${r.FLAGOCULTAR||0}" style="display:none"></td>
         <td data-field="FLAGIVA" data-value="${r.FLAGIVA||0}" style="display:none"></td>
         <td data-field="FLAGRET" data-value="${r.FLAGRET||0}" style="display:none"></td>
+        <td data-field="RENTA" data-value="${r.RENTA||''}" style="display:none"></td>
+        <td data-field="COSTOKILOMTS" data-value="${r.COSTOKILOMTS||''}" style="display:none"></td>
+        <td data-field="COSTOAUTOPISTAS" data-value="${r.COSTOAUTOPISTAS||''}" style="display:none"></td>
+        <td data-field="DIESELPERMITIDO" data-value="${r.DIESELPERMITIDO||''}" style="display:none"></td>
+        <td data-field="PAGOTARIFA" data-value="${r.PAGOTARIFA||''}" style="display:none"></td>
         <td data-field="ID_CIUDADORIGEN" data-value="${r.ID_CIUDADORIGEN||''}" style="display:none"></td>
         <td data-field="ID_CIUDADDESTINO" data-value="${r.ID_CIUDADDESTINO||''}" style="display:none"></td>
         <td data-field="ID_TIPOFLETE" data-value="${r.ID_TIPOFLETE||''}" style="display:none"></td>
@@ -61,40 +67,56 @@ router.get('/lookup/tipoflete', (req, res) => lookupGeneric(res, 'Empresa2.TipoF
 router.get('/lookup/transport', (req, res) => lookupGeneric(res, 'Empresa2.Transport', 'ID_TRANSPORTISTA', 'NOMBRECOMUN', (req.query.q||'').trim(), parseInt(req.query.page)||1));
 router.get('/lookup/clientes', (req, res) => lookupGeneric(res, 'Empresa2.Clientes', 'ID_CLIENTE', 'NOMBRECOMUN', (req.query.q||'').trim(), parseInt(req.query.page)||1));
 
+// Catálogo SAT de monedas (misma fuente que el lookup de Clientes)
+router.get('/lookup/moneda', (req, res) => {
+  try {
+    const q = (req.query.q || '').trim().toLowerCase();
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const all = getSatDb().prepare('SELECT c_Moneda AS clave, "Descripción" AS descripcion FROM SAT_Moneda ORDER BY clave').all();
+    const filtered = q ? all.filter(r => String(r.clave).toLowerCase().includes(q) || String(r.descripcion).toLowerCase().includes(q)) : all;
+    res.json({ rows: filtered.slice((page - 1) * 10, page * 10), total: filtered.length, totalPages: Math.max(1, Math.ceil(filtered.length / 10)), page });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.post('/guardar', requierePermiso('tarifas.editar'), async (req, res) => {
   const f = req.body;
   try {
+    // Venta = Renta + Costo Kilómetros + Costo Autopistas (se recalcula aquí, no se confía en el cliente);
+    // DesFlete = Origen - Destino.
+    const renta = parseFloat(f.RENTA) || 0, costoKm = parseFloat(f.COSTOKILOMTS) || 0, costoAuto = parseFloat(f.COSTOAUTOPISTAS) || 0;
+    const venta = Math.round((renta + costoKm + costoAuto) * 100) / 100;
+    const desflete = `${(f.CDORIGEN || '').trim()} - ${(f.CDDESTINO || '').trim()}`.slice(0, 80);
     const pool = await getPool();
     const r = pool.request()
       .input('id', sql.Decimal(7), f.ID_TARIFA)
-      .input('costo', sql.Decimal(9,2), f.COSTO || null)
-      .input('venta', sql.Decimal(9,2), f.VENTA || null)
-      .input('repcli', sql.Decimal(9,2), f.REPCLIENTE || null)
-      .input('reptrans', sql.Decimal(9,2), f.REPTRANS || null)
+      .input('renta', sql.Decimal(11,2), renta)
+      .input('costokm', sql.Decimal(9,2), costoKm)
+      .input('costoauto', sql.Decimal(9,2), costoAuto)
+      .input('venta', sql.Decimal(9,2), venta)
+      .input('diesel', sql.Decimal(7,2), parseFloat(f.DIESELPERMITIDO) || 0)
+      .input('pagotar', sql.Decimal(9,2), parseFloat(f.PAGOTARIFA) || 0)
       .input('idorig', sql.Decimal(9), f.ID_CIUDADORIGEN || null)
       .input('iddest', sql.Decimal(9), f.ID_CIUDADDESTINO || null)
       .input('cdorig', sql.Char(50), f.CDORIGEN)
       .input('cddest', sql.Char(50), f.CDDESTINO)
-      .input('desflete', sql.Char(80), f.DESFLETE)
+      .input('desflete', sql.Char(80), desflete)
       .input('idtipo', sql.Decimal(7), f.ID_TIPOFLETE || null)
       .input('flete', sql.Char(50), f.FLETE)
       .input('idtrans', sql.Decimal(7), f.ID_TRANSPORTISTA || null)
       .input('ntrans', sql.Char(80), f.NOMBRECOMUNTRANS)
       .input('idcli', sql.Decimal(7), f.ID_CLIENTE || null)
       .input('ncli', sql.Char(80), f.NOMBRECOMUNCLI)
-      .input('moncom', sql.Char(10), f.MONCOMPRA)
-      .input('monven', sql.Char(10), f.MONVENTA)
+            .input('monven', sql.Char(10), f.MONVENTA)
       .input('tc', sql.Decimal(9,4), f.TIPOCAMBIO || null)
-      .input('realizo', sql.Char(100), f.REALIZO)
       .input('flagoc', sql.TinyInt, f.FLAGOCULTAR ? 1 : 0)
       .input('km', sql.Decimal(7), f.KILOMETROS || null)
       .input('flagiva', sql.TinyInt, f.FLAGIVA ? 1 : 0)
       .input('flagret', sql.TinyInt, f.FLAGRET ? 1 : 0);
     if (f._mode === 'add') {
-      await r.query(`INSERT INTO Empresa2.Tarifas(ID_TARIFA,COSTO,VENTA,REPCLIENTE,REPTRANS,ID_CIUDADORIGEN,ID_CIUDADDESTINO,CDORIGEN,CDDESTINO,DESFLETE,ID_TIPOFLETE,FLETE,ID_TRANSPORTISTA,NOMBRECOMUNTRANS,ID_CLIENTE,NOMBRECOMUNCLI,MONCOMPRA,MONVENTA,TIPOCAMBIO,REALIZO,FLAGOCULTAR,KILOMETROS,FLAGIVA,FLAGRET)
-        VALUES(@id,@costo,@venta,@repcli,@reptrans,@idorig,@iddest,@cdorig,@cddest,@desflete,@idtipo,@flete,@idtrans,@ntrans,@idcli,@ncli,@moncom,@monven,@tc,@realizo,@flagoc,@km,@flagiva,@flagret)`);
+      await r.query(`INSERT INTO Empresa2.Tarifas(ID_TARIFA,RENTA,COSTOKILOMTS,COSTOAUTOPISTAS,VENTA,DIESELPERMITIDO,PAGOTARIFA,ID_CIUDADORIGEN,ID_CIUDADDESTINO,CDORIGEN,CDDESTINO,DESFLETE,ID_TIPOFLETE,FLETE,ID_TRANSPORTISTA,NOMBRECOMUNTRANS,ID_CLIENTE,NOMBRECOMUNCLI,MONVENTA,TIPOCAMBIO,FLAGOCULTAR,KILOMETROS,FLAGIVA,FLAGRET)
+        VALUES(@id,@renta,@costokm,@costoauto,@venta,@diesel,@pagotar,@idorig,@iddest,@cdorig,@cddest,@desflete,@idtipo,@flete,@idtrans,@ntrans,@idcli,@ncli,@monven,@tc,@flagoc,@km,@flagiva,@flagret)`);
     } else {
-      await r.query(`UPDATE Empresa2.Tarifas SET COSTO=@costo,VENTA=@venta,REPCLIENTE=@repcli,REPTRANS=@reptrans,ID_CIUDADORIGEN=@idorig,ID_CIUDADDESTINO=@iddest,CDORIGEN=@cdorig,CDDESTINO=@cddest,DESFLETE=@desflete,ID_TIPOFLETE=@idtipo,FLETE=@flete,ID_TRANSPORTISTA=@idtrans,NOMBRECOMUNTRANS=@ntrans,ID_CLIENTE=@idcli,NOMBRECOMUNCLI=@ncli,MONCOMPRA=@moncom,MONVENTA=@monven,TIPOCAMBIO=@tc,REALIZO=@realizo,FLAGOCULTAR=@flagoc,KILOMETROS=@km,FLAGIVA=@flagiva,FLAGRET=@flagret WHERE ID_TARIFA=@id`);
+      await r.query(`UPDATE Empresa2.Tarifas SET RENTA=@renta,COSTOKILOMTS=@costokm,COSTOAUTOPISTAS=@costoauto,VENTA=@venta,DIESELPERMITIDO=@diesel,PAGOTARIFA=@pagotar,ID_CIUDADORIGEN=@idorig,ID_CIUDADDESTINO=@iddest,CDORIGEN=@cdorig,CDDESTINO=@cddest,DESFLETE=@desflete,ID_TIPOFLETE=@idtipo,FLETE=@flete,ID_TRANSPORTISTA=@idtrans,NOMBRECOMUNTRANS=@ntrans,ID_CLIENTE=@idcli,NOMBRECOMUNCLI=@ncli,MONVENTA=@monven,TIPOCAMBIO=@tc,FLAGOCULTAR=@flagoc,KILOMETROS=@km,FLAGIVA=@flagiva,FLAGRET=@flagret WHERE ID_TARIFA=@id`);
     }
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
