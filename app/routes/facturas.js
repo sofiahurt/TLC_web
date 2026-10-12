@@ -164,7 +164,7 @@ function calcularTotalesLinea(cpRow, activos) {
   const kmActivo = !!activos.kilometros;
 
   let subtotal, iva, reten, total;
-  if (extraActivo && coreActivo) {
+  if (extraActivo && (coreActivo || kmActivo)) {
     subtotal = num(cpRow.SubTotalMX) + extra;
     reten    = num(cpRow.RetenMX);
     iva      = num(cpRow.IVAMX) + extra * 0.16;
