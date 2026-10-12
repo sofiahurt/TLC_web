@@ -347,7 +347,7 @@
                 </div>
                 <label class="form-label small mb-1">Renta</label>
                 <div class="input-group input-group-sm mb-2">
-                  <input type="text" inputmode="decimal" id="f_CostoRenta" class="form-control form-control-sm bg-light" readonly>
+                  <input type="text" inputmode="decimal" id="f_CostoRenta" class="form-control form-control-sm bg-light" readonly oninput="if (_costosDesbloqueados) recalcular()">
                 </div>
                 <label class="form-label small mb-1">Costo kilómetros</label>
                 <div class="input-group input-group-sm mb-2">
@@ -360,6 +360,7 @@
                 <label class="form-label small mb-1">Retención/km</label>
                 <div class="input-group input-group-sm mb-2">
                   <input type="text" inputmode="decimal" id="f_RetenKilo" class="form-control form-control-sm bg-light" readonly oninput="if (_costosDesbloqueados) recalcular()">
+                  <button type="button" class="btn btn-outline-secondary" id="btnToggleRetKm" onclick="toggleRetenKilo()" disabled title="Quitar / restablecer retención por km (requiere desbloquear la edición)">−</button>
                 </div>
                 <label class="form-label small mb-1">Moneda</label>
                 <div class="input-group input-group-sm mb-2">
@@ -1146,7 +1147,7 @@ function desbloquearEdicionEmitido() {
   // el oninput ya puesto en cada input, que llama a recalcular()). Como
   // tienen máscara de dinero, en foco se muestra el número plano para
   // editar cómodo, y al perder el foco se vuelve a formatear.
-  ['f_CostoFlete','f_Kilometros','f_RetenKilo'].forEach(id => {
+  ['f_CostoFlete','f_CostoRenta','f_Kilometros','f_RetenKilo'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     el.readOnly = false; el.classList.remove('bg-light');
@@ -1327,6 +1328,28 @@ function syncFlagsImpuestos() {
     const btn = document.getElementById(btnId);
     if (btn) { btn.textContent = exento ? '+' : '−'; btn.disabled = !_costosDesbloqueados; }
   });
+  const bk = document.getElementById('btnToggleRetKm');
+  if (bk) {
+    bk.textContent = parseMoneyInput(document.getElementById('f_RetenKilo')?.value) > 0 ? '−' : '+';
+    bk.disabled = !_costosDesbloqueados;
+  }
+}
+
+let _retenKiloPrev = 0;
+function toggleRetenKilo() {
+  if (!_costosDesbloqueados) return;
+  const el = document.getElementById('f_RetenKilo');
+  const actual = parseMoneyInput(el.value);
+  if (actual > 0) {
+    if (!confirm('Se eliminará la retención por kilómetro de la Carta Porte y se recalcularán los totales.\n\n¿Desea quitarla?')) return;
+    _retenKiloPrev = actual;
+    el.value = fmtMoney(0);
+  } else {
+    if (!confirm('Se restablecerá la retención por kilómetro de la Carta Porte y se recalcularán los totales.\n\n¿Desea restablecerla?')) return;
+    const km = parseMoneyInput(document.getElementById('f_Kilometros').value);
+    el.value = fmtMoney(_retenKiloPrev > 0 ? _retenKiloPrev : km * 0.04);
+  }
+  recalcular();
 }
 
 function toggleExento(k) {
@@ -1353,16 +1376,12 @@ function recalcular() {
               n('f_CostoAutopistas') + n('f_CostoDobOpe') + n('f_CostoDisel') +
               n('f_CostoParada') * n('f_NoParadas') + n('f_CostosOtros') +
               n('f_CargoExtraTrans') + n('f_Kilometros');
-  // Base para IVA y retención según tipo de tarifa
-  let base;
-  if (_tarifaTipo === 'renta')    base = n('f_CostoRenta');
-  else if (_tarifaTipo === 'km')  base = n('f_Kilometros');
-  else                            base = n('f_CostoFlete');
+  // IVA = % del subtotal. Retención = 4% del costo de Renta o Flete (según
+  // tipo de tarifa) + retención por km (f_RetenKilo).
+  const base = (_tarifaTipo === 'renta') ? n('f_CostoRenta') : n('f_CostoFlete');
   const porIVA = n('f_PorIVAMX') || 16;
-  // FlagIVA=1 → exento de IVA; FlagRet=1 → exento de retención
-  const iva   = chk('f_FlagIVA') ? 0 : base * (porIVA / 100);
-  // La retención de kilómetros (f_RetenKilo) se suma a la retención (RetenMX);
-  // ya no se descuenta del subtotal. Sin Retención (FlagRet=1) elimina ambas.
+  // FlagIVA=1 → exento de IVA; FlagRet=1 → exento de retención (incluye la de km)
+  const iva   = chk('f_FlagIVA') ? 0 : sub * (porIVA / 100);
   const reten = chk('f_FlagRet') ? 0 : base * 0.04 + n('f_RetenKilo');
   const tot   = sub + iva - reten;
   document.getElementById('f_SubTotalMX').value = fmtMoney(sub);
