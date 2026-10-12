@@ -478,7 +478,7 @@
             </div>
           </div>
           <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Unidad</label><input type="text" id="m_Unidad" class="form-control form-control-sm bg-light" maxlength="20" readonly tabindex="-1"></div>
-          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Peso/unidad</label><input type="number" id="m_PesoUnidad" class="form-control form-control-sm" step="0.01" oninput="calcPesoKg()"></div>
+          <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Peso/unidad</label><input type="number" id="m_PesoUnidad" class="form-control form-control-sm" step="0.000001" oninput="calcPesoKg()"></div>
           <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Mat. peligroso</label>
             <select id="m_MaterialPeligroso" class="form-select form-select-sm" onchange="toggleMatPel()"><option value="No">No</option><option value="Si">Si</option></select>
           </div>
@@ -499,7 +499,7 @@
               <div class="col-md-5"><label class="form-label fw-semibold small mb-1">Desc. embalaje</label><input type="text" id="m_DescripEmbalaje" class="form-control form-control-sm bg-light" maxlength="100" readonly tabindex="-1"></div>
             </div>
           </div>
-          <div class="col-md-3"><label class="form-label fw-semibold small mb-1">Peso en kg</label><input type="number" id="m_PesoEnKg" class="form-control form-control-sm bg-light" step="0.001" readonly tabindex="-1"></div>
+          <div class="col-md-3"><label class="form-label fw-semibold small mb-1">Peso en kg</label><input type="number" id="m_PesoEnKg" class="form-control form-control-sm" step="0.001" oninput="calcPesoUnidad()"></div>
           <div class="col-md-3"><label class="form-label fw-semibold small mb-1">Valor mercancía</label><input type="number" id="m_ValorMercancia" class="form-control form-control-sm" step="0.000001"></div>
           <div class="col-md-2"><label class="form-label fw-semibold small mb-1">Moneda</label><input type="text" id="m_Moneda" class="form-control form-control-sm" maxlength="4"></div>
         </div>
@@ -1428,6 +1428,12 @@ function recalcTotalesMerc(rows) {
   document.getElementById('f_TotalMercancias').value = rows.length || '';
   const pesoBruto = rows.reduce((s, r) => s + (parseFloat(r.PesoEnKg) || 0), 0);
   document.getElementById('f_PesoBrutoTotal').value = pesoBruto ? pesoBruto.toFixed(3) : '';
+}
+
+function calcPesoUnidad() {
+  const cant = parseFloat(document.getElementById('m_Cantidad').value) || 0;
+  const kg = parseFloat(document.getElementById('m_PesoEnKg').value) || 0;
+  document.getElementById('m_PesoUnidad').value = cant && kg ? (kg / cant).toFixed(6) : '';
 }
 
 function calcPesoKg() {
