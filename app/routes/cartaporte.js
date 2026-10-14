@@ -154,7 +154,7 @@ router.get('/get', async (req, res) => {
       Id_Cliente: r.Id_Cliente||'', NombreComunCli: fmt(r.NombreComunCli),
       Id_ClienteEnt: r.Id_ClienteEnt||'', ClienteEnt: fmt(r.ClienteEnt),
       Id_ClienteCarga: r.Id_ClienteCarga||'', ClienteCarga: fmt(r.ClienteCarga),
-      NoPedidoCliente: fmt(r.NoPedidoCliente), NoRainde: fmt(r.NoRainde),
+      NoPedidoCliente: fmt(r.NoPedidoCliente), NoRainde: fmt(r.NoRainde), CP_Rela: fmt(r.CP_Rela),
       Id_Tarifa: r.Id_Tarifa||'', DesFlete: fmt(r.DesFlete),
       Id_Camion: fmt(r.Id_Camion), NoCamion: noCamion, NoPlacas: noPlacas,
       NoCaja: fmt(r.NoCaja), NoCaja2: fmt(r.NoCaja2),
@@ -658,6 +658,7 @@ router.post('/guardar', requierePermiso('cartaporte.editar'), async (req, res) =
         .input('cliCar',   sql.VarChar(80),  f.ClienteCarga||null)
         .input('booking',  sql.VarChar(20),  f.Booking||null)
         .input('noRainde', sql.VarChar(20),  f.NoRainde||null)
+        .input('cpRela',   sql.VarChar(30),  f.CP_Rela||null)
         .input('idTar',    sql.Decimal(7),   num(f.Id_Tarifa))
         .input('desFlete', sql.VarChar(80),  f.DesFlete||null)
         .input('idCam',    sql.VarChar(10),  f.Id_Camion||null)
@@ -729,7 +730,7 @@ router.post('/guardar', requierePermiso('cartaporte.editar'), async (req, res) =
           Serie,Id_Pedido,CartaPorte,FechaPedido,FechaCaptura,RealizoPedido,AnioFactura,
           FehcaCarga,HoraCarga,FechaDesCarta,HorarioDesCarta,
           Id_Cliente,NombreComunCli,Id_ClienteEnt,ClienteEnt,Id_ClienteCarga,ClienteCarga,
-          NoPedidoCliente,NoRainde,Id_Tarifa,DesFlete,
+          NoPedidoCliente,NoRainde,CP_Rela,Id_Tarifa,DesFlete,
           Id_Camion,NoCamion,NoPlacas,NoCaja,NoCaja2,Id_Operador,Operador,
           Id_DomCarga,DomCarga,Id_DomDescarga1,DomDescarga,
           CostoFlete,CostoManiobras,CostoRenta,CostoAutopistas,CostoDobOpe,CostoDisel,
@@ -745,7 +746,7 @@ router.post('/guardar', requierePermiso('cartaporte.editar'), async (req, res) =
           @serie,@idPed,@cp,@fechaPed,@fechaCap,@realizo,@anio,
           @fehcaCar,@horaCar,@fechaDes,@horaDes,
           @idCli,@nCli,@idCliEnt,@cliEnt,@idCliCar,@cliCar,
-          @booking,@noRainde,@idTar,@desFlete,
+          @booking,@noRainde,@cpRela,@idTar,@desFlete,
           @idCam,@noCam,@placa,@noCaja,@noCaja2,@idOp,@oper,
           @idDomC,@domC,@idDomD,@domD,
           @cFlete,@cMan,@cRenta,@cAuto,@cDob,@cDis,
@@ -775,6 +776,7 @@ router.post('/guardar', requierePermiso('cartaporte.editar'), async (req, res) =
         .input('cliCar',   sql.VarChar(80),  f.ClienteCarga||null)
         .input('booking',  sql.VarChar(20),  f.Booking||null)
         .input('noRainde', sql.VarChar(20),  f.NoRainde||null)
+        .input('cpRela',   sql.VarChar(30),  f.CP_Rela||null)
         .input('idTar',    sql.Decimal(7),   num(f.Id_Tarifa))
         .input('desFlete', sql.VarChar(80),  f.DesFlete||null)
         .input('idCam',    sql.VarChar(10),  f.Id_Camion||null)
@@ -850,7 +852,7 @@ router.post('/guardar', requierePermiso('cartaporte.editar'), async (req, res) =
           FehcaCarga=@fehcaCar,HoraCarga=@horaCar,FechaDesCarta=@fechaDes,HorarioDesCarta=@horaDes,
           Id_Cliente=@idCli,NombreComunCli=@nCli,Id_ClienteEnt=@idCliEnt,ClienteEnt=@cliEnt,
           Id_ClienteCarga=@idCliCar,ClienteCarga=@cliCar,
-          NoPedidoCliente=@booking,NoRainde=@noRainde,Id_Tarifa=@idTar,DesFlete=@desFlete,
+          NoPedidoCliente=@booking,NoRainde=@noRainde,CP_Rela=@cpRela,Id_Tarifa=@idTar,DesFlete=@desFlete,
           Id_Camion=@idCam,NoCamion=@noCam,NoPlacas=@placa,NoCaja=@noCaja,NoCaja2=@noCaja2,
           Id_Operador=@idOp,Operador=@oper,Id_DomCarga=@idDomC,DomCarga=@domC,
           Id_DomDescarga1=@idDomD,DomDescarga=@domD,

@@ -150,6 +150,7 @@ const COLUMNAS_CARTAPORTE = [
   { header: 'Origen',      campo: 'DomCarga',     tipo: 'texto' },
   { header: 'Destino',     campo: 'DomDescarga',  tipo: 'texto' },
   { header: 'Doc.Rela',    campo: 'NoRainde',     tipo: 'texto' },
+  { header: 'CP Rela',     campo: 'CP_Rela',      tipo: 'texto' },
   { header: 'No Fac',      campo: 'NoFactura',    tipo: 'texto' },
   { header: 'Año Fac',     campo: 'AnioFactura',  tipo: 'texto' },
   { header: 'Moneda',      campo: 'c_Moneda',     tipo: 'texto' },
@@ -203,7 +204,7 @@ router.get('/cartaporte/excel', requierePermiso('reportes.cartaporte.ver'), asyn
     }
 
     const query = `
-      SELECT fd.*
+      SELECT fd.*, cp.CP_Rela
       FROM Empresa2.fn_CartaPorteDetalle(@fechaIni, @fechaFin) fd
       JOIN Empresa2.CartaPorte cp ON cp.Serie = fd.Serie AND cp.CartaPorte = fd.CartaPorte
       ${where}

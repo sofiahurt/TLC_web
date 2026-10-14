@@ -144,6 +144,10 @@
                 <label class="form-label fw-semibold small mb-1">Doc. Relacionado</label>
                 <input type="text" id="f_NoRainde" class="form-control form-control-sm" maxlength="20">
               </div>
+              <div class="col-md-4">
+                <label class="form-label fw-semibold small mb-1">Carta Porte relacionada</label>
+                <input type="text" id="f_CP_Rela" class="form-control form-control-sm" maxlength="30">
+              </div>
             </div>
             <!-- Fila 3: Clientes -->
             <div class="row g-2 mb-2">
@@ -1011,7 +1015,7 @@ function populateForm(d) {
   set('f_ClienteEnt', d.ClienteEnt);
   document.getElementById('f_Id_ClienteCarga').value = d.Id_ClienteCarga;
   set('f_ClienteCarga', d.ClienteCarga);
-  set('f_Booking', d.Booking); set('f_NoRainde', d.NoRainde);
+  set('f_Booking', d.Booking); set('f_NoRainde', d.NoRainde); set('f_CP_Rela', d.CP_Rela);
   set('f_Contenedor', d.Contenedor);
   document.getElementById('f_Id_Tarifa').value = d.Id_Tarifa;
   set('f_DesFlete_raw', d.DesFlete);
@@ -1260,7 +1264,7 @@ function guardar() {
     Id_Cliente: v('f_Id_Cliente'), NombreComunCli: v('f_NombreComunCli'),
     Id_ClienteEnt: v('f_Id_ClienteEnt'), ClienteEnt: v('f_ClienteEnt'),
     Id_ClienteCarga: v('f_Id_ClienteCarga'), ClienteCarga: v('f_ClienteCarga'),
-    Booking: v('f_Booking'), NoRainde: v('f_NoRainde'), Contenedor: v('f_Contenedor'),
+    Booking: v('f_Booking'), NoRainde: v('f_NoRainde'), CP_Rela: v('f_CP_Rela'), Contenedor: v('f_Contenedor'),
     Id_Tarifa: v('f_Id_Tarifa'), DesFlete: v('f_DesFlete_raw'),
     Id_Camion: v('f_Id_Camion'), NoCamion: v('f_NoCamion_raw'), NoPlacas: v('f_NoPlacas'),
     NoCaja: v('f_NoCaja'), NoCaja2: v('f_NoCaja2'),
