@@ -1,0 +1,108 @@
+<%- include('partials/header', { titulo: 'Sesiones' }) %>
+<%- include('partials/sidebar') %>
+<div id="page-content">
+  <div class="d-flex align-items-center mb-3">
+    <button class="btn btn-sm btn-outline-secondary me-3 d-md-none" id="sidebarToggle"><i class="bi bi-list fs-5"></i></button>
+    <h4 class="mb-0 fw-bold flex-grow-1">Seguridad — Sesiones</h4>
+  </div>
+
+  <ul class="nav nav-tabs mb-3">
+    <li class="nav-item"><button class="nav-link active" id="tabActivas" type="button" onclick="verTab('activas')">Conectados ahora <span class="badge bg-success" id="cntEnLinea">0</span></button></li>
+    <li class="nav-item"><button class="nav-link" id="tabHistorial" type="button" onclick="verTab('historial')">Historial</button></li>
+  </ul>
+
+  <!-- Conectados ahora -->
+  <div id="panelActivas">
+    <div class="card border-0 shadow-sm"><div class="card-body p-0">
+      <div class="table-responsive"><table class="table table-hover table-sm mb-0">
+        <thead class="thead-tlc"><tr>
+          <th>Usuario</th><th style="width:110px">Estado</th><th>IP</th><th>Año / Central</th>
+          <th>Entró</th><th>Última actividad</th><th>Tiempo conectado</th>
+        </tr></thead>
+        <tbody id="bodyActivas"><tr><td colspan="7" class="text-center text-muted py-3">Cargando...</td></tr></tbody>
+      </table></div>
+    </div>
+    <div class="card-footer bg-white small text-muted py-2">
+      <span class="badge bg-success">En línea</span> actividad en los últimos <%= 5 %> min ·
+      <span class="badge bg-warning text-dark">Inactivo</span> sesión abierta sin actividad reciente (se cierra a los 30 min) ·
+      Se actualiza cada 30 s. <span id="lblActualizado"></span>
+    </div></div>
+  </div>
+
+  <!-- Historial -->
+  <div id="panelHistorial" class="d-none">
+    <div class="card border-0 shadow-sm mb-3"><div class="card-body py-2">
+      <div class="row align-items-end g-2">
+        <div class="col-md-4"><label class="form-label small mb-1">Usuario</label><input type="text" id="hUsuario" class="form-control form-control-sm" placeholder="Nombre..."></div>
+        <div class="col-auto"><label class="form-label small mb-1">Desde</label><input type="date" id="hDesde" class="form-control form-control-sm"></div>
+        <div class="col-auto"><label class="form-label small mb-1">Hasta</label><input type="date" id="hHasta" class="form-control form-control-sm"></div>
+        <div class="col-auto"><button class="btn btn-sm btn-primary" onclick="cargarHistorial()"><i class="bi bi-search"></i> Buscar</button></div>
+        <div class="col-auto ms-auto small text-muted" id="hInfo"></div>
+      </div>
+    </div></div>
+    <div class="card border-0 shadow-sm"><div class="card-body p-0">
+      <div class="table-responsive"><table class="table table-hover table-sm mb-0">
+        <thead class="thead-tlc"><tr>
+          <th>Usuario</th><th>IP</th><th>Año / Central</th><th>Entrada</th><th>Salida</th><th>Duración</th><th>Motivo</th><th>Navegador</th>
+        </tr></thead>
+        <tbody id="bodyHistorial"></tbody>
+      </table></div>
+    </div></div>
+  </div>
+</div>
+
+<%- include('partials/footer') %>
+<script>
+const fmtDur = m => { m = Math.max(0, parseInt(m) || 0); const h = Math.floor(m / 60); return h ? h + ' h ' + (m % 60) + ' min' : m + ' min'; };
+const fmtInact = s => { s = parseInt(s) || 0; return s < 60 ? 'hace ' + s + ' s' : 'hace ' + fmtDur(Math.floor(s / 60)); };
+const ac = f => (f.Anio ? f.Anio : '') + (f.Central ? ' / ' + String(f.Central).trim() : '');
+const MOTIVOS = { salio: 'Cerró sesión', inactividad: 'Inactividad', expiro: 'Expiró (8 h)', reinicio: 'Reinicio del servidor' };
+let _timer = null;
+
+function verTab(t) {
+  document.getElementById('panelActivas').classList.toggle('d-none', t !== 'activas');
+  document.getElementById('panelHistorial').classList.toggle('d-none', t !== 'historial');
+  document.getElementById('tabActivas').classList.toggle('active', t === 'activas');
+  document.getElementById('tabHistorial').classList.toggle('active', t === 'historial');
+  if (t === 'historial') cargarHistorial();
+}
+
+async function cargarActivas() {
+  try {
+    const d = await fetch('/seguridad/sesiones/activas').then(r => r.json());
+    if (d.error) throw new Error(d.error);
+    document.getElementById('cntEnLinea').textContent = d.enLinea;
+    document.getElementById('bodyActivas').innerHTML = d.filas.length ? d.filas.map(f =>
+      `<tr><td class="fw-semibold">${f.Usuario}</td>
+        <td>${f.EnLinea ? '<span class="badge bg-success">En línea</span>' : '<span class="badge bg-warning text-dark">Inactivo</span>'}</td>
+        <td>${f.IP || ''}</td><td>${ac(f)}</td><td>${f.Entrada}</td>
+        <td>${f.UltimaActividad} <span class="text-muted small">(${fmtInact(f.SegInactivo)})</span></td>
+        <td>${fmtDur(f.MinConectado)}</td></tr>`).join('')
+      : '<tr><td colspan="7" class="text-center text-muted py-3">No hay usuarios conectados.</td></tr>';
+    document.getElementById('lblActualizado').textContent = 'Actualizado ' + new Date().toLocaleTimeString();
+  } catch (e) {
+    document.getElementById('bodyActivas').innerHTML = '<tr><td colspan="7" class="text-center text-danger py-3">' + e.message + '</td></tr>';
+  }
+}
+
+async function cargarHistorial() {
+  const q = new URLSearchParams({ usuario: hUsuario.value, desde: hDesde.value, hasta: hHasta.value });
+  const body = document.getElementById('bodyHistorial');
+  try {
+    const d = await fetch('/seguridad/sesiones/historial?' + q).then(r => r.json());
+    if (d.error) throw new Error(d.error);
+    body.innerHTML = d.filas.length ? d.filas.map(f =>
+      `<tr><td>${f.Usuario}</td><td>${f.IP || ''}</td><td>${ac(f)}</td><td>${f.Entrada}</td>
+        <td>${f.Salida ? f.Salida : '<span class="badge bg-success">Abierta</span>'}</td>
+        <td>${fmtDur(f.Minutos)}</td><td>${f.Salida ? (MOTIVOS[f.MotivoSalida] || f.MotivoSalida || '') : ''}</td>
+        <td class="small text-muted" style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${f.Navegador || ''}">${f.Navegador || ''}</td></tr>`).join('')
+      : '<tr><td colspan="8" class="text-center text-muted py-3">Sin resultados.</td></tr>';
+    document.getElementById('hInfo').textContent = d.filas.length + ' registro(s)' + (d.filas.length === 500 ? ' (máximo 500, afina el filtro)' : '');
+  } catch (e) {
+    body.innerHTML = '<tr><td colspan="8" class="text-center text-danger py-3">' + e.message + '</td></tr>';
+  }
+}
+
+cargarActivas();
+_timer = setInterval(() => { if (!document.hidden) cargarActivas(); }, 30000);
+</script>

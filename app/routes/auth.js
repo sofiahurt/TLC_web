@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getPool, sql } = require('../config/db');
 const { cargarPermisos } = require('../middleware/permisos');
+const sesiones = require('../services/sesiones');
 
 // Login page
 router.get('/login', (req, res) => {
@@ -39,6 +40,7 @@ router.post('/login', async (req, res) => {
       isAdmin: permisos.isAdmin,
       permisos: permisos.permisos,
     };
+    await sesiones.registrarEntrada(req, req.session.usuario);
     res.redirect('/seleccionar-anio');
   } catch (err) {
     console.error(err);
@@ -61,7 +63,7 @@ router.get('/seleccionar-anio', async (req, res) => {
 });
 
 // Process year selection
-router.post('/seleccionar-anio', (req, res) => {
+router.post('/seleccionar-anio', async (req, res) => {
   if (!req.session.usuario) return res.redirect('/login');
   const anio = parseInt(req.body.anio);
   const central = (req.body.central || '').trim().toUpperCase();
@@ -70,6 +72,7 @@ router.post('/seleccionar-anio', (req, res) => {
   }
   req.session.anio = anio;
   req.session.central = central;
+  await sesiones.registrarAnioCentral(req);
   res.redirect('/dashboard');
 });
 

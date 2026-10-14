@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getPool, sql } = require('../config/db');
 const { browseQuery } = require('../config/browse');
+const { MIN_EN_LINEA } = require('../services/sesiones');
 
 const trim = v => (v == null ? '' : String(v).trim());
 
@@ -152,6 +153,48 @@ router.get('/usuarios-catalogo', async (req, res) => {
         id: Number(u.ID_USUARIOWEB), nombre: trim(u.NOMBRE), apellido: trim(u.APELLIDO), serie: trim(u.SERIE),
       })),
     });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── Sesiones web: quién está conectado y el historial de entradas/salidas ──────
+router.get('/sesiones', (req, res) => res.render('sesiones', { usuario: req.session.usuario, modulo: 'sesiones' }));
+
+const esc = v => String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// Sesiones abiertas (Salida IS NULL). En línea = actividad reciente; si no, Inactivo.
+router.get('/sesiones/activas', async (req, res) => {
+  try {
+    const pool = await getPool();
+    const r = await pool.request().input('min', sql.Int, MIN_EN_LINEA).query(`
+      SELECT Id_Sesion, Usuario, IP, Anio, Central,
+             CONVERT(varchar(19), Entrada, 120) AS Entrada,
+             CONVERT(varchar(19), UltimaActividad, 120) AS UltimaActividad,
+             DATEDIFF(MINUTE, Entrada, SYSDATETIME()) AS MinConectado,
+             DATEDIFF(SECOND, UltimaActividad, SYSDATETIME()) AS SegInactivo
+        FROM dbo.SesionesWeb WHERE Salida IS NULL ORDER BY UltimaActividad DESC`);
+    const filas = r.recordset.map(x => ({ ...x, Usuario: esc(x.Usuario), IP: esc(x.IP), EnLinea: x.SegInactivo < MIN_EN_LINEA * 60 }));
+    res.json({ filas, enLinea: filas.filter(f => f.EnLinea).length, abiertas: filas.length });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Historial con filtros: usuario (texto), desde/hasta (yyyy-mm-dd), tope 500 filas.
+router.get('/sesiones/historial', async (req, res) => {
+  try {
+    const pool = await getPool();
+    const rq = pool.request();
+    let where = 'WHERE 1=1';
+    const usr = trim(req.query.usuario);
+    if (usr) { rq.input('usr', sql.VarChar(100), '%' + usr + '%'); where += ' AND Usuario LIKE @usr'; }
+    if (/^d{4}-d{2}-d{2}$/.test(req.query.desde || '')) { rq.input('d', sql.Date, req.query.desde); where += ' AND Entrada >= @d'; }
+    if (/^d{4}-d{2}-d{2}$/.test(req.query.hasta || '')) { rq.input('h', sql.Date, req.query.hasta); where += ' AND Entrada < DATEADD(DAY,1,@h)'; }
+    const r = await rq.query(`
+      SELECT TOP 500 Id_Sesion, Usuario, IP, Navegador, Anio, Central, MotivoSalida,
+             CONVERT(varchar(19), Entrada, 120) AS Entrada,
+             CONVERT(varchar(19), UltimaActividad, 120) AS UltimaActividad,
+             CONVERT(varchar(19), Salida, 120) AS Salida,
+             DATEDIFF(MINUTE, Entrada, ISNULL(Salida, SYSDATETIME())) AS Minutos
+        FROM dbo.SesionesWeb ${where} ORDER BY Entrada DESC`);
+    res.json({ filas: r.recordset.map(x => ({ ...x, Usuario: esc(x.Usuario), IP: esc(x.IP), Navegador: esc(x.Navegador) })) });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

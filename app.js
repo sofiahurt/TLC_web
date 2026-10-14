@@ -3,6 +3,7 @@ const express = require('express');
 const session = require('express-session');
 const path = require('path');
 const { tienePermiso, requierePermiso } = require('./app/middleware/permisos');
+const sesiones = require('./app/services/sesiones');
 
 const app = express();
 
@@ -20,6 +21,8 @@ app.use(session({
   cookie: { maxAge: 8 * 60 * 60 * 1000 }
 }));
 
+app.use(sesiones.latido);
+
 app.use((req, res, next) => {
   res.locals.anio     = req.session.anio     || null;
   res.locals.central  = req.session.central  || null;
@@ -36,7 +39,8 @@ function requireAuth(req, res, next) {
 }
 
 app.use('/', require('./app/routes/auth'));
-app.get('/logout', (req, res) => {
+app.get('/logout', async (req, res) => {
+  await sesiones.registrarSalida(req, 'salio');
   req.session.destroy(() => res.redirect('/login'));
 });
 
@@ -76,6 +80,7 @@ app.use('/utilerias',   require('./app/routes/utilerias'));
 
 const { RUTA_XML } = require('./app/config/storage');
 const PORT = process.env.PORT || 3000;
+sesiones.iniciar();
 app.listen(PORT, () => {
   console.log(`TLC Web corriendo en http://localhost:${PORT}`);
   console.log(`Almacenamiento XML:  ${RUTA_XML}`);
