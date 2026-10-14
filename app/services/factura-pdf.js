@@ -88,7 +88,7 @@ async function datosParaImpresionFactura(idNoFactura, serieFac, pool) {
   // C.P./Régimen Fiscal (texto) del receptor no se guardan en la propia
   // Factura -- el XML solo trae la CLAVE de régimen, no la descripción.
   const cliRes = await pool.request().input('id', sql.Decimal(18,0), fac.Id_Cliente)
-    .query(`SELECT CP, C_REGIMENFISCAL, REGIMENFISCAL FROM Empresa2.Clientes WHERE ID_CLIENTE=@id`);
+    .query(`SELECT RFC, CP, C_REGIMENFISCAL, REGIMENFISCAL FROM Empresa2.Clientes WHERE ID_CLIENTE=@id`);
   const cliente = cliRes.recordset[0] || {};
 
   // La Factura no guarda su propio central operativo (a diferencia de
@@ -118,6 +118,23 @@ async function datosParaImpresionFactura(idNoFactura, serieFac, pool) {
   }
 
   const datosXml = extraerDatosXMLFactura(xmlString);
+
+  // RFC del cliente: las facturas migradas no lo guardaron en Factura.RFC. Si
+  // viene vacío se toma el del XML timbrado (el que realmente se facturó) o, si
+  // aún no está timbrada, el del catálogo de Clientes, y se deja guardado.
+  if (!fmt(fac.RFC)) {
+    const rfc = (timbrada && fmt(datosXml.receptorRfc)) || fmt(cliente.RFC);
+    if (rfc) {
+      fac.RFC = rfc;
+      try {
+        await pool.request()
+          .input('id', sql.Decimal(9), idNoFactura)
+          .input('serieFac', sql.VarChar(20), serieFacKey)
+          .input('rfc', sql.VarChar(15), rfc.slice(0, 15))
+          .query(`UPDATE Empresa2.Factura SET RFC=@rfc WHERE Id_NoFactura=@id AND ${SERIEFAC_EQ} AND ISNULL(LTRIM(RTRIM(RFC)),'')=''`);
+      } catch (err) { console.error('Factura: no se pudo guardar el RFC del cliente:', err.message); }
+    }
+  }
 
   return {
     fac, lineas, emp, cliente, incluirCP,
