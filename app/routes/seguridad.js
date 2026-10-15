@@ -3,6 +3,7 @@ const router = express.Router();
 const { getPool, sql } = require('../config/db');
 const { browseQuery } = require('../config/browse');
 const { MIN_EN_LINEA } = require('../services/sesiones');
+const { conProteccionAdmin } = require('../middleware/permisos');
 
 const trim = v => (v == null ? '' : String(v).trim());
 
@@ -76,25 +77,25 @@ router.post('/guardar', async (req, res) => {
                 VALUES(@nombre, @descripcion, @esadmin, @activo)`);
       res.json({ ok: true, idGrupo: r.recordset[0].Id_Grupo });
     } else {
-      await pool.request()
+      await conProteccionAdmin(pool, tx => new sql.Request(tx)
         .input('id', sql.Int, Id_Grupo)
         .input('nombre', sql.VarChar(60), trim(Nombre))
         .input('descripcion', sql.VarChar(200), trim(Descripcion) || null)
         .input('esadmin', sql.Bit, EsAdmin ? 1 : 0)
         .input('activo', sql.Bit, Activo ? 1 : 0)
-        .query(`UPDATE dbo.SegGrupos SET Nombre=@nombre, Descripcion=@descripcion, EsAdmin=@esadmin, Activo=@activo WHERE Id_Grupo=@id`);
+        .query(`UPDATE dbo.SegGrupos SET Nombre=@nombre, Descripcion=@descripcion, EsAdmin=@esadmin, Activo=@activo WHERE Id_Grupo=@id`));
       res.json({ ok: true, idGrupo: Id_Grupo });
     }
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
 });
 
 router.post('/eliminar', async (req, res) => {
   try {
     const pool = await getPool();
-    await pool.request().input('id', sql.Int, req.body.Id_Grupo)
-      .query(`DELETE FROM dbo.SegGrupos WHERE Id_Grupo=@id`);
+    await conProteccionAdmin(pool, tx => new sql.Request(tx).input('id', sql.Int, req.body.Id_Grupo)
+      .query(`DELETE FROM dbo.SegGrupos WHERE Id_Grupo=@id`));
     res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
 });
 
 // Reemplaza el set completo de permisos del grupo (borra todo lo anterior e
@@ -124,7 +125,7 @@ router.post('/usuarios/guardar', async (req, res) => {
   if (!idGrupo) return res.status(400).json({ error: 'Grupo inválido.' });
   try {
     const pool = await getPool();
-    await withTransaction(pool, async (tx) => {
+    await conProteccionAdmin(pool, async (tx) => {
       await new sql.Request(tx).input('id', sql.Int, idGrupo)
         .query(`DELETE FROM dbo.SegUsuarioGrupo WHERE Id_Grupo=@id`);
       for (const idUsuario of idsUsuarios) {
@@ -133,7 +134,7 @@ router.post('/usuarios/guardar', async (req, res) => {
       }
     });
     res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
 });
 
 router.get('/permisos-catalogo', async (req, res) => {

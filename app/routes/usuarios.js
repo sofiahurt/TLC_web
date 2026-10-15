@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getPool, sql } = require('../config/db');
 const { browseQuery } = require('../config/browse');
-const { requierePermiso } = require('../middleware/permisos');
+const { requierePermiso, conProteccionAdmin } = require('../middleware/permisos');
 
 const trim = v => (v == null ? '' : String(v).trim());
 
@@ -108,21 +108,16 @@ router.post('/eliminar', requierePermiso('usuarios.editar'), async (req, res) =>
   if (!idUsuarioWeb) return res.status(400).json({ error: 'Falta ID_USUARIOWEB' });
   try {
     const pool = await getPool();
-    const tx = new sql.Transaction(pool);
-    await tx.begin();
-    try {
-      // Primero las membresías de grupo (FK real hacia SegUsuarioGrupo), luego el usuario.
+    // Primero las membresías de grupo (FK real hacia SegUsuarioGrupo), luego el
+    // usuario. No se permite borrar al último administrador.
+    await conProteccionAdmin(pool, async (tx) => {
       await new sql.Request(tx).input('id', sql.Decimal(5), idUsuarioWeb)
         .query(`DELETE FROM dbo.SegUsuarioGrupo WHERE Id_UsuarioWeb=@id`);
       await new sql.Request(tx).input('id', sql.Decimal(5), idUsuarioWeb)
         .query(`DELETE FROM dbo.UsuariosWeb WHERE ID_USUARIOWEB=@id`);
-      await tx.commit();
-    } catch (err) {
-      await tx.rollback();
-      throw err;
-    }
+    });
     res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
 });
 
 module.exports = router;
