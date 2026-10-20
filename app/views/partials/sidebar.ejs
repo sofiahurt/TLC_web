@@ -35,6 +35,9 @@
         <% if (typeof tienePermiso === 'function' && tienePermiso('pagos.ver')) { %>
         <a href="/pagos"      class="sidebar-link <%= modulo==='pagos'      ?'active':'' %>"><i class="bi bi-cash-coin"></i> Cobros</a>
         <% } %>
+        <% if (typeof tienePermiso === 'function' && tienePermiso('depositos.ver')) { %>
+        <a href="/depositos"  class="sidebar-link <%= modulo==='depositos'  ?'active':'' %>"><i class="bi bi-wallet2"></i> Autorizar Depósitos</a>
+        <% } %>
       </div>
     </div>
 

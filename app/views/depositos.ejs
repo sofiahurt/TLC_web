@@ -1,0 +1,182 @@
+<%- include('partials/header', { titulo: 'Autorizar Depósitos' }) %>
+<%- include('partials/sidebar') %>
+<div id="page-content">
+  <div class="d-flex align-items-center mb-3">
+    <button class="btn btn-sm btn-outline-secondary me-3 d-md-none" id="sidebarToggle"><i class="bi bi-list fs-5"></i></button>
+    <h4 class="mb-0 fw-bold flex-grow-1">Autorizar Depósitos</h4>
+  </div>
+
+  <div class="card border-0 shadow-sm mb-3"><div class="card-body py-2">
+    <div class="row align-items-center g-2">
+      <div class="col-auto">
+        <div class="input-group input-group-sm">
+          <button class="btn btn-outline-secondary" type="button" onclick="cambiarDia(-1)" title="Día anterior"><i class="bi bi-chevron-left"></i></button>
+          <input type="date" id="fFecha" class="form-control text-center" style="max-width:150px" value="<%= hoy %>" onchange="cargar()">
+          <button class="btn btn-outline-secondary" type="button" onclick="cambiarDia(1)" title="Día siguiente"><i class="bi bi-chevron-right"></i></button>
+          <button class="btn btn-outline-primary" type="button" onclick="irHoy()">Hoy</button>
+        </div>
+      </div>
+      <div class="col-auto">
+        <div class="dropdown">
+          <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside"><i class="bi bi-layout-three-columns"></i> Columnas</button>
+          <div class="dropdown-menu p-2" style="min-width:210px" id="menuCols">
+            <div class="d-flex gap-1 mb-2">
+              <button class="btn btn-sm btn-outline-primary flex-fill" type="button" onclick="todasCols(true)">Mostrar todas</button>
+              <button class="btn btn-sm btn-outline-secondary flex-fill" type="button" onclick="todasCols(false)">Ocultar</button>
+            </div>
+            <% conceptos.forEach(c => { %><div class="form-check"><input class="form-check-input chkCol" type="checkbox" id="col_<%= c %>" data-col="<%= c %>" onchange="aplicarCols()"><label class="form-check-label small" for="col_<%= c %>"><%= c %></label></div><% }) %>
+          </div>
+        </div>
+      </div>
+      <div class="col-auto small text-muted" id="lblResumen"></div>
+      <div class="col-auto ms-auto">
+        <button class="btn btn-sm btn-success" type="button" onclick="exportar()"><i class="bi bi-file-earmark-excel"></i> Exportar autorizados a Excel</button>
+      </div>
+    </div>
+    <div class="row mt-2"><div class="col-md-5">
+      <div class="input-group input-group-sm">
+        <span class="input-group-text"><i class="bi bi-search"></i></span>
+        <input type="text" id="fBuscar" class="form-control" placeholder="Buscar por Id operador, nombre de operador o Carta Porte..." oninput="pintar()" autocomplete="off">
+        <button class="btn btn-outline-secondary" type="button" onclick="fBuscar.value='';pintar();fBuscar.focus()" title="Limpiar"><i class="bi bi-x-lg"></i></button>
+      </div>
+    </div></div>
+    <div id="msgError" class="alert alert-danger d-none py-2 small mt-2 mb-0"></div>
+  </div></div>
+
+  <style>
+    #scrollTop{overflow-x:auto;overflow-y:hidden;height:16px}
+    #scrollTop div{height:1px}
+    #tblDepos td.nw,#tblDepos th.nw{white-space:nowrap}
+  </style>
+  <style id="colStyle"></style>
+  <div class="card border-0 shadow-sm"><div class="card-body p-0">
+    <div id="scrollTop"><div></div></div>
+    <div class="table-responsive" id="scrollMain"><table class="table table-hover table-sm mb-0 align-middle" id="tblDepos">
+      <thead class="thead-tlc"><tr>
+        <th>No</th><th>TC</th><th class="nw" style="min-width:260px">Operador</th><th class="nw" style="min-width:150px">Carta Porte</th>
+        <% conceptos.forEach(c => { %><th class="text-end c-<%= c %>"><%= c %></th><% }) %>
+        <th class="text-end">Total</th><th class="text-center" style="width:90px">Autorizar</th>
+      </tr></thead>
+      <tbody id="bodyDepos"><tr><td colspan="<%= conceptos.length + 6 %>" class="text-center text-muted py-3">Cargando...</td></tr></tbody>
+      <tfoot id="footDepos" class="fw-bold"></tfoot>
+    </table></div>
+  </div></div>
+</div>
+
+<%- include('partials/footer') %>
+<script>
+const CONCEPTOS = <%- JSON.stringify(conceptos) %>;
+const COLS_DEFAULT = ['Diesel', 'Casetas', 'Maniobra', 'Otros', 'Estadias', 'Demoras'];
+const NCOLS = CONCEPTOS.length + 6;
+const esc = v => String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const money = v => Number(v || 0).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
+const el = id => document.getElementById(id);
+const fechaActual = () => el('fFecha').value;
+
+function verError(m) { const e = el('msgError'); e.textContent = m || ''; e.classList.toggle('d-none', !m); }
+
+function cambiarDia(n) {
+  const [y, m, d] = fechaActual().split('-').map(Number);
+  const f = new Date(y, m - 1, d + n);
+  el('fFecha').value = f.getFullYear() + '-' + String(f.getMonth() + 1).padStart(2, '0') + '-' + String(f.getDate()).padStart(2, '0');
+  cargar();
+}
+function irHoy() { el('fFecha').value = '<%= hoy %>'; cargar(); }
+
+let _filas = [];
+
+const quitaAcentos = t => String(t == null ? '' : t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+function filtradas() {
+  const q = quitaAcentos(el('fBuscar').value).trim();
+  if (!q) return _filas;
+  return _filas.filter(f => quitaAcentos([f.ID_OPERADOR, f.OPERADOR, f.Serie + '-' + f.CartaPorte, f.CartaPorte].join(' ')).includes(q));
+}
+
+function pintar() {
+  const vista = filtradas();
+  el('bodyDepos').innerHTML = vista.length ? vista.map(f =>
+    `<tr${f.FlagDeposito ? ' class="table-success"' : ''}>
+      <td>${f.Id_DepoSol}</td><td>${esc(f.TC)}</td>
+      <td class="nw">${f.ID_OPERADOR == null ? '' : esc(f.ID_OPERADOR) + ' - '}${esc(f.OPERADOR)}</td>
+      <td class="nw">${esc(f.Serie)}-${esc(f.CartaPorte)}</td>
+      ${CONCEPTOS.map(c => `<td class="text-end c-${c}">${f[c] ? money(f[c]) : ''}</td>`).join('')}
+      <td class="text-end fw-semibold">${money(f.Total)}</td>
+      <td class="text-center"><input type="checkbox" class="form-check-input" ${f.FlagDeposito ? 'checked' : ''}
+          <% if (!(typeof tienePermiso === 'function' && tienePermiso('depositos.autorizar'))) { %>disabled<% } %>
+          onchange="autorizar(${f.Id_DepoSol}, this)"></td></tr>`).join('')
+    : `<tr><td colspan="${NCOLS}" class="text-center text-muted py-3">${_filas.length ? 'Ninguna solicitud coincide con la búsqueda.' : 'Sin solicitudes pendientes para este día.'}</td></tr>`;
+
+  const aut = vista.filter(f => f.FlagDeposito);
+  const suma = (arr, k) => arr.reduce((s, f) => s + Number(f[k] || 0), 0);
+  el('footDepos').innerHTML = vista.length
+    ? `<tr class="table-light"><td colspan="4" class="text-end">Autorizados (${aut.length} de ${vista.length}):</td>
+        ${CONCEPTOS.map(c => `<td class="text-end c-${c}">${money(suma(aut, c))}</td>`).join('')}
+        <td class="text-end">${money(suma(aut, 'Total'))}</td><td></td></tr>` : '';
+  ajustarBarra();
+  el('lblResumen').textContent = _filas.length ? `${vista.length}${vista.length !== _filas.length ? ' de ' + _filas.length : ''} solicitud(es) · ${aut.length} autorizada(s)` : '';
+}
+
+async function cargar() {
+  verError('');
+  try {
+    const d = await fetch('/depositos/data?fecha=' + encodeURIComponent(fechaActual())).then(r => r.json());
+    if (d.error) throw new Error(d.error);
+    _filas = d.filas;
+    pintar();
+  } catch (e) {
+    el('bodyDepos').innerHTML = `<tr><td colspan="${NCOLS}" class="text-center text-danger py-3">${esc(e.message)}</td></tr>`;
+    el('footDepos').innerHTML = '';
+  }
+}
+
+async function autorizar(id, chk) {
+  verError('');
+  const marcar = chk.checked;
+  chk.disabled = true;
+  try {
+    const r = await fetch('/depositos/autorizar', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ Id_DepoSol: id, FlagDeposito: marcar }),
+    });
+    const d = await r.json();
+    if (!r.ok || d.error) throw new Error(d.error || 'No se pudo guardar.');
+    const f = _filas.find(x => x.Id_DepoSol === id);
+    if (f) f.FlagDeposito = marcar ? 1 : 0;
+    pintar();
+  } catch (e) {
+    chk.checked = !marcar;
+    chk.disabled = false;
+    verError(e.message);
+    if (/actualiza/.test(e.message)) cargar();
+  }
+}
+
+// ── Columnas visibles (se recuerdan en el navegador; por defecto solo se ve el Total) ──
+function aplicarCols(guardar = true) {
+  const vis = [...document.querySelectorAll('.chkCol')].filter(c => c.checked).map(c => c.dataset.col);
+  el('colStyle').textContent = CONCEPTOS.filter(c => !vis.includes(c)).map(c => '.c-' + c).join(',') + '{display:none}';
+  if (!CONCEPTOS.length || vis.length === CONCEPTOS.length) el('colStyle').textContent = '';
+  if (guardar) { try { localStorage.setItem('depos_cols', JSON.stringify(vis)); } catch (_) {} }
+  ajustarBarra();
+}
+function todasCols(v) { document.querySelectorAll('.chkCol').forEach(c => { c.checked = v; }); aplicarCols(); }
+function iniciarCols() {
+  let vis = COLS_DEFAULT;   // sin selección guardada, se usan las predeterminadas
+  try { const g = localStorage.getItem('depos_cols'); if (g) vis = JSON.parse(g); } catch (_) {}
+  document.querySelectorAll('.chkCol').forEach(c => { c.checked = vis.includes(c.dataset.col); });
+  aplicarCols(false);
+}
+
+// ── Barra de desplazamiento superior sincronizada con la inferior ──
+function ajustarBarra() {
+  el('scrollTop').firstElementChild.style.width = el('tblDepos').scrollWidth + 'px';
+}
+el('scrollTop').addEventListener('scroll', () => { if (el('scrollMain').scrollLeft !== el('scrollTop').scrollLeft) el('scrollMain').scrollLeft = el('scrollTop').scrollLeft; });
+el('scrollMain').addEventListener('scroll', () => { if (el('scrollTop').scrollLeft !== el('scrollMain').scrollLeft) el('scrollTop').scrollLeft = el('scrollMain').scrollLeft; });
+window.addEventListener('resize', ajustarBarra);
+
+function exportar() { window.location = '/depositos/excel?fecha=' + encodeURIComponent(fechaActual()); }
+
+iniciarCols();
+cargar();
+</script>

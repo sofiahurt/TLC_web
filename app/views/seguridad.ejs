@@ -93,7 +93,7 @@ function trimUsuarios(){return Array.from(document.querySelectorAll('#usuariosBo
 // Mismo agrupamiento que el menú lateral (app/views/partials/sidebar.ejs) --
 // un tab por submenú, para ubicar cada módulo igual que en la navegación.
 const GRUPOS_MENU=[
-  {id:'operacion',  nombre:'Operación',                  modulos:['cartaporte','facturas','notacred','pagos']},
+  {id:'operacion',  nombre:'Operación',                  modulos:['cartaporte','facturas','notacred','pagos','depositos']},
   {id:'catalogos',  nombre:'Catálogos',                  modulos:['centrales','ciudades','colonias','tipoflete','operadores','prodserv']},
   {id:'clientes',   nombre:'Clientes y Transportistas',  modulos:['clientes','contacto','domicilios','transport']},
   {id:'flota',      nombre:'Flota',                      modulos:['camiones']},
@@ -103,7 +103,7 @@ const GRUPOS_MENU=[
   {id:'admin',      nombre:'Administración',             modulos:['usuarios','seguridad']},
 ];
 const NOMBRES_MODULO={
-  cartaporte:'Carta Porte', facturas:'Facturas', notacred:'Notas de Crédito/Débito', pagos:'Cobros',
+  cartaporte:'Carta Porte', facturas:'Facturas', notacred:'Notas de Crédito/Débito', pagos:'Cobros', depositos:'Autorizar Depósitos',
   centrales:'Centrales', ciudades:'Ciudades', colonias:'Colonias', tipoflete:'Tipos de Flete',
   operadores:'Operadores', prodserv:'Productos y Servicios',
   clientes:'Clientes', contacto:'Contactos', domicilios:'Domicilios', transport:'Transportistas',

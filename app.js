@@ -53,6 +53,7 @@ app.use('/cartaporte',  requierePermiso('cartaporte.ver'), require('./app/routes
 app.use('/facturas',    requierePermiso('facturas.ver'),   require('./app/routes/facturas'));
 app.use('/notacred',    requierePermiso('notacred.ver'),   require('./app/routes/notacred'));
 app.use('/pagos',       requierePermiso('pagos.ver'),      require('./app/routes/pagos'));
+app.use('/depositos',   require('./app/routes/depositos'));   // permisos depositos.* por ruta
 app.use('/seguridad',   requierePermiso('seguridad.administrar'), require('./app/routes/seguridad'));
 app.use('/usuarios',    requierePermiso('usuarios.ver'),     require('./app/routes/usuarios'));
 app.use('/centrales',   requierePermiso('centrales.ver'),  require('./app/routes/centrales'));
@@ -81,6 +82,7 @@ app.use('/utilerias',   require('./app/routes/utilerias'));
 const { RUTA_XML } = require('./app/config/storage');
 const PORT = process.env.PORT || 3000;
 sesiones.iniciar();
+require('./app/services/permisos-seed').asegurarPermisos();
 app.listen(PORT, () => {
   console.log(`TLC Web corriendo en http://localhost:${PORT}`);
   console.log(`Almacenamiento XML:  ${RUTA_XML}`);
