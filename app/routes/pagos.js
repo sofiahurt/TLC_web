@@ -547,6 +547,10 @@ router.post('/cabecera/cancelar-sin-confirmar', requierePermiso('pagos.editar'),
 // en app/routes/cfdi.js (POST /cancelar-pago), que llama a esta misma
 // reversión de saldo solo después de que el PAC confirma la cancelación.
 async function revertirEfectoSaldoPago(tx, idNoPago) {
+  // Solo un cobro REALIZADO aplicó saldo a las facturas; un borrador nunca lo
+  // aplicó, así que revertirlo restaría de más a pagos de otros cobros.
+  const stRes = await new sql.Request(tx).input('id', sql.Decimal(9), idNoPago).query(`SELECT Status FROM Empresa2.Pagos WHERE Id_NoPago=@id`);
+  if (trim(stRes.recordset[0]?.Status).toUpperCase() !== 'REALIZADO') return;
   const detRes = await new sql.Request(tx).input('id', sql.Decimal(9), idNoPago).query(`SELECT * FROM Empresa2.PagFac WHERE ID_NOPAGO=@id`);
   for (const linea of detRes.recordset) {
     const importeTotalLinea = num(linea.TOTALPAGO);

@@ -629,6 +629,7 @@ function docLkSwitchTab(a){
   docLkTipo=a.dataset.doc; docLkPage=1;
   document.querySelectorAll('#docLkTabs .nav-link').forEach(x=>x.classList.toggle('active', x===a));
   loadDocLk();
+  document.getElementById('docLkQ').focus();
   return false;
 }
 function loadDocLk(){
@@ -655,6 +656,8 @@ function loadDocLk(){
   });
 }
 document.getElementById('docLkQ').addEventListener('input',debounce(()=>{docLkPage=1;loadDocLk();},300));
+// Al abrir el buscador, el cursor queda en el campo de búsqueda para teclear de inmediato.
+document.getElementById('lookupDoc').addEventListener('shown.bs.modal',()=>document.getElementById('docLkQ').focus());
 document.getElementById('docLkPrev').addEventListener('click',()=>{if(docLkPage>1){docLkPage--;loadDocLk();}});
 document.getElementById('docLkNext').addEventListener('click',()=>{docLkPage++;loadDocLk();});
 document.getElementById('docLkBody').addEventListener('click',e=>{
