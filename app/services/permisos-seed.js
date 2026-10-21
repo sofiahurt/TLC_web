@@ -8,6 +8,8 @@ const PERMISOS = [
   { clave: 'depositos.ver',              modulo: 'depositos',  descripcion: 'Ver módulo Autorizar Depósitos y exportar a Excel',      orden: 1 },
   { clave: 'depositos.autorizar',        modulo: 'depositos',  descripcion: 'Marcar/desmarcar autorización de depósitos',             orden: 2 },
   { clave: 'pagos.btn_ajustar_saldos',    modulo: 'pagos',      descripcion: 'Botón Ajustar saldos (Pagos)',                            orden: 5 },
+  { clave: 'facturas.campo_incluircp',  modulo: 'facturas',   descripcion: 'Checkbox "Incluir CP"',                                 orden: 4 },
+  { clave: 'facturas.campo_unconcepto', modulo: 'facturas',   descripcion: 'Checkbox "Un Concepto"',                                 orden: 5 },
   { clave: 'facturas.btn_copiar',       modulo: 'facturas',   descripcion: 'Botón Copiar factura cancelada (Facturas)',             orden: 6 },
   { clave: 'pagos.btn_copiar',          modulo: 'pagos',      descripcion: 'Botón Copiar cobro cancelado (Pagos)',                  orden: 6 },
   { clave: 'notacred.btn_copiar',       modulo: 'notacred',   descripcion: 'Botón Copiar nota cancelada (Notas de Crédito/Débito)', orden: 6 },
