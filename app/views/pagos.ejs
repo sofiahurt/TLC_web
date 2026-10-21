@@ -114,10 +114,14 @@
               </div>
             </div>
             <div class="row g-2 mt-1">
-              <div class="col-md-6 d-flex align-items-center gap-2">
-                <button class="btn btn-sm btn-primary" id="btnBuscarDoc" onclick="openLookupDocumento()"><i class="bi bi-search"></i> Buscar Factura o Nota de Débito...</button>
-                <input type="text" id="filtroLineasQ" class="form-control form-control-sm" style="width:160px" placeholder="Ubicar folio agregado...">
-                <button class="btn btn-sm btn-outline-warning text-nowrap" id="btnAjustarSaldos" onclick="ajustarSaldosCobro()" disabled title="Revisa cada línea contra el estado actual de su factura y corrige pagos realizados, saldo disponible y lo pagado"><i class="bi bi-wrench-adjustable"></i> Ajustar saldos</button>
+              <div class="col-md-6">
+                <button class="btn btn-sm btn-primary w-100" id="btnBuscarDoc" onclick="openLookupDocumento()"><i class="bi bi-search"></i> Buscar Factura o Nota de Débito...</button>
+              </div>
+              <div class="col-md-3">
+                <input type="text" id="filtroLineasQ" class="form-control form-control-sm" placeholder="Ubicar folio agregado...">
+              </div>
+              <div class="col-md-3">
+                <button class="btn btn-sm btn-outline-warning text-nowrap w-100" id="btnAjustarSaldos" onclick="ajustarSaldosCobro()" disabled title="Revisa cada línea contra el estado actual de su factura y corrige pagos realizados, saldo disponible y lo pagado"><i class="bi bi-wrench-adjustable"></i> Ajustar saldos</button>
               </div>
               <div class="col-12 small text-muted d-flex align-items-center gap-2">
                 <span id="detCount">0 documentos</span>
@@ -461,7 +465,11 @@ function onCabeceraFieldChange(){
     noCheque:document.getElementById('f_NoCheque').value.trim(),
     bancoEmisor:document.getElementById('f_BancoEmisor').value.trim(),
   };
+  const cambioComp=_pago.flagCompensacion!==!!body.flagCompensacion;
   _pago.flagCompensacion=!!body.flagCompensacion;
+  // Las filas ya pintadas no traen la celda de compensación: se repintan para que
+  // las columnas coincidan con los encabezados.
+  if(cambioComp && _lineasActuales.length) pintarDetalle(_lineasActuales);
   fetch('/pagos/cabecera/actualizar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
     .then(r=>r.json()).then(d=>{ if(d.error){showError(d.error);return;} });
 }
