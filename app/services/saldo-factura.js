@@ -23,7 +23,7 @@ const COLUMNA_ANIO_POR_TIPO = { pago: 'AnioPago', nota_credito: 'AnioNotaCred' }
 
 function statusPorSaldo(total, pagosReal, notasCredito) {
   const cubierto = num(pagosReal) + num(notasCredito);
-  if (cubierto >= num(total) - 0.005) return 'PAGADA';
+  if (cubierto >= num(total) - 0.011) return 'PAGADA';   // tolerancia: hasta 1 centavo de diferencia
   if (cubierto > 0.005) return 'PAGO PARCIAL';
   return 'EMITIDA';
 }

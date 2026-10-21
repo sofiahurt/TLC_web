@@ -120,6 +120,9 @@
       </div>
       <div class="sidebar-group-body">
         <a href="/utilerias" class="sidebar-link <%= modulo==='utilerias' ?'active':'' %>"><i class="bi bi-tools"></i> Copiar XML</a>
+        <% if (tienePermiso('utilerias.conciliar')) { %>
+        <a href="/utilerias/conciliacion" class="sidebar-link <%= modulo==='conciliacion' ?'active':'' %>"><i class="bi bi-arrow-left-right"></i> Conciliar Saldos</a>
+        <% } %>
       </div>
     </div>
     <% } %>

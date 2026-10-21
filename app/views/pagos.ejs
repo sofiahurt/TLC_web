@@ -82,7 +82,8 @@
                 <input type="text" id="f_Status" class="form-control form-control-sm bg-light" readonly></div>
             </div>
             <div class="row g-2 mt-1 align-items-end">
-              <div class="col-md-7">
+              <div class="col-md-2"></div>
+              <div class="col-md-5">
                 <label class="form-label small mb-1">Cliente que paga (si es distinto)</label>
                 <div class="input-group input-group-sm">
                   <input type="hidden" id="f_Id_RealPago">
@@ -90,8 +91,8 @@
                   <button class="btn btn-outline-secondary btn-sm" type="button" onclick="openLookupCliente('paga')"><i class="bi bi-search"></i></button>
                 </div>
               </div>
-              <div class="col-md-2 pb-1">
-                <div class="form-check"><input type="checkbox" id="f_FlagCompensacion" class="form-check-input" onchange="onCabeceraFieldChange()"><label class="form-check-label small" for="f_FlagCompensacion">Con Compensación</label></div>
+              <div class="col-md-3 pb-1">
+                <div class="form-check text-nowrap"><input type="checkbox" id="f_FlagCompensacion" class="form-check-input" onchange="onCabeceraFieldChange()"><label class="form-check-label small" for="f_FlagCompensacion">Compensación</label></div>
               </div>
             </div>
             <div class="row g-2 mt-1">
@@ -116,6 +117,11 @@
               <div class="col-md-6 d-flex align-items-center gap-2">
                 <button class="btn btn-sm btn-primary" id="btnBuscarDoc" onclick="openLookupDocumento()"><i class="bi bi-search"></i> Buscar Factura o Nota de Débito...</button>
                 <input type="text" id="filtroLineasQ" class="form-control form-control-sm" style="width:160px" placeholder="Ubicar folio agregado...">
+                <button class="btn btn-sm btn-outline-warning text-nowrap" id="btnAjustarSaldos" onclick="ajustarSaldosCobro()" disabled title="Revisa cada línea contra el estado actual de su factura y corrige pagos realizados, saldo disponible y lo pagado"><i class="bi bi-wrench-adjustable"></i> Ajustar saldos</button>
+              </div>
+              <div class="col-12 small text-muted d-flex align-items-center gap-2">
+                <span id="detCount">0 documentos</span>
+                <div class="progress d-none" id="barraAjuste" style="width:160px;height:8px" role="progressbar" aria-label="Ajustando saldos"><div class="progress-bar progress-bar-striped progress-bar-animated bg-warning" style="width:100%"></div></div>
               </div>
             </div>
           </div>
@@ -124,10 +130,12 @@
             <label class="form-label small mb-1">Fecha de creación</label>
             <div class="input-group input-group-sm mb-2">
               <input type="date" id="f_Fecha" class="form-control form-control-sm" onchange="onCabeceraFieldChange()">
+              <input type="time" id="f_Hora" class="form-control form-control-sm bg-light" style="max-width:88px" readonly tabindex="-1" title="Hora de creación (solo lectura)">
             </div>
             <label class="form-label fw-semibold small mb-1">Fecha del cobro</label>
             <div class="input-group input-group-sm mb-2">
               <input type="date" id="f_FechaPago" class="form-control form-control-sm" onchange="onCabeceraFieldChange()">
+              <input type="time" id="f_HoraPago" class="form-control form-control-sm" style="max-width:88px" onchange="onCabeceraFieldChange()" title="Hora del cobro">
             </div>
             <label class="form-label small mb-1">Forma de pago</label>
             <div class="input-group input-group-sm mb-2">
@@ -155,8 +163,8 @@
               <tr>
                 <th>Referencia</th>
                 <th class="text-end">Pagos realizados</th>
-                <th class="text-end">Saldo disp.</th>
-                <th class="text-end">Pagado</th>
+                <th class="text-end">Saldo disponible</th>
+                <th class="text-end">Pago</th>
                 <th class="text-end" id="thComp" style="display:none">Compensado</th>
                 <th class="text-end">Total</th>
                 <th></th>
@@ -174,7 +182,6 @@
             </tfoot>
           </table>
         </div>
-        <div class="small text-muted mb-2" id="detCount">0 documentos</div>
 
         <div class="row g-2 mt-2">
           <div class="col-md-12 small text-muted">Realizó: <strong id="f_Realizo_disp"><%= usuario.nombre.trim() %> <%= usuario.apellido ? usuario.apellido.trim() : '' %></strong></div>
@@ -310,6 +317,8 @@ document.addEventListener('keydown', function(e) {
 }, true);
 
 function hoyISO(){return new Date().toISOString().slice(0,10);}
+function horaAhora(){const d=new Date();return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');}
+function horaDe(v){return v?String(v).slice(11,16):'';} // las horas SQL llegan como 1970-01-01THH:MM:SS
 function fmtN(v){return (parseFloat(v)||0).toFixed(2);}
 function fmtMoney(v){
   const n=parseFloat(v)||0;
@@ -326,6 +335,7 @@ function hideWarning(){document.getElementById('frmWarning').classList.add('d-no
 
 function clearForm(){
   _pago={idNoPago:null, confirmada:false, cliente:null, flagCompensacion:false};
+  const bbd=document.getElementById('btnBuscarDoc'); if(bbd) bbd.disabled=false;
   document.getElementById('f_Id_NoPago').value='';
   document.getElementById('f_Id_Cliente').value='';
   document.getElementById('f_NombreCom_disp').value='';
@@ -343,6 +353,10 @@ function clearForm(){
   document.getElementById('f_Fecha').value=hoyISO();
   document.getElementById('f_Fecha').disabled=false;
   document.getElementById('f_FechaPago').value=hoyISO();
+  document.getElementById('f_Hora').value=horaAhora();
+  document.getElementById('f_HoraPago').value=horaAhora();
+  document.getElementById('f_HoraPago').disabled=false;
+  document.getElementById('btnAjustarSaldos').disabled=true;
   setSatField('f_c_FormaPago','f_c_FormaPago_disp','formaPago','03');
   setSatField('f_Moneda','f_Moneda_disp','moneda','MXN');
   document.getElementById('f_TipoCambio').value='';
@@ -384,7 +398,9 @@ function cargarPago(id, onDone){
   fetch(`/pagos/get?id=${id}`).then(r=>r.json()).then(d=>{
     if(d.error){showError(d.error);return;}
     const c=d.cabecera;
-    _pago={idNoPago:c.Id_NoPago, confirmada:true, cliente:c.Id_Cliente, flagCompensacion:c.FlagCompensacion==1};
+    _pago={idNoPago:c.Id_NoPago, confirmada:true, cliente:c.Id_Cliente, flagCompensacion:c.FlagCompensacion==1, status:(c.Status||'').trim().toUpperCase(), timbrado:!!(c.UUID||'').trim()};
+    const cerrado=_pago.status==='CANCELADO'||_pago.timbrado;   // cancelado o timbrado: solo lectura (REALIZADO sí se puede completar por partes)
+    const bb=document.getElementById('btnBuscarDoc'); if(bb) bb.disabled=cerrado;
     document.getElementById('f_Id_NoPago').value=c.Id_NoPago;
     document.getElementById('f_Id_Cliente').value=c.Id_Cliente;
     document.getElementById('f_NombreCom_disp').value=(c.NombreCom||'').trim();
@@ -403,6 +419,10 @@ function cargarPago(id, onDone){
     document.getElementById('f_Fecha').disabled=yaTimbrado;
     document.getElementById('f_FechaPago').value=(c.FechaPago||'').toString().slice(0,10);
     document.getElementById('f_FechaPago').disabled=yaTimbrado;
+    document.getElementById('f_Hora').value=horaDe(c.Hora);
+    document.getElementById('f_HoraPago').value=horaDe(c.HoraPago);
+    document.getElementById('f_HoraPago').disabled=yaTimbrado;
+    document.getElementById('btnAjustarSaldos').disabled=cerrado;
     document.querySelectorAll('.sat-lupa-btn').forEach(b=>b.disabled=yaTimbrado);
     setSatField('f_c_FormaPago','f_c_FormaPago_disp','formaPago',(c.c_FormaPago||'').trim());
     const monedaClave=(c.TipoFacturas||'').trim()==='Dolares'?'USD':'MXN';
@@ -432,6 +452,7 @@ function onCabeceraFieldChange(){
     flagCompensacion:document.getElementById('f_FlagCompensacion').checked?1:0,
     fecha:document.getElementById('f_Fecha').value,
     fechaPago:document.getElementById('f_FechaPago').value,
+    horaPago:document.getElementById('f_HoraPago').value,
     c_FormaPago:document.getElementById('f_c_FormaPago').value.trim(),
     FormaPago:document.getElementById('f_c_FormaPago_disp').value.trim(),
     tipoCambio:document.getElementById('f_TipoCambio').value,
@@ -456,7 +477,8 @@ function pintarTotales(lineas){
 
 function filaDetalleHtml(l){
   const ref = Number(l.NOFACTURA)>0 ? ('Factura #'+l.NOFACTURA) : ('ND #'+l.ID_NOTACREDITO);
-  const puedeEditar = Number(l.NOFACTURA)>0; // ND es todo o nada, sin edición
+  const cerrado = _pago.status==='CANCELADO' || _pago.timbrado; // cancelado o timbrado no se modifica
+  const puedeEditar = Number(l.NOFACTURA)>0 && !cerrado; // ND es todo o nada, sin edición
   // Pagos realizados ANTES de esta línea (sin incluir este mismo cobro) =
   // total original del documento menos el saldo que ya traía al momento de
   // agregarse (SALDOANT). SALDOANT solo es confiable si es >= lo que esta
@@ -488,7 +510,7 @@ function filaDetalleHtml(l){
     ${celdaImprte}
     ${celdaComp}
     <td class="text-end">${fmtMoney(l.TOTALPAGO)}</td>
-    <td class="text-center">${btnEditar} <button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="eliminarLinea(${l.ID_NOPAGFAC})"><i class="bi bi-trash"></i></button></td>
+    <td class="text-center">${btnEditar} ${cerrado ? '' : `<button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="eliminarLinea(${l.ID_NOPAGFAC})"><i class="bi bi-trash"></i></button>`}</td>
   </tr>`;
 }
 let _lineasActuales=[];
@@ -694,6 +716,7 @@ function agregarLinea(tipoDoc, folio, serieRef){
     idRealPago:document.getElementById('f_Id_RealPago').value||idCliente,
     fecha:document.getElementById('f_Fecha').value,
     fechaPago:document.getElementById('f_FechaPago').value,
+    horaPago:document.getElementById('f_HoraPago').value,
     c_FormaPago:document.getElementById('f_c_FormaPago').value.trim(),
     FormaPago:document.getElementById('f_c_FormaPago_disp').value.trim(),
     moneda:document.getElementById('f_Moneda').value.trim(),
@@ -712,6 +735,7 @@ function agregarLinea(tipoDoc, folio, serieRef){
       _pago.idNoPago=d.idNoPago;
       document.getElementById('f_Id_NoPago').value=d.idNoPago;
       document.getElementById('f_NombreCom_disp').readOnly=true;
+      document.getElementById('btnAjustarSaldos').disabled=false;
       // Al agregar, entra directo a editar el importe a pagar de la línea
       // recién insertada (ND no aplica: es todo-o-nada, sin botón de editar).
       cargarPago(d.idNoPago, ()=>{
@@ -720,6 +744,20 @@ function agregarLinea(tipoDoc, folio, serieRef){
         if(editBtn) activarEdicionLinea(editBtn, d.idNoPagFac);
       });
     });
+}
+
+function ajustarSaldosCobro(){
+  hideError();
+  if(!_pago.idNoPago){showError('Agregue al menos una línea.');return;}
+  if(!confirm('Se revisará cada línea contra el estado actual de su factura y se corregirán pagos realizados, saldo disponible, pago y total. ¿Continuar?')) return;
+  const b=document.getElementById('btnAjustarSaldos'), barra=document.getElementById('barraAjuste');
+  const fin=()=>{ barra.classList.add('d-none'); b.disabled=false; };
+  b.disabled=true; barra.classList.remove('d-none');
+  fetch('/pagos/ajustar-saldos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idNoPago:_pago.idNoPago})})
+    .then(r=>r.json()).then(d=>{
+      if(d.error){fin();showError(d.error);return;}
+      cargarPago(_pago.idNoPago, fin);
+    }).catch(()=>{ fin(); showError('Error de comunicación con el servidor.'); });
 }
 
 function grabarPago(){

@@ -4,6 +4,8 @@ const fs = require('fs');
 const path = require('path');
 const { requierePermiso } = require('../middleware/permisos');
 const { RUTA_XML } = require('../config/storage');
+const { getPool, sql } = require('../config/db');
+const conciliacion = require('../services/conciliacion-saldos');
 
 router.get('/', requierePermiso('utilerias.ver'), (req, res) =>
   res.render('utilerias', { usuario: req.session.usuario, modulo: 'utilerias', rutaXml: RUTA_XML }));
@@ -120,6 +122,47 @@ router.post('/copiar-xml', requierePermiso('utilerias.copiarxml'), (req, res) =>
     porTipo: claves.map(k => ({ tipo: TIPOS_XML[k].etiqueta, encontrados: porTipo[k] })),
     copiados, omitidos, errores,
   });
+});
+
+// ── Conciliar Facturas contra Cobros y Notas de Crédito ────────────────────
+router.get('/conciliacion', requierePermiso('utilerias.conciliar'), (req, res) =>
+  res.render('conciliacion', { usuario: req.session.usuario, modulo: 'conciliacion' }));
+
+router.get('/conciliacion/data', requierePermiso('utilerias.conciliar'), async (req, res) => {
+  const q = req.query;
+  const filtros = {
+    idCliente: parseInt(q.cliente) || null, folio: parseInt(q.folio) || null,
+    folioDesde: parseInt(q.folioDesde) || null, folioHasta: parseInt(q.folioHasta) || null,
+    desde: /^d{4}-d{2}-d{2}$/.test(q.desde || '') ? q.desde : null,
+    hasta: /^d{4}-d{2}-d{2}$/.test(q.hasta || '') ? q.hasta : null,
+  };
+  try {
+    const pool = await getPool();
+    const nd = q.tipo === 'nd';
+    const todas = nd ? await conciliacion.analizarNotasDebito(pool, filtros) : await conciliacion.analizarFacturas(pool, filtros);
+    const filas = todas.filter(f => f.hallazgos.length);
+    res.json({ tipo: nd ? 'nd' : 'factura', revisados: todas.length, filas: filas.slice(0, 2000), totalConDiferencias: filas.length });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/conciliacion/ajustar', requierePermiso('utilerias.conciliar'), async (req, res) => {
+  const items = (Array.isArray(req.body.items) ? req.body.items : []).slice(0, 500)
+    .map(i => ({ id: parseInt(i.id), serie: i.serie })).filter(i => i.id > 0);
+  if (!items.length) return res.status(400).json({ error: 'No hay documentos seleccionados.' });
+  const opts = { incluirSinRespaldo: req.body.incluirSinRespaldo === true };
+  try {
+    const pool = await getPool();
+    const tx = new sql.Transaction(pool);
+    await tx.begin();
+    let resultado;
+    try {
+      resultado = req.body.tipo === 'nd' ? await conciliacion.ajustarNotasDebito(tx, items, opts) : await conciliacion.ajustarFacturas(tx, items, opts);
+      await tx.commit();
+    } catch (e) { try { await tx.rollback(); } catch (_) {} throw e; }
+    const u = req.session.usuario || {};
+    console.log(`Conciliación (${req.body.tipo === 'nd' ? 'ND' : 'Facturas'}) por ${(u.nombre || '').trim()}: ${JSON.stringify(resultado.filter(r => r.ok))}`);
+    res.json({ ok: true, resultado });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 module.exports = router;

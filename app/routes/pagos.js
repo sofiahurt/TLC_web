@@ -4,6 +4,7 @@ const { getPool, sql } = require('../config/db');
 const { browseQuery } = require('../config/browse');
 const { requierePermiso } = require('../middleware/permisos');
 const { ajustarSaldoFactura, ajustarSaldoNotaDebito } = require('../services/saldo-factura');
+const conciliacion = require('../services/conciliacion-saldos');
 
 // Empresa2.Pagos/PagFac NO están particionadas por año a diferencia del
 // legado (Pagos19..Pagos25, PagFac19..PagFac25 son archivos históricos que no
@@ -13,6 +14,8 @@ const trim = v => (v == null ? '' : String(v).trim());
 const num = v => (v === '' || v == null || isNaN(parseFloat(v))) ? 0 : parseFloat(v);
 const serieKey = v => { const t = trim(v); return t || null; };
 const hoy = () => new Date().toISOString().slice(0, 10);
+// HH:MM o HH:MM:SS -> HH:MM:SS; vacío/ inválido -> null
+const horaValida = v => { const m = /^(d{2}):(d{2})(?::(d{2}))?$/.exec(trim(v)); return m && +m[1] < 24 && +m[2] < 60 ? `${m[1]}:${m[2]}:${m[3] || '00'}` : null; };
 
 async function withTransaction(pool, fn) {
   const tx = new sql.Transaction(pool);
@@ -203,6 +206,32 @@ router.get('/lookup/notasdebito', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Un cobro puede capturarse por partes: BORRADOR (aún no aplica saldo) o
+// REALIZADO (ya aplicó el saldo de sus líneas a las facturas). Mientras esté
+// REALIZADO, cada cambio de líneas aplica SOLO su diferencia al saldo (alta suma,
+// ajuste suma/resta la diferencia, baja resta) y Grabar no vuelve a aplicar nada.
+// CANCELADO o timbrado ya no se modifican. Devuelve el status vigente.
+async function estadoCobroEditable(tx, idNoPago) {
+  const r = await new sql.Request(tx).input('id', sql.Decimal(9), idNoPago)
+    .query(`SELECT Status, UUID FROM Empresa2.Pagos WITH (UPDLOCK, ROWLOCK) WHERE Id_NoPago=@id`);
+  if (!r.recordset[0]) throw Object.assign(new Error('Cobro no encontrado.'), { status: 404 });
+  const st = trim(r.recordset[0].Status).toUpperCase();
+  if (st === 'CANCELADO') throw Object.assign(new Error('El cobro está cancelado y no se puede modificar.'), { status: 409 });
+  if (trim(r.recordset[0].UUID)) throw Object.assign(new Error('El cobro ya está timbrado y no se puede modificar; cancélalo fiscalmente y captura uno nuevo.'), { status: 409 });
+  return st;
+}
+
+// Aplica (signo=+1) o revierte (signo=-1) el efecto de una línea sobre su Factura / ND.
+async function aplicarEfectoLinea(tx, linea, signo, anio) {
+  const importe = num(linea.TOTALPAGO); // pagado + compensado
+  if (importe <= 0.005) return;
+  if (Number(linea.NOFACTURA) > 0) {
+    await ajustarSaldoFactura(tx, 'pago', { idNoFactura: linea.NOFACTURA, serieFac: linea.SERIEFAC, importe, signo, anio: signo > 0 ? anio : undefined });
+  } else if (Number(linea.ID_NOTACREDITO) > 0) {
+    await ajustarSaldoNotaDebito(tx, { idNotaDebito: linea.ID_NOTACREDITO, serieND: linea.SERIEND, importeAplicado: signo > 0 ? num(linea.IMPRTE) + num(linea.COMPESACION) : 0 });
+  }
+}
+
 // ── AGREGAR LÍNEA (contra Factura o Nota de Débito previa) ────────────────
 router.post('/partida/agregar', requierePermiso('pagos.editar'), async (req, res) => {
   const f = req.body;
@@ -218,6 +247,7 @@ router.post('/partida/agregar', requierePermiso('pagos.editar'), async (req, res
       if (!idCliente) throw Object.assign(new Error('Debe seleccionar el cliente facturado.'), { status: 400 });
 
       let idNoPago = parseInt(f.idNoPago) || 0;
+      let estadoCobro = 'BORRADOR';
 
       // Cabecera: crear en borrador si es la primera línea.
       if (!idNoPago) {
@@ -232,6 +262,7 @@ router.post('/partida/agregar', requierePermiso('pagos.editar'), async (req, res
           .input('idCli', sql.Decimal(7), idCliente).input('nombreCom', sql.VarChar(150), trim(cli.recordset[0]?.NOMBRECOMUN) || trim(cli.recordset[0]?.NOMBRECOM))
           .input('idRealPago', sql.Decimal(7), idRealPago).input('nomClientePago', sql.VarChar(150), trim(cliPago.recordset[0]?.NOMBRECOMUN) || trim(cliPago.recordset[0]?.NOMBRECOM))
           .input('fechaPago', sql.Date, trim(f.fechaPago) || hoy())
+          .input('horaPago', sql.VarChar(8), horaValida(f.horaPago) || new Date().toTimeString().slice(0, 8))
           // BORRADOR hasta /cabecera/grabar -- mismo criterio ya corregido en
           // Notas de Crédito para que "Cerrar sin grabar" pueda limpiar el
           // borrador abandonado (Status REALIZADO es el análogo de EMITIDA ahí).
@@ -247,19 +278,18 @@ router.post('/partida/agregar', requierePermiso('pagos.editar'), async (req, res
           .input('bancoEmisor', sql.VarChar(60), trim(f.bancoEmisor) || null)
           .input('realizo', sql.VarChar(80), [req.session.usuario.nombre, req.session.usuario.apellido].filter(Boolean).join(' '))
           .query(`INSERT INTO Empresa2.Pagos(
-            Id_NoPago, Fecha, Hora, Id_Cliente, NombreCom, Id_RealPago, NomClientePago, FechaPago, Status,
+            Id_NoPago, Fecha, Hora, Id_Cliente, NombreCom, Id_RealPago, NomClientePago, FechaPago, HoraPago, Status,
             c_FormaPago, FormaPago, TipoCambio, TipoFacturas, FlagCompensacion,
             BancoDeposito, TipoDeposito, NoCheuqe, BancoEmisor, ImporteCheque, Realizo,
             SumaPartidas, TotalComp, TotalIVA, TotalRet, BaseIVA, BaseRet, TotalIVA_C, TotalRet_C, BaseIVA_C, BaseRet_C, TotalImporte
           ) VALUES(
-            @id, @fecha, @hora, @idCli, @nombreCom, @idRealPago, @nomClientePago, @fechaPago, @status,
+            @id, @fecha, @hora, @idCli, @nombreCom, @idRealPago, @nomClientePago, @fechaPago, @horaPago, @status,
             @cformapago, @formapago, @tipoCambio, @tipoFacturas, @flagComp,
             @bancoDeposito, @tipoDeposito, @noCheque, @bancoEmisor, 0, @realizo,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
           )`);
       } else {
-        const cabRes = await new sql.Request(tx).input('id', sql.Decimal(9), idNoPago).query(`SELECT Status, FlagCompensacion, Id_Cliente FROM Empresa2.Pagos WHERE Id_NoPago=@id`);
-        if (!cabRes.recordset[0]) throw Object.assign(new Error('Cobro no encontrado.'), { status: 400 });
+        estadoCobro = await estadoCobroEditable(tx, idNoPago);
       }
 
       const nextDetaRes = await new sql.Request(tx).input('id', sql.Decimal(9), idNoPago).query(`SELECT ISNULL(MAX(ID_NOPAGFAC),0)+1 AS next FROM Empresa2.PagFac WHERE ID_NOPAGO=@id`);
@@ -357,6 +387,12 @@ router.post('/partida/agregar', requierePermiso('pagos.editar'), async (req, res
         @seriefac, @seriend, @idnc
       )`);
 
+      // Cobro ya REALIZADO: la línea nueva aplica su saldo en el momento.
+      if (estadoCobro === 'REALIZADO') {
+        await aplicarEfectoLinea(tx, { NOFACTURA: origen.esFactura ? origen.idRef : 0, SERIEFAC: origen.serieRef, ID_NOTACREDITO: origen.esFactura ? 0 : origen.idRef,
+          SERIEND: origen.serieRef, IMPRTE: imprte, COMPESACION: compensacion, TOTALPAGO: totalPago }, 1, new Date().getFullYear());
+      }
+
       const totales = await recalcularSumaPartidas(tx, idNoPago);
       return { idNoPago, idNoPagFac, totales };
     });
@@ -383,13 +419,12 @@ async function recalcularSumaPartidas(tx, idNoPago) {
 }
 
 // ── AJUSTAR el importe de una línea (Factura) a mano, con compensación ────
-router.post('/linea/actualizar-importe', requierePermiso('pagos.editar'), async (req, res) => {
-  const { idNoPago, idNoPagFac, imprte, compensacion } = req.body;
-  try {
-    const pool = await getPool();
-    const result = await withTransaction(pool, async (tx) => {
+// Fija importe/compensación de una línea de Factura (topado al SALDOANT) y, si el
+// cobro ya está REALIZADO, aplica a la factura solo la diferencia.
+async function fijarImporteLinea(tx, idNoPago, idNoPagFac, imprte, compensacion, estadoCobro) {
+  {
+    {
       const cabRes = await new sql.Request(tx).input('id', sql.Decimal(9), idNoPago).query(`SELECT FlagCompensacion FROM Empresa2.Pagos WHERE Id_NoPago=@id`);
-      if (!cabRes.recordset[0]) throw Object.assign(new Error('Cobro no encontrado.'), { status: 404 });
       const flagCompensacion = Number(cabRes.recordset[0].FlagCompensacion) === 1;
 
       const lineaRes = await new sql.Request(tx)
@@ -439,10 +474,93 @@ router.post('/linea/actualizar-importe', requierePermiso('pagos.editar'), async 
                   PORPAGO=@porpago, PORPAGOCOMP=@porpagocomp
                 WHERE ID_NOPAGO=@idpago AND ID_NOPAGFAC=@idd`);
 
+      // Cobro ya REALIZADO: solo se aplica la diferencia contra lo ya aplicado.
+      const diferencia = Math.round((totalPago - num(linea.TOTALPAGO)) * 100) / 100;
+      if (estadoCobro === 'REALIZADO' && Math.abs(diferencia) > 0.005) {
+        await ajustarSaldoFactura(tx, 'pago', { idNoFactura: linea.NOFACTURA, serieFac: linea.SERIEFAC, importe: diferencia, signo: 1 });
+      }
+
       const totales = await recalcularSumaPartidas(tx, idNoPago);
       return { limitado, saldoDisponible: saldoAnt, totales };
+    }
+  }
+}
+
+router.post('/linea/actualizar-importe', requierePermiso('pagos.editar'), async (req, res) => {
+  const { idNoPago, idNoPagFac, imprte, compensacion } = req.body;
+  try {
+    const pool = await getPool();
+    const result = await withTransaction(pool, async (tx) => {
+      const estadoCobro = await estadoCobroEditable(tx, idNoPago);
+      return fijarImporteLinea(tx, idNoPago, idNoPagFac, imprte, compensacion, estadoCobro);
     });
     res.json({ ok: true, ...result });
+  } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
+});
+
+// ── AJUSTAR SALDOS del cobro: revisa cada línea contra el estado ACTUAL de su
+// factura (p. ej. se canceló otro cobro después de capturar este), corrige
+// Factura.PagosReal/Status desde los cobros y notas vigentes, y reajusta en la
+// línea los pagos realizados / saldo disponible (SALDOANT) y lo pagado. ──────
+router.post('/ajustar-saldos', requierePermiso('pagos.editar'), async (req, res) => {
+  const idNoPago = parseInt(req.body.idNoPago);
+  if (!idNoPago) return res.status(400).json({ error: 'Cobro inválido.' });
+  try {
+    const pool = await getPool();
+    const cambios = [];
+    await withTransaction(pool, async (tx) => {
+      const estado = await estadoCobroEditable(tx, idNoPago);
+      const cab = (await new sql.Request(tx).input('id', sql.Decimal(9), idNoPago).query(`SELECT FlagCompensacion FROM Empresa2.Pagos WHERE Id_NoPago=@id`)).recordset[0];
+      const flagComp = Number(cab.FlagCompensacion) === 1;
+      const lineas = (await new sql.Request(tx).input('id', sql.Decimal(9), idNoPago)
+        .query(`SELECT * FROM Empresa2.PagFac WHERE ID_NOPAGO=@id AND NOFACTURA>0 ORDER BY ID_NOPAGFAC`)).recordset;
+
+      // En REALIZADO, primero se corrige la factura desde los documentos vigentes.
+      if (estado === 'REALIZADO') {
+        const vistos = new Set(), items = [];
+        for (const l of lineas) {
+          const k = l.NOFACTURA + '|' + trim(l.SERIEFAC);
+          if (!vistos.has(k)) { vistos.add(k); items.push({ id: l.NOFACTURA, serie: trim(l.SERIEFAC) }); }
+        }
+        const res1 = await conciliacion.ajustarFacturas(tx, items, { incluirSinRespaldo: true });
+        res1.filter(r => r.ok).forEach(r => cambios.push({ folio: r.id, campo: 'Factura: pagos realizados', antes: r.antes.PagosReal, despues: r.despues.PagosReal, status: r.despues.Status }));
+      }
+
+      for (const l of lineas) {
+        const fac = (await new sql.Request(tx).input('id', sql.Decimal(9), l.NOFACTURA).input('s', sql.VarChar(20), serieKey(l.SERIEFAC))
+          .query(`SELECT TOTAL, PagosReal, NotasCredito FROM Empresa2.Factura WHERE Id_NoFactura=@id AND ISNULL(LTRIM(RTRIM(SerieFac)),'')=ISNULL(@s,'')`)).recordset[0];
+        if (!fac) continue;
+        const cubiertoPorOtros = estado === 'REALIZADO'
+          ? Math.max(0, num(fac.PagosReal) + num(fac.NotasCredito) - num(l.TOTALPAGO))
+          : num(fac.PagosReal) + num(fac.NotasCredito);
+        const saldoNuevo = Math.round(Math.max(0, num(fac.TOTAL) - cubiertoPorOtros) * 100) / 100;
+        if (Math.abs(saldoNuevo - num(l.SALDOANT)) > 0.005) {
+          await new sql.Request(tx).input('id', sql.Decimal(9), idNoPago).input('idd', sql.Decimal(7), l.ID_NOPAGFAC).input('s', sql.Decimal(11, 2), saldoNuevo)
+            .query(`UPDATE Empresa2.PagFac SET SALDOANT=@s WHERE ID_NOPAGO=@id AND ID_NOPAGFAC=@idd`);
+          cambios.push({ folio: l.NOFACTURA, campo: 'Saldo disponible', antes: num(l.SALDOANT), despues: saldoNuevo });
+        }
+        // Sin pagos previos ni compensación: el pago es el saldo disponible completo.
+        // En cualquier caso, lo pagado no puede exceder el saldo disponible real.
+        const comp = flagComp ? num(l.COMPESACION) : 0;
+        const sinPagosPrevios = cubiertoPorOtros < 0.005 && comp < 0.005;
+        const imprteObjetivo = sinPagosPrevios ? saldoNuevo : num(l.IMPRTE);
+        if (Math.abs(imprteObjetivo - num(l.IMPRTE)) > 0.005 || num(l.IMPRTE) + comp > saldoNuevo + 0.005) {
+          const r = await fijarImporteLinea(tx, idNoPago, l.ID_NOPAGFAC, imprteObjetivo, comp, estado);
+          cambios.push({ folio: l.NOFACTURA, campo: 'Pago', antes: num(l.IMPRTE), despues: Math.min(imprteObjetivo, saldoNuevo), limitado: r.limitado });
+        }
+      }
+      // Factura.PagosReal debe quedar igual a lo que respaldan los cobros vigentes (incluye este).
+      if (estado === 'REALIZADO') {
+        const vistos2 = new Set(), items2 = [];
+        for (const l of lineas) {
+          const k = l.NOFACTURA + '|' + trim(l.SERIEFAC);
+          if (!vistos2.has(k)) { vistos2.add(k); items2.push({ id: l.NOFACTURA, serie: trim(l.SERIEFAC) }); }
+        }
+        await conciliacion.ajustarFacturas(tx, items2, { incluirSinRespaldo: true });
+      }
+      await recalcularSumaPartidas(tx, idNoPago);
+    });
+    res.json({ ok: true, cambios });
   } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
 });
 
@@ -451,6 +569,12 @@ router.post('/partida/eliminar', requierePermiso('pagos.editar'), async (req, re
   try {
     const pool = await getPool();
     await withTransaction(pool, async (tx) => {
+      const estadoCobro = await estadoCobroEditable(tx, idNoPago);
+      const lin = (await new sql.Request(tx).input('idpago', sql.Decimal(9), idNoPago).input('idd', sql.Decimal(7), idNoPagFac)
+        .query(`SELECT * FROM Empresa2.PagFac WITH (UPDLOCK, ROWLOCK) WHERE ID_NOPAGO=@idpago AND ID_NOPAGFAC=@idd`)).recordset[0];
+      if (!lin) throw Object.assign(new Error('Línea no encontrada.'), { status: 404 });
+      // Cobro ya REALIZADO: al quitar la línea se devuelve su saldo a la factura.
+      if (estadoCobro === 'REALIZADO') await aplicarEfectoLinea(tx, lin, -1);
       await new sql.Request(tx).input('idpago', sql.Decimal(9), idNoPago).input('idd', sql.Decimal(7), idNoPagFac)
         .query(`DELETE FROM Empresa2.PagFac WHERE ID_NOPAGO=@idpago AND ID_NOPAGFAC=@idd`);
       await recalcularSumaPartidas(tx, idNoPago);
@@ -476,6 +600,7 @@ router.post('/cabecera/actualizar', requierePermiso('pagos.editar'), async (req,
       let sets = ['FlagCompensacion=@flagComp'];
       if (trim(req.body.fecha)) { r2.input('fecha', sql.Date, trim(req.body.fecha)); sets.push('Fecha=@fecha'); }
       if (trim(req.body.fechaPago)) { r2.input('fechaPago', sql.Date, trim(req.body.fechaPago)); sets.push('FechaPago=@fechaPago'); }
+      if (horaValida(req.body.horaPago)) { r2.input('horaPago', sql.VarChar(8), horaValida(req.body.horaPago)); sets.push('HoraPago=@horaPago'); }
       if (trim(req.body.c_FormaPago)) { r2.input('cformapago', sql.VarChar(4), trim(req.body.c_FormaPago)); sets.push('c_FormaPago=@cformapago'); }
       if (trim(req.body.FormaPago)) { r2.input('formapago', sql.VarChar(45), trim(req.body.FormaPago)); sets.push('FormaPago=@formapago'); }
       if (trim(req.body.tipoCambio) !== '') { r2.input('tipoCambio', sql.VarChar(20), trim(req.body.tipoCambio)); sets.push('TipoCambio=@tipoCambio'); }
@@ -498,9 +623,10 @@ router.post('/cabecera/grabar', requierePermiso('pagos.editar'), async (req, res
   try {
     const pool = await getPool();
     await withTransaction(pool, async (tx) => {
-      const cabRes = await new sql.Request(tx).input('id', sql.Decimal(9), idNoPago).query(`SELECT * FROM Empresa2.Pagos WHERE Id_NoPago=@id`);
-      const cab = cabRes.recordset[0];
-      if (!cab) throw Object.assign(new Error('Cobro no encontrado.'), { status: 404 });
+      // Con el candado de fila, un doble clic o un segundo Grabar no aplica el saldo dos veces:
+      // si ya está REALIZADO, sus líneas ya aplicaron su saldo (y los cambios posteriores lo
+      // aplican al momento), así que no hay nada más que hacer.
+      if (await estadoCobroEditable(tx, idNoPago) === 'REALIZADO') return;
 
       const detRes = await new sql.Request(tx).input('id', sql.Decimal(9), idNoPago).query(`SELECT * FROM Empresa2.PagFac WHERE ID_NOPAGO=@id`);
       if (!detRes.recordset.length) throw Object.assign(new Error('El cobro no tiene líneas.'), { status: 400 });
@@ -587,3 +713,4 @@ module.exports = router;
 // Reexpuesto para que app/routes/cfdi.js pueda revertir el efecto de saldo
 // SOLO después de que el PAC confirme la cancelación fiscal (POST /cfdi/cancelar-pago).
 module.exports.revertirEfectoSaldoPago = revertirEfectoSaldoPago;
+module.exports.estadoCobroEditable = estadoCobroEditable;

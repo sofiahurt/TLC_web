@@ -66,7 +66,7 @@ async function buildCFDIPago(idNoPago, centralOperativo, pool) {
     if (!tc || tc <= 0) throw new Error(`El Cobro ${idNoPago} está en ${monedaP} pero no tiene un tipo de cambio válido capturado.`);
     tipoCambioP = String(tc);
   }
-  const fechaPago    = isoFechaHora(cab.FechaPago || cab.Fecha, null);
+  const fechaPago    = isoFechaHora(cab.FechaPago || cab.Fecha, cab.HoraPago || null);
 
   // 5. Datos por línea: saldo/UUID/parcialidad de cada documento relacionado.
   // NumParcialidad = # de pagos NO cancelados ya timbrados contra ese mismo

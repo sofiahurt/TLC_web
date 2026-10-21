@@ -1,0 +1,121 @@
+<%- include('partials/header', { titulo: 'Conciliar Saldos' }) %>
+<%- include('partials/sidebar') %>
+<div id="page-content">
+  <div class="d-flex align-items-center mb-3">
+    <button class="btn btn-sm btn-outline-secondary me-3 d-md-none" id="sidebarToggle"><i class="bi bi-list fs-5"></i></button>
+    <h4 class="mb-0 fw-bold flex-grow-1">Conciliar Saldos</h4>
+  </div>
+
+  <div class="card border-0 shadow-sm mb-3"><div class="card-body">
+    <p class="text-muted small mb-2">
+      Compara cada <strong>Factura</strong> contra los <strong>Cobros REALIZADOS</strong> y las <strong>Notas de Crédito EMITIDAS</strong> que realmente la afectan,
+      y detecta lo que se duplicó o no se guardó bien: <code>PagosReal</code>, <code>NotasCredito</code> y <code>Status</code> (PAGADA / PAGO PARCIAL / EMITIDA).
+      Las <strong>Notas de Débito</strong> se concilian por Status. Primero se revisa; solo se ajusta lo que usted marque.
+    </p>
+    <div class="row g-2 align-items-end">
+      <div class="col-auto"><label class="form-label small mb-0">Documento</label>
+        <select id="fTipo" class="form-select form-select-sm"><option value="factura">Facturas</option><option value="nd">Notas de Débito</option></select></div>
+      <div class="col-auto"><label class="form-label small mb-0">Id cliente</label><input type="number" id="fCliente" class="form-control form-control-sm" style="width:110px"></div>
+      <div class="col-auto"><label class="form-label small mb-0">Folio</label><input type="number" id="fFolio" class="form-control form-control-sm" style="width:110px"></div>
+      <div class="col-auto"><label class="form-label small mb-0">Folio desde</label><input type="number" id="fFolD" class="form-control form-control-sm" style="width:110px"></div>
+      <div class="col-auto"><label class="form-label small mb-0">Folio hasta</label><input type="number" id="fFolH" class="form-control form-control-sm" style="width:110px"></div>
+      <div class="col-auto"><label class="form-label small mb-0">Desde</label><input type="date" id="fDesde" class="form-control form-control-sm"></div>
+      <div class="col-auto"><label class="form-label small mb-0">Hasta</label><input type="date" id="fHasta" class="form-control form-control-sm"></div>
+      <div class="col-auto"><button class="btn btn-sm btn-primary" id="btnRevisar" onclick="revisar()"><i class="bi bi-search"></i> Revisar</button></div>
+    </div>
+    <div id="msg" class="alert d-none py-2 small mt-3 mb-0"></div>
+  </div></div>
+
+  <div class="card border-0 shadow-sm d-none" id="card"><div class="card-body p-0">
+    <div class="d-flex flex-wrap align-items-center gap-2 p-2 border-bottom">
+      <span class="small text-muted" id="resumen"></span>
+      <div class="ms-auto d-flex align-items-center gap-3">
+        <div class="form-check small mb-0"><input class="form-check-input" type="checkbox" id="chkRiesgo"><label class="form-check-label" for="chkRiesgo" title="Documentos cuyo saldo supera lo que respaldan los cobros/notas de este sistema (puede venir del sistema anterior). Ajustarlos quita ese excedente.">Incluir "sin respaldo"</label></div>
+        <button class="btn btn-sm btn-warning" id="btnAjustar" onclick="ajustar()" disabled><i class="bi bi-wrench-adjustable"></i> Ajustar seleccionados (<span id="nSel">0</span>)</button>
+      </div>
+    </div>
+    <div class="table-responsive"><table class="table table-hover table-sm mb-0 align-middle" id="tbl"><thead class="thead-tlc"></thead><tbody></tbody></table></div>
+  </div></div>
+</div>
+
+<%- include('partials/footer') %>
+<script>
+const el = id => document.getElementById(id);
+const esc = v => String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const money = v => Number(v || 0).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
+let _tipo = 'factura', _filas = [];
+
+function aviso(m, clase) { const e = el('msg'); e.className = 'alert py-2 small mt-3 mb-0 alert-' + (clase || 'danger') + (m ? '' : ' d-none'); e.innerHTML = m || ''; }
+const RIESGO = {
+  sin_respaldo: ['bg-secondary', 'Sin respaldo', 'El saldo registrado supera lo que respaldan los cobros/notas de este sistema (puede incluir pagos del sistema anterior). Ajustar los quitaría.'],
+  sobreaplicada: ['bg-danger', 'Sobreaplicada', 'Cobros + notas superan el total: revisar si hay un cobro duplicado antes de ajustar.'],
+  cancelada: ['bg-dark', 'Cancelada', 'Factura cancelada con cobros/notas; solo informativo, no se ajusta.'],
+};
+const badgeRiesgo = r => r && RIESGO[r] ? `<span class="badge ${RIESGO[r][0]}" title="${esc(RIESGO[r][2])}">${RIESGO[r][1]}</span>` : '';
+const claveFila = f => _tipo === 'nd' ? f.Id_NotaCredito + '|' + f.Serie : f.Id_NoFactura + '|' + f.SerieFac;
+
+async function revisar(conservarAviso) {
+  if (conservarAviso !== true) aviso('');
+  const b = el('btnRevisar'); b.disabled = true;
+  _tipo = el('fTipo').value;
+  const p = new URLSearchParams({ tipo: _tipo, cliente: el('fCliente').value, folio: el('fFolio').value, folioDesde: el('fFolD').value, folioHasta: el('fFolH').value, desde: el('fDesde').value, hasta: el('fHasta').value });
+  try {
+    const d = await fetch('/utilerias/conciliacion/data?' + p).then(r => r.json());
+    if (d.error) throw new Error(d.error);
+    _filas = d.filas;
+    el('card').classList.remove('d-none');
+    el('resumen').textContent = `${d.revisados} revisado(s) · ${d.totalConDiferencias} con diferencias` + (d.totalConDiferencias > d.filas.length ? ` (se muestran ${d.filas.length}; afine los filtros)` : '');
+    pintar();
+  } catch (e) { aviso(esc(e.message)); } finally { b.disabled = false; }
+}
+
+function pintar() {
+  const fac = _tipo === 'factura';
+  el('tbl').querySelector('thead').innerHTML = fac
+    ? `<tr><th><input type="checkbox" class="form-check-input" onchange="marcarTodos(this.checked)"></th><th>Factura</th><th>Cliente</th><th class="text-end">Total</th>
+        <th class="text-end">Pagos (hoy → debe)</th><th class="text-end">Notas (hoy → debe)</th><th>Status (hoy → debe)</th><th>Cobros / Notas</th><th>Hallazgos</th></tr>`
+    : `<tr><th><input type="checkbox" class="form-check-input" onchange="marcarTodos(this.checked)"></th><th>Nota Débito</th><th>Cliente</th><th class="text-end">Total</th>
+        <th class="text-end">Aplicado</th><th>Status (hoy → debe)</th><th>Cobros / Notas</th><th>Hallazgos</th></tr>`;
+  const cambia = (a, b, f) => Math.abs(a - b) > 0.005 ? `<span class="text-danger">${f(a)}</span> → <strong>${f(b)}</strong>` : f(a);
+  el('tbl').querySelector('tbody').innerHTML = _filas.length ? _filas.map((f, i) => {
+    const bloqueada = f.riesgo === 'cancelada';
+    const chk = `<td><input type="checkbox" class="form-check-input chkF" data-i="${i}" ${bloqueada ? 'disabled' : ''} onchange="contar()"></td>`;
+    const rel = [f.CobrosIds && 'Cobros: ' + f.CobrosIds, f.NotasIds && 'Notas: ' + f.NotasIds].filter(Boolean).join(' · ');
+    const st = `${f.Status === f.StatusEsp || !f.StatusEsp ? esc(f.Status) : `<span class="text-danger">${esc(f.Status)}</span> → <strong>${esc(f.StatusEsp)}</strong>`}`;
+    const hall = f.hallazgos.map(esc).join('<br>') + ' ' + badgeRiesgo(f.riesgo);
+    return fac
+      ? `<tr>${chk}<td class="text-nowrap">${esc(f.SerieFac)}${f.SerieFac ? '-' : ''}${f.Id_NoFactura}</td><td class="small">${esc(f.Id_Cliente)} ${esc(f.Cliente)}</td><td class="text-end">${money(f.TOTAL)}</td>
+          <td class="text-end">${cambia(f.PagosReal, f.PagosExp, money)}</td><td class="text-end">${cambia(f.NotasCredito, f.NCExp, money)}</td>
+          <td>${st}</td><td class="small">${esc(rel)}</td><td class="small">${hall}</td></tr>`
+      : `<tr>${chk}<td class="text-nowrap">${esc(f.Serie)}${f.Serie ? '-' : ''}${f.Id_NotaCredito}</td><td class="small">${esc(f.Id_Cliente)} ${esc(f.Cliente)}</td><td class="text-end">${money(f.ImporteTotal)}</td>
+          <td class="text-end">${money(f.Aplicado)}</td><td>${st}</td><td class="small">${esc(rel)}</td><td class="small">${hall}</td></tr>`;
+  }).join('') : `<tr><td colspan="9" class="text-center text-success py-3"><i class="bi bi-check-circle"></i> Todo conciliado con los filtros indicados.</td></tr>`;
+  contar();
+}
+
+const marcados = () => [...document.querySelectorAll('.chkF:checked')].map(c => _filas[+c.dataset.i]);
+function marcarTodos(v) { document.querySelectorAll('.chkF:not(:disabled)').forEach(c => { c.checked = v; }); contar(); }
+function contar() { const n = marcados().length; el('nSel').textContent = n; el('btnAjustar').disabled = !n; }
+
+async function ajustar() {
+  const sel = marcados();
+  if (!sel.length) return;
+  const riesgosos = sel.filter(f => f.riesgo === 'sin_respaldo' || f.riesgo === 'sobreaplicada').length;
+  let msg = `Se ajustará el saldo y Status de ${sel.length} documento(s) para que coincidan con sus cobros y notas.`;
+  if (riesgosos) msg += `\n\n${riesgosos} están marcados como "sin respaldo" o "sobreaplicada": revíselos antes de continuar.`;
+  if (!confirm(msg + '\n\n¿Continuar?')) return;
+  const b = el('btnAjustar'); b.disabled = true;
+  try {
+    const r = await fetch('/utilerias/conciliacion/ajustar', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tipo: _tipo, incluirSinRespaldo: el('chkRiesgo').checked,
+        items: sel.map(f => _tipo === 'nd' ? { id: f.Id_NotaCredito, serie: f.Serie } : { id: f.Id_NoFactura, serie: f.SerieFac }) }),
+    });
+    const d = await r.json();
+    if (!r.ok || d.error) throw new Error(d.error || 'No se pudo ajustar.');
+    const ok = d.resultado.filter(x => x.ok), no = d.resultado.filter(x => !x.ok);
+    aviso(`<strong>${ok.length}</strong> ajustado(s)` + (no.length ? `, <strong>${no.length}</strong> omitido(s):<ul class="mb-0">${no.map(x => `<li>${esc(x.serie)}${x.serie ? '-' : ''}${esc(x.id)}: ${esc(x.motivo)}</li>`).join('')}</ul>` : '.'), no.length ? 'warning' : 'success');
+    await revisar(true);
+  } catch (e) { aviso(esc(e.message)); b.disabled = false; }
+}
+</script>
