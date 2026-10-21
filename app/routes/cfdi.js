@@ -701,7 +701,7 @@ router.get('/pdf-notacredito', async (req, res) => {
     const pool = await getPool();
     const buffer = await generarPDFBufferNotaCredito(tipo, serie, idNotaCredito, central, pool);
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="NC_${tipo}${idNotaCredito}.pdf"`);
+    res.setHeader('Content-Disposition', `inline; filename="${tipo}_${idNotaCredito}.pdf"`);
     res.send(buffer);
   } catch (err) {
     console.error('CFDI pdf-notacredito error:', err);
@@ -759,7 +759,7 @@ router.get('/acuse-notacredito', async (req, res) => {
     const pool = await getPool();
     const buffer = await generarPDFBufferAcuse('notacredito', { tipo, serie, idNotaCredito, central }, pool);
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="NC_${tipo}${idNotaCredito}_Acuse.pdf"`);
+    res.setHeader('Content-Disposition', `inline; filename="${tipo}_${idNotaCredito}_Acuse.pdf"`);
     res.send(buffer);
   } catch (err) {
     console.error('CFDI acuse-notacredito error:', err);

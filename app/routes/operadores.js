@@ -10,28 +10,30 @@ router.get('/data', async (req, res) => {
   try {
     const data = await browseQuery({
       table: 'Empresa2.Operadores',
-      columns: ['ID_OPERADOR','OPERADOR','RFC','CIUDAD','STATUS','NOLICENCIA','TELEFONO','CELULAR','FECHABAJA'],
-      searchableCols: ['ID_OPERADOR','OPERADOR','RFC','CIUDAD','STATUS'],
+      columns: ['ID_OPERADOR','OPERADOR','RFC','CURP','NSS','NOLICENCIA','TELEFONO','CELULAR','STATUS',
+        'CALLE','NOEXT','NOINT','COLONIA','CIUDAD','MUNICIPIO','ESTADO','PAIS','CP','NEXTEL','INFONAVIT','TIPODESINFONAVIT','FECHABAJA'],
+      searchableCols: ['ID_OPERADOR','OPERADOR','RFC','CURP','NSS','NOLICENCIA','TELEFONO','STATUS'],
       req
     });
-    const rows = data.rows.map(r =>
-      `<tr data-id="${r.ID_OPERADOR}">
-        <td data-field="ID_OPERADOR" data-value="${r.ID_OPERADOR}">${r.ID_OPERADOR}</td>
-        <td data-field="OPERADOR" data-value="${(r.OPERADOR||'').trim()}">${(r.OPERADOR||'').trim()}</td>
-        <td data-field="RFC" data-value="${(r.RFC||'').trim()}">${(r.RFC||'').trim()}</td>
-        <td data-field="CIUDAD" data-value="${(r.CIUDAD||'').trim()}">${(r.CIUDAD||'').trim()}</td>
-        <td data-field="STATUS" data-value="${(r.STATUS||'').trim()}">${(r.STATUS||'').trim()}</td>
-        <td data-field="NOLICENCIA" data-value="${(r.NOLICENCIA||'').trim()}">${(r.NOLICENCIA||'').trim()}</td>
-        <td data-field="TELEFONO" data-value="${(r.TELEFONO||'').trim()}">${(r.TELEFONO||'').trim()}</td>
-        <td data-field="CELULAR" data-value="${(r.CELULAR||'').trim()}">${(r.CELULAR||'').trim()}</td>
-        <td data-field="FECHABAJA" data-value="${r.FECHABAJA ? r.FECHABAJA.toISOString().slice(0,10) : ''}">${r.FECHABAJA ? r.FECHABAJA.toISOString().slice(0,10) : ''}</td>
-      </tr>`).join('');
+    const t = v => String(v == null ? '' : v).trim().replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const td = (f, v, extra = '') => `<td data-field="${f}" data-value="${t(v)}"${extra}>${extra ? '' : t(v)}</td>`;
+    const oculto = ' style="display:none"';
+    const rows = data.rows.map(r => {
+      const tels = [t(r.TELEFONO), t(r.CELULAR)].filter(Boolean).join(' / ');
+      const fbaja = r.FECHABAJA ? r.FECHABAJA.toISOString().slice(0, 10) : '';
+      return `<tr data-id="${r.ID_OPERADOR}">
+        ${td('ID_OPERADOR', r.ID_OPERADOR)}${td('OPERADOR', r.OPERADOR)}${td('RFC', r.RFC)}${td('CURP', r.CURP)}${td('NSS', r.NSS)}${td('NOLICENCIA', r.NOLICENCIA)}
+        <td data-field="TELEFONOS" data-value="${tels}">${tels}</td>${td('STATUS', r.STATUS)}
+        ${['TELEFONO','CELULAR','CALLE','NOEXT','NOINT','COLONIA','CIUDAD','MUNICIPIO','ESTADO','PAIS','CP','NEXTEL','INFONAVIT','TIPODESINFONAVIT'].map(f => td(f, r[f], oculto)).join('')}
+        ${td('FECHABAJA', fbaja, oculto)}
+      </tr>`;
+    }).join('');
     res.json({ rows, page: data.page, totalPages: data.totalPages, total: data.total });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 router.post('/guardar', requierePermiso('operadores.editar'), async (req, res) => {
-  const { ID_OPERADOR, OPERADOR, RFC, NOLICENCIA, CALLE, NOEXT, NOINT, COLONIA, CIUDAD, MUNICIPIO, ESTADO, PAIS, CP, TELEFONO, NEXTEL, CELULAR, INFONAVIT, TIPODESINFONAVIT, FECHABAJA, STATUS, _mode } = req.body;
+  const { ID_OPERADOR, OPERADOR, RFC, NOLICENCIA, CALLE, NOEXT, NOINT, COLONIA, CIUDAD, MUNICIPIO, ESTADO, PAIS, CP, TELEFONO, NEXTEL, CELULAR, INFONAVIT, TIPODESINFONAVIT, FECHABAJA, STATUS, CURP, NSS, _mode } = req.body;
   try {
     const pool = await getPool();
     const r = pool.request()
@@ -54,12 +56,14 @@ router.post('/guardar', requierePermiso('operadores.editar'), async (req, res) =
       .input('info', sql.Decimal(13,2), INFONAVIT || null)
       .input('tinfo', sql.Char(20), TIPODESINFONAVIT)
       .input('fbaja', sql.Date, FECHABAJA || null)
-      .input('status', sql.Char(20), STATUS);
+      .input('status', sql.Char(20), STATUS)
+      .input('curp', sql.VarChar(20), (CURP || '').trim() || null)
+      .input('nss', sql.VarChar(20), (NSS || '').trim() || null);
     if (_mode === 'add') {
-      await r.query(`INSERT INTO Empresa2.Operadores(ID_OPERADOR,OPERADOR,RFC,NOLICENCIA,CALLE,NOEXT,NOINT,COLONIA,CIUDAD,MUNICIPIO,ESTADO,PAIS,CP,TELEFONO,NEXTEL,CELULAR,INFONAVIT,TIPODESINFONAVIT,FECHABAJA,STATUS)
-        VALUES(@id,@ope,@rfc,@lic,@calle,@noext,@noint,@col,@ciu,@mun,@est,@pais,@cp,@tel,@nex,@cel,@info,@tinfo,@fbaja,@status)`);
+      await r.query(`INSERT INTO Empresa2.Operadores(ID_OPERADOR,OPERADOR,RFC,NOLICENCIA,CALLE,NOEXT,NOINT,COLONIA,CIUDAD,MUNICIPIO,ESTADO,PAIS,CP,TELEFONO,NEXTEL,CELULAR,INFONAVIT,TIPODESINFONAVIT,FECHABAJA,STATUS,CURP,NSS)
+        VALUES(@id,@ope,@rfc,@lic,@calle,@noext,@noint,@col,@ciu,@mun,@est,@pais,@cp,@tel,@nex,@cel,@info,@tinfo,@fbaja,@status,@curp,@nss)`);
     } else {
-      await r.query(`UPDATE Empresa2.Operadores SET OPERADOR=@ope,RFC=@rfc,NOLICENCIA=@lic,CALLE=@calle,NOEXT=@noext,NOINT=@noint,COLONIA=@col,CIUDAD=@ciu,MUNICIPIO=@mun,ESTADO=@est,PAIS=@pais,CP=@cp,TELEFONO=@tel,NEXTEL=@nex,CELULAR=@cel,INFONAVIT=@info,TIPODESINFONAVIT=@tinfo,FECHABAJA=@fbaja,STATUS=@status WHERE ID_OPERADOR=@id`);
+      await r.query(`UPDATE Empresa2.Operadores SET OPERADOR=@ope,RFC=@rfc,NOLICENCIA=@lic,CALLE=@calle,NOEXT=@noext,NOINT=@noint,COLONIA=@col,CIUDAD=@ciu,MUNICIPIO=@mun,ESTADO=@est,PAIS=@pais,CP=@cp,TELEFONO=@tel,NEXTEL=@nex,CELULAR=@cel,INFONAVIT=@info,TIPODESINFONAVIT=@tinfo,FECHABAJA=@fbaja,STATUS=@status,CURP=@curp,NSS=@nss WHERE ID_OPERADOR=@id`);
     }
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: err.message }); }

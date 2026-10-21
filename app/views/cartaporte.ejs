@@ -67,6 +67,7 @@
       <div id="pagination">
         <button class="btn btn-sm btn-outline-secondary" data-action="prev"><i class="bi bi-chevron-left"></i> Anterior</button>
         <button class="btn btn-sm btn-outline-secondary" data-action="next">Siguiente <i class="bi bi-chevron-right"></i></button>
+        <button class="btn btn-sm btn-outline-primary ms-2" id="btnSigCapturada" onclick="saltarSiguienteCapturada()" title="Salta a la siguiente Carta Porte capturada (con Status), saltando las vacías"><i class="bi bi-chevron-double-right"></i> Siguiente capturada</button>
       </div>
     </div>
   </div>
@@ -787,6 +788,23 @@ fetch('/cartaporte/scroll-target')
     _targetCP = d.CartaPorte;
     browse.goToPage(d.page);
   });
+
+// Salta a la siguiente Carta Porte capturada (con Status) a partir de la seleccionada
+// (o de la primera de la página), saltando las vacías. Usa el orden actual por Carta Porte.
+function saltarSiguienteCapturada(){
+  const s=browse.getSort();
+  if(s.sort!=='CartaPorte'){alert('Ordene la lista por Carta Porte para usar este botón.');return;}
+  if(document.getElementById('searchInput').value.trim()){alert('Limpie la búsqueda para usar este botón.');return;}
+  const ref=window._selectedId || document.querySelector('#tableBody tr[data-id]')?.dataset.id || '';
+  const btn=document.getElementById('btnSigCapturada'); btn.disabled=true;
+  fetch('/cartaporte/next-filled?cp='+encodeURIComponent(ref)+'&dir='+s.dir).then(r=>r.json()).then(d=>{
+    btn.disabled=false;
+    if(d.error){alert(d.error);return;}
+    if(!d.found){alert('No hay más Cartas Porte capturadas en esa dirección.');return;}
+    _targetCP=d.CartaPorte;
+    browse.goToPage(d.page);
+  }).catch(()=>{btn.disabled=false;alert('Error de comunicación con el servidor.');});
+}
 
 // Actualizar estado de botones de acción según el status del registro seleccionado
 document.addEventListener('click', function(e) {

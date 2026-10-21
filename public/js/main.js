@@ -167,7 +167,7 @@ function initBrowse(options) {
   });
 
   load();
-  return { load, goToPage };
+  return { load, goToPage, getSort: () => ({ sort: currentSort, dir: currentDir }) };
 }
 
 // Lookup helper

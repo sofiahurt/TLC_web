@@ -12,6 +12,9 @@
       </select></div>
       <div class="col col-md-4"><input type="text" id="searchInput" class="form-control form-select-sm" placeholder="Buscar..."></div>
       <div class="col-auto ms-auto btn-action-group">
+        <% if (tienePermiso('tarifas.btn_exportar')) { %>
+        <button class="btn btn-sm btn-outline-success" onclick="exportarExcel()" title="Exporta las tarifas (según la búsqueda activa) a Excel"><i class="bi bi-file-earmark-excel"></i> Excel</button>
+        <% } %>
         <button class="btn btn-sm btn-success" onclick="openAdd()"><i class="bi bi-plus-lg"></i> Agregar</button>
         <button class="btn btn-sm btn-primary" data-requires-selection disabled onclick="openEdit()"><i class="bi bi-pencil"></i> Editar</button>
         <button class="btn btn-sm btn-danger" data-requires-selection disabled onclick="confirmDelete()"><i class="bi bi-trash"></i> Eliminar</button>
@@ -104,6 +107,9 @@
 
 <%- include('partials/footer') %>
 <script>
+function exportarExcel(){
+  window.location='/tarifas/excel?q='+encodeURIComponent(document.getElementById('searchInput').value.trim())+'&col='+encodeURIComponent(document.getElementById('searchCol').value);
+}
 const browse=initBrowse({searchInput:document.getElementById('searchInput'),searchColumn:document.getElementById('searchCol'),tableBody:document.getElementById('tableBody'),paginationEl:document.getElementById('pagination'),infoEl:document.getElementById('pageInfo'),fetchUrl:'/tarifas/data'});
 let _mode='add';const modal=new bootstrap.Modal(document.getElementById('frmModal'));
 const numFlds=['ID_TARIFA','TIPOCAMBIO','KILOMETROS','DIESELPERMITIDO'];

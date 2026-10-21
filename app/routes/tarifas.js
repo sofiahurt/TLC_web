@@ -4,8 +4,49 @@ const { getPool, sql } = require('../config/db');
 const { browseQuery } = require('../config/browse');
 const { requierePermiso } = require('../middleware/permisos');
 const { getSatDb } = require('../config/sat-db');
+const ExcelJS = require('exceljs');
 
 router.get('/', (req, res) => res.render('tarifas', { usuario: req.session.usuario, modulo: 'tarifas' }));
+
+// Excel de las tarifas (respeta la búsqueda activa del browse).
+const EXCEL_BUSCABLES = new Set(['ID_TARIFA','CDORIGEN','CDDESTINO','DESFLETE','NOMBRECOMUNCLI','NOMBRECOMUNTRANS','FLETE']);
+router.get('/excel', requierePermiso('tarifas.btn_exportar'), async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim(), col = String(req.query.col || '');
+    const pool = await getPool();
+    const r = pool.request();
+    let where = '';
+    if (q && EXCEL_BUSCABLES.has(col)) { where = `WHERE LTRIM(RTRIM(CAST(${col} AS NVARCHAR(MAX)))) LIKE @q`; r.input('q', `%${q}%`); }
+    const data = await r.query(`SELECT ID_TARIFA, NOMBRECOMUNCLI, FLETE, CDORIGEN, CDDESTINO, RENTA, COSTOKILOMTS, COSTOAUTOPISTAS, VENTA,
+        DIESELPERMITIDO, PAGOTARIFA, KILOMETROS, MONVENTA, FLAGIVA, FLAGRET
+      FROM Empresa2.Tarifas ${where} ORDER BY ID_TARIFA`);
+
+    const t = v => String(v == null ? '' : v).trim();
+    const n = v => (v == null ? null : Number(v));
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Tarifas');
+    const cols = ['NoTarifa', 'Cliente', 'Tipo', 'CD_Origen', 'CD_Destino', 'Flete/Renta', 'Costo Kilómetros', 'Costo Autopistas', 'Venta',
+      'Diesel Permitido', 'Pago Tarifa', 'Kilómetros', 'Moneda', 'Sin IVA', 'Sin Retención'];
+    const enc = ws.addRow(cols);
+    enc.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    enc.eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E78' } }; c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }; });
+    for (const x of data.recordset) {
+      ws.addRow([n(x.ID_TARIFA), t(x.NOMBRECOMUNCLI), t(x.FLETE), t(x.CDORIGEN), t(x.CDDESTINO), n(x.RENTA), n(x.COSTOKILOMTS), n(x.COSTOAUTOPISTAS), n(x.VENTA),
+        n(x.DIESELPERMITIDO), n(x.PAGOTARIFA), n(x.KILOMETROS), t(x.MONVENTA), Number(x.FLAGIVA) === 1 ? 'Sí' : 'No', Number(x.FLAGRET) === 1 ? 'Sí' : 'No']);
+    }
+    const anchos = [11, 38, 22, 26, 26, 14, 16, 16, 14, 16, 14, 12, 10, 9, 14];
+    ws.columns.forEach((c, i) => { c.width = anchos[i]; if (i >= 5 && i <= 10) c.numFmt = '$#,##0.00'; if (i === 11) c.numFmt = '#,##0.00'; if (i >= 13) c.alignment = { horizontal: 'center' }; });
+    ws.views = [{ state: 'frozen', ySplit: 1 }];
+    ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: cols.length } };
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="Tarifas.xlsx"');
+    await wb.xlsx.write(res);
+    res.end();
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ error: err.message }); else res.end();
+  }
+});
 
 router.get('/data', async (req, res) => {
   try {

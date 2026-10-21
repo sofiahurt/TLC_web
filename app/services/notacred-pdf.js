@@ -58,19 +58,19 @@ function extraerDatosXMLNotaCredito(xmlString) {
 // PDF. Se arma siempre desde NotaCredDeta, independiente de si la nota se
 // muestra "resumida" (Un Concepto) o detallada línea por línea.
 async function documentosRelacionados(lineas, pool) {
-  const mapa = new Map(); // uuid -> serie
+  const mapa = new Map(); // uuid -> { serie, folio }
   for (const l of lineas) {
     if (Number(l.ID_NOFACTURA) > 0 && fmt(l.UUIDFac)) {
-      mapa.set(fmt(l.UUIDFac), fmt(l.SerieFac));
+      mapa.set(fmt(l.UUIDFac), { serie: fmt(l.SerieFac) || fmt(l.SerieND) || (Number(l.Id_NotaDebito) > 0 ? 'ND' : ''), folio: String(l.ID_NOFACTURA) });
     } else if (Number(l.Id_NotaDebito) > 0) {
       const ndRes = await pool.request()
         .input('id', sql.Decimal(7), l.Id_NotaDebito).input('serie', sql.VarChar(10), fmt(l.SerieND) || null)
         .query(`SELECT UUID FROM Empresa2.NotaCred WHERE Id_NotaCredito=@id AND LTRIM(RTRIM(Tipo))='ND' AND ISNULL(LTRIM(RTRIM(Serie)),'')=ISNULL(@serie,'')`);
       const u = fmt(ndRes.recordset[0]?.UUID);
-      if (u) mapa.set(u, fmt(l.SerieND));
+      if (u) mapa.set(u, { serie: fmt(l.SerieND) || 'ND', folio: String(l.Id_NotaDebito) });
     }
   }
-  return Array.from(mapa, ([uuid, serie]) => ({ serie, uuid }));
+  return Array.from(mapa, ([uuid, v]) => ({ serie: v.serie, folio: v.folio, uuid }));
 }
 
 async function datosParaImpresionNotaCredito(tipo, serie, idNotaCredito, centralOperativo, pool) {
@@ -175,11 +175,11 @@ function tablaRelacionados(d) {
   return [{
     margin: [0, 10, 0, 0],
     table: {
-      widths: [90, '*'],
+      widths: [60, 60, '*'],
       body: [
-        [{ text: `DOCUMENTOS RELACIONADOS (${d.relacionados.length})`, fillColor: AZUL, color: 'white', bold: true, fontSize: 8, colSpan: 2 }, {}],
-        [{ text: 'SERIE', fillColor: AZUL, color: 'white', bold: true, fontSize: 8 }, { text: 'FOLIO FISCAL', fillColor: AZUL, color: 'white', bold: true, fontSize: 8 }],
-        ...d.relacionados.map(r => [{ text: r.serie, fontSize: 8 }, { text: r.uuid, fontSize: 8 }]),
+        [{ text: `DOCUMENTOS RELACIONADOS (${d.relacionados.length})`, fillColor: AZUL, color: 'white', bold: true, fontSize: 8, colSpan: 3 }, {}, {}],
+        [{ text: 'SERIE', fillColor: AZUL, color: 'white', bold: true, fontSize: 8 }, { text: 'FOLIO', fillColor: AZUL, color: 'white', bold: true, fontSize: 8 }, { text: 'FOLIO FISCAL', fillColor: AZUL, color: 'white', bold: true, fontSize: 8 }],
+        ...d.relacionados.map(r => [{ text: r.serie, fontSize: 8 }, { text: r.folio, fontSize: 8 }, { text: r.uuid, fontSize: 8 }]),
       ],
     },
   }];
@@ -188,18 +188,18 @@ function tablaRelacionados(d) {
 function tablaConceptos(d) {
   const esResumen = parseInt(d.nc.FlagResNota) === 1;
   const filas = esResumen
-    ? [[fmt(d.nc.c_ClaveProdServ), fmt(d.nc.Descripcion), `$${numFmt(d.nc.Subtotal, 2)}`]]
+    ? [[fmt(d.nc.c_ClaveProdServ), fmt(d.nc.c_ClaveUnidad), fmt(d.nc.Descripcion), `$${numFmt(d.nc.Subtotal, 2)}`]]
     : d.lineas.map(l => {
         const ref = Number(l.ID_NOFACTURA) > 0 ? `Factura #${l.ID_NOFACTURA}` : `ND #${l.Id_NotaDebito}`;
-        return [fmt(d.nc.c_ClaveProdServ), `${ref} — ${fmt(l.DESNOTACREDITO)}`, `$${numFmt(l.SUBTOTAL, 2)}`];
+        return [fmt(d.nc.c_ClaveProdServ), fmt(d.nc.c_ClaveUnidad), `${ref} — ${fmt(l.DESNOTACREDITO)}`, `$${numFmt(l.SUBTOTAL, 2)}`];
       });
   return {
     margin: [0, 10, 0, 0],
     table: {
-      widths: [65, '*', 75],
+      widths: [65, 40, '*', 75],
       body: [
-        [{ text: 'Clave', fillColor: AZUL, color: 'white', bold: true, fontSize: 8 }, { text: 'Descripción', fillColor: AZUL, color: 'white', bold: true, fontSize: 8 }, { text: 'Importe', fillColor: AZUL, color: 'white', bold: true, fontSize: 8, alignment: 'right' }],
-        ...filas.map(f => [{ text: f[0], fontSize: 8 }, { text: f[1], fontSize: 8 }, { text: f[2], fontSize: 8, alignment: 'right' }]),
+        [{ text: 'Clave', fillColor: AZUL, color: 'white', bold: true, fontSize: 8 }, { text: 'Unidad', fillColor: AZUL, color: 'white', bold: true, fontSize: 8 }, { text: 'Descripción', fillColor: AZUL, color: 'white', bold: true, fontSize: 8 }, { text: 'Importe', fillColor: AZUL, color: 'white', bold: true, fontSize: 8, alignment: 'right' }],
+        ...filas.map(f => [{ text: f[0], fontSize: 8 }, { text: f[1], fontSize: 8 }, { text: f[2], fontSize: 8 }, { text: f[3], fontSize: 8, alignment: 'right' }]),
       ],
     },
   };

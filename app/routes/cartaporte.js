@@ -128,6 +128,28 @@ router.get('/scroll-target', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ── SIGUIENTE CAPTURADA: salta a la siguiente Carta Porte con Status (llena), saltando las vacías ──
+// cp = folio de referencia; dir = sentido de la lista (desc: folios menores; asc: mayores).
+router.get('/next-filled', async (req, res) => {
+  try {
+    const pool  = await getPool();
+    const serie = req.session.central;
+    const anio  = parseInt(req.session.anio);
+    const ref   = (req.query.cp || '').trim();
+    const asc   = req.query.dir === 'asc';
+    const base  = `Serie = @serie AND (YEAR(FechaPedido) = @anio OR FechaPedido IS NULL)`;
+    const mk = () => pool.request().input('serie', sql.VarChar(3), serie).input('anio', sql.Int, anio).input('ref', sql.VarChar(30), ref);
+    const sig = await mk().query(`SELECT TOP 1 LTRIM(RTRIM(CartaPorte)) AS CartaPorte FROM Empresa2.CartaPorte
+      WHERE ${base} AND Status IS NOT NULL AND LTRIM(RTRIM(Status)) <> '' AND LTRIM(RTRIM(CartaPorte)) ${asc ? '>' : '<'} @ref
+      ORDER BY CartaPorte ${asc ? 'ASC' : 'DESC'}`);
+    if (!sig.recordset[0]) return res.json({ found: false });
+    const target = sig.recordset[0].CartaPorte;
+    const cnt = await mk().input('t', sql.VarChar(30), target).query(`SELECT COUNT(*) AS cnt FROM Empresa2.CartaPorte
+      WHERE ${base} AND LTRIM(RTRIM(CartaPorte)) ${asc ? '<' : '>'} @t`);
+    res.json({ found: true, CartaPorte: target, page: Math.ceil((cnt.recordset[0].cnt + 1) / 20) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ── SINGLE RECORD (for edit load) ────────────────────────────────────────────
 router.get('/get', async (req, res) => {
   try {
