@@ -1016,4 +1016,6 @@ document.addEventListener('keydown', function(e) {
     top.hide();
   }
 }, true);
+// Al abrir un lookup, el cursor queda en su campo de búsqueda
+[["lookupCliente","lkCliQ"],["lookupCP","cpLkQ"],["lookupSat","satLkQ"]].forEach(([m,q])=>{const el=document.getElementById(m);if(el)el.addEventListener('shown.bs.modal',()=>{const i=document.getElementById(q);if(i){i.focus();i.select();}});});
 </script>
