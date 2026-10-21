@@ -502,7 +502,7 @@ router.post('/linea/actualizar-importe', requierePermiso('pagos.editar'), async 
 // factura (p. ej. se canceló otro cobro después de capturar este), corrige
 // Factura.PagosReal/Status desde los cobros y notas vigentes, y reajusta en la
 // línea los pagos realizados / saldo disponible (SALDOANT) y lo pagado. ──────
-router.post('/ajustar-saldos', requierePermiso('pagos.editar'), async (req, res) => {
+router.post('/ajustar-saldos', requierePermiso('pagos.editar'), requierePermiso('pagos.btn_ajustar_saldos'), async (req, res) => {
   const idNoPago = parseInt(req.body.idNoPago);
   if (!idNoPago) return res.status(400).json({ error: 'Cobro inválido.' });
   try {

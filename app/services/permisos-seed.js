@@ -7,6 +7,7 @@ const PERMISOS = [
   { clave: 'cartaporte.btn_desbloquear', modulo: 'cartaporte', descripcion: 'Botón Desbloquear edición de CP Emitida (Carta Porte)', orden: 5 },
   { clave: 'depositos.ver',              modulo: 'depositos',  descripcion: 'Ver módulo Autorizar Depósitos y exportar a Excel',      orden: 1 },
   { clave: 'depositos.autorizar',        modulo: 'depositos',  descripcion: 'Marcar/desmarcar autorización de depósitos',             orden: 2 },
+  { clave: 'pagos.btn_ajustar_saldos',    modulo: 'pagos',      descripcion: 'Botón Ajustar saldos (Pagos)',                            orden: 5 },
   { clave: 'utilerias.conciliar',        modulo: 'utilerias',  descripcion: 'Conciliar Facturas contra Cobros y Notas de Crédito (revisar y ajustar saldos)', orden: 20 },
 ];
 

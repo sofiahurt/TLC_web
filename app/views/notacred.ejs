@@ -60,6 +60,11 @@
 </div>
 
 <!-- ═══════════════ MODAL NOTA ═══════════════ -->
+<style>
+  /* Documento timbrado: solo consulta */
+  #frmModal.solo-lectura .modal-body input, #frmModal.solo-lectura .modal-body select, #frmModal.solo-lectura .modal-body textarea { pointer-events:none; background-color:#e9ecef; }
+  #frmModal.solo-lectura .modal-body .btn, #frmModal.solo-lectura .modal-footer .btn-primary { display:none !important; }
+</style>
 <div class="modal fade" id="frmModal" tabindex="-1" data-bs-backdrop="static">
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
     <div class="modal-content">
@@ -70,6 +75,7 @@
       <div class="modal-body">
         <div id="frmError" class="alert alert-danger d-none py-2 small"></div>
         <div id="frmWarning" class="alert alert-warning d-none py-2 small"></div>
+        <div id="frmSoloLectura" class="alert alert-secondary d-none py-2 small"><i class="bi bi-lock-fill me-1"></i>Documento timbrado: solo se puede consultar.</div>
 
         <div class="row g-2 mb-2">
           <div class="col-md-9">
@@ -374,7 +380,13 @@ function hideError(){document.getElementById('frmError').classList.add('d-none')
 function showWarning(msg){const e=document.getElementById('frmWarning');e.textContent=msg;e.classList.remove('d-none');}
 function hideWarning(){document.getElementById('frmWarning').classList.add('d-none');}
 
+function setSoloLectura(on){
+  document.getElementById('frmModal').classList.toggle('solo-lectura', !!on);
+  document.getElementById('frmSoloLectura').classList.toggle('d-none', !on);
+  document.querySelectorAll('#frmModal .modal-body input:not([type=checkbox]):not([type=radio]), #frmModal .modal-body textarea').forEach(e=>{ if(on){ e.dataset.roPrev=e.readOnly?'1':'0'; e.readOnly=true; } else if(e.dataset.roPrev!==undefined){ e.readOnly=e.dataset.roPrev==='1'; delete e.dataset.roPrev; } });
+}
 function clearForm(){
+  setSoloLectura(false);
   _nota={idNotaCredito:null, serie:'', tipo:_tipoActivo, confirmada:false, cliente:null};
   document.getElementById('f_Tipo').value=_tipoActivo;
   document.getElementById('f_Tipo').disabled=false;
@@ -467,6 +479,7 @@ function cargarNota(tipo, serie, id){
     document.getElementById('f_RFC').value=(c.RFC||'').trim();
     document.getElementById('f_Status').value=(c.Status||'').trim();
     const yaTimbrada=!!(c.UUID||'').trim();
+    _nota.soloLectura=yaTimbrada;
     document.getElementById('f_EsResumen').checked=c.FlagResNota==1;
     document.getElementById('f_Fecha').value=(c.Fecha||'').toString().slice(0,10);
     document.getElementById('f_Fecha').disabled=yaTimbrada;
@@ -489,6 +502,7 @@ function cargarNota(tipo, serie, id){
     document.getElementById('f_TotalResumen_disp').value=fmtMoney(c.ImporteTotal);
     document.getElementById('f_ImporteLetras_disp').value=(c.ImporteLetras||'').trim();
     document.getElementById('f_WhoIs_disp').textContent=(c.WhoIs||'').trim()||USUARIO_ACTUAL;
+    setSoloLectura(yaTimbrada);
   });
 }
 
@@ -528,7 +542,7 @@ function onImporteResumenChange(){
 }
 
 function onCabeceraFieldChange(){
-  if(!_nota.idNotaCredito) return;
+  if(!_nota.idNotaCredito || _nota.soloLectura) return;
   const body={
     tipo:_nota.tipo, serie:_nota.serie, idNotaCredito:_nota.idNotaCredito,
     esResumen:document.getElementById('f_EsResumen').checked?1:0,

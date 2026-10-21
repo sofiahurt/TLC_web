@@ -121,7 +121,7 @@
                 <input type="text" id="filtroLineasQ" class="form-control form-control-sm" placeholder="Ubicar folio agregado...">
               </div>
               <div class="col-md-3">
-                <button class="btn btn-sm btn-outline-warning text-nowrap w-100" id="btnAjustarSaldos" onclick="ajustarSaldosCobro()" disabled title="Revisa cada línea contra el estado actual de su factura y corrige pagos realizados, saldo disponible y lo pagado"><i class="bi bi-wrench-adjustable"></i> Ajustar saldos</button>
+                <% if (tienePermiso('pagos.btn_ajustar_saldos')) { %><button class="btn btn-sm btn-outline-warning text-nowrap w-100" id="btnAjustarSaldos" onclick="ajustarSaldosCobro()" disabled title="Revisa cada línea contra el estado actual de su factura y corrige pagos realizados, saldo disponible y lo pagado"><i class="bi bi-wrench-adjustable"></i> Ajustar saldos</button><% } %>
               </div>
               <div class="col-12 small text-muted d-flex align-items-center gap-2">
                 <span id="detCount">0 documentos</span>
@@ -360,7 +360,7 @@ function clearForm(){
   document.getElementById('f_Hora').value=horaAhora();
   document.getElementById('f_HoraPago').value=horaAhora();
   document.getElementById('f_HoraPago').disabled=false;
-  document.getElementById('btnAjustarSaldos').disabled=true;
+  {const _ba=document.getElementById('btnAjustarSaldos'); if(_ba) _ba.disabled=true;}
   setSatField('f_c_FormaPago','f_c_FormaPago_disp','formaPago','03');
   setSatField('f_Moneda','f_Moneda_disp','moneda','MXN');
   document.getElementById('f_TipoCambio').value='';
@@ -426,7 +426,7 @@ function cargarPago(id, onDone){
     document.getElementById('f_Hora').value=horaDe(c.Hora);
     document.getElementById('f_HoraPago').value=horaDe(c.HoraPago);
     document.getElementById('f_HoraPago').disabled=yaTimbrado;
-    document.getElementById('btnAjustarSaldos').disabled=cerrado;
+    {const _ba=document.getElementById('btnAjustarSaldos'); if(_ba) _ba.disabled=cerrado;}
     document.querySelectorAll('.sat-lupa-btn').forEach(b=>b.disabled=yaTimbrado);
     setSatField('f_c_FormaPago','f_c_FormaPago_disp','formaPago',(c.c_FormaPago||'').trim());
     const monedaClave=(c.TipoFacturas||'').trim()==='Dolares'?'USD':'MXN';
@@ -743,7 +743,7 @@ function agregarLinea(tipoDoc, folio, serieRef){
       _pago.idNoPago=d.idNoPago;
       document.getElementById('f_Id_NoPago').value=d.idNoPago;
       document.getElementById('f_NombreCom_disp').readOnly=true;
-      document.getElementById('btnAjustarSaldos').disabled=false;
+      {const _ba=document.getElementById('btnAjustarSaldos'); if(_ba) _ba.disabled=false;}
       // Al agregar, entra directo a editar el importe a pagar de la línea
       // recién insertada (ND no aplica: es todo-o-nada, sin botón de editar).
       cargarPago(d.idNoPago, ()=>{

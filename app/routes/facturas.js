@@ -215,6 +215,14 @@ async function cobrableDepositos(tx, serie, cartaporte) {
 }
 
 // ── VISTA ────────────────────────────────────────────────────────────────────
+// Una factura timbrada (con UUID) es de solo lectura: ningún cambio puede
+// diferir del CFDI ya emitido. `db` es una transacción o el pool.
+async function exigirNoTimbrada(db, serieFac, idNoFactura) {
+  const r = (await reqSerieFac(db.request(), serieFac).input('id', sql.Decimal(9), idNoFactura)
+    .query(`SELECT UUID FROM Empresa2.Factura WHERE Id_NoFactura=@id AND ${SERIEFAC_EQ}`)).recordset[0];
+  if (r && trim(r.UUID)) throw Object.assign(new Error('La factura ya está timbrada; solo se puede consultar.'), { status: 409 });
+}
+
 router.get('/', async (req, res) => {
   try {
     const pool = await getPool();
@@ -514,8 +522,9 @@ router.post('/partida/agregar', requierePermiso('facturas.editar'), async (req, 
           )`);
       } else {
         const facRes = await reqSerieFac(new sql.Request(tx), serieFac).input('id', sql.Decimal(9), idNoFactura)
-          .query(`SELECT Status FROM Empresa2.Factura WHERE Id_NoFactura=@id AND ${SERIEFAC_EQ}`);
+          .query(`SELECT Status, UUID FROM Empresa2.Factura WHERE Id_NoFactura=@id AND ${SERIEFAC_EQ}`);
         if (!facRes.recordset[0]) throw Object.assign(new Error('Factura no encontrada.'), { status: 400 });
+        if (trim(facRes.recordset[0].UUID)) throw Object.assign(new Error('La factura ya está timbrada; solo se puede consultar.'), { status: 409 });
         if (trim(facRes.recordset[0].Status).toUpperCase() === 'CANCELADA') {
           throw Object.assign(new Error('No se pueden agregar partidas a una factura cancelada.'), { status: 400 });
         }
@@ -625,7 +634,8 @@ router.post('/cabecera/actualizar', requierePermiso('facturas.editar'), async (r
       // La fecha y los catálogos fiscales solo se pueden corregir mientras la
       // factura no esté timbrada; una vez con UUID deben coincidir siempre
       // con lo que ya se timbró en el CFDI real.
-      const yaTimbrada = !!trim(facRes.recordset[0].UUID);
+      if (trim(facRes.recordset[0].UUID)) throw Object.assign(new Error('La factura ya está timbrada; solo se puede consultar.'), { status: 409 });
+      const yaTimbrada = false;
       const nuevaFecha = !yaTimbrada && trim(req.body.fecha);
       let extraSet = '';
       const r2 = reqSerieFac(new sql.Request(tx), serieFac)
@@ -668,6 +678,7 @@ router.post('/partida/eliminar', requierePermiso('facturas.editar'), async (req,
   try {
     const pool = await getPool();
     await withTransaction(pool, async (tx) => {
+      await exigirNoTimbrada(tx, serieFac, idNoFactura);
       const lineaRes = await reqSerieFac(new sql.Request(tx), serieFac)
         .input('idf', sql.Decimal(9), idNoFactura).input('idd', sql.Decimal(6), idNoDetaFac)
         .query(`SELECT SERIE, CARTAPORTE FROM Empresa2.FacDeta WHERE ID_NOFACTURA=@idf AND ID_NODETAFAC=@idd AND ${SERIEFAC_EQ}`);
@@ -697,6 +708,7 @@ router.post('/detalle/toggle-flag', requierePermiso('facturas.editar'), async (r
   try {
     const pool = await getPool();
     const result = await withTransaction(pool, async (tx) => {
+      await exigirNoTimbrada(tx, serieFac, idNoFactura);
       const { montoCol, flagCol } = CONCEPTOS[concepto];
       const lineaRes = await reqSerieFac(new sql.Request(tx), serieFac)
         .input('idf', sql.Decimal(9), idNoFactura).input('idd', sql.Decimal(6), idNoDetaFac)
@@ -782,6 +794,7 @@ router.post('/detalle/editar', requierePermiso('facturas.editar'), async (req, r
   if (!idNoFactura || !idNoDetaFac) return res.status(400).json({ error: 'Faltan parámetros' });
   try {
     const pool = await getPool();
+    await exigirNoTimbrada(pool, serieFac, idNoFactura);
     const result = await reqSerieFac(pool.request(), serieFac)
       .input('idf', sql.Decimal(9), idNoFactura).input('idd', sql.Decimal(6), idNoDetaFac)
       .input('cve', sql.VarChar(20), claveProdServ || null)
@@ -790,7 +803,7 @@ router.post('/detalle/editar', requierePermiso('facturas.editar'), async (req, r
       .query(`UPDATE Empresa2.FacDeta SET C_CLAVEPRODSERV=@cve, DESCRIPCION=@desc, TEXTOADD=@texto WHERE ID_NOFACTURA=@idf AND ID_NODETAFAC=@idd AND ${SERIEFAC_EQ}`);
     if (!result.rowsAffected[0]) return res.status(404).json({ error: 'Línea no encontrada.' });
     res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
 });
 
 // ── CANCELAR FACTURA RECIÉN CREADA SIN CONFIRMAR (punto 4) ───────────────────
@@ -802,8 +815,9 @@ router.post('/cabecera/cancelar-sin-confirmar', requierePermiso('facturas.editar
     const pool = await getPool();
     await withTransaction(pool, async (tx) => {
       const facRes = await reqSerieFac(new sql.Request(tx), serieFac).input('id', sql.Decimal(9), idNoFactura)
-        .query(`SELECT Id_NoFactura FROM Empresa2.Factura WITH (UPDLOCK, ROWLOCK) WHERE Id_NoFactura=@id AND ${SERIEFAC_EQ}`);
+        .query(`SELECT Id_NoFactura, UUID FROM Empresa2.Factura WITH (UPDLOCK, ROWLOCK) WHERE Id_NoFactura=@id AND ${SERIEFAC_EQ}`);
       if (!facRes.recordset[0]) return; // ya no existe, nada que hacer
+      if (trim(facRes.recordset[0].UUID)) return; // timbrada: jamás se borra
 
       const lineasRes = await reqSerieFac(new sql.Request(tx), serieFac).input('id', sql.Decimal(9), idNoFactura)
         .query(`SELECT DISTINCT SERIE, CARTAPORTE FROM Empresa2.FacDeta WHERE ID_NOFACTURA=@id AND ${SERIEFAC_EQ}`);

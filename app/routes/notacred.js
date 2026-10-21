@@ -76,6 +76,34 @@ async function recalcularCabecera(tx, tipo, serie, id) {
   return vals;
 }
 
+// Una nota timbrada (con UUID) es de solo lectura. `db` es una transacción o el pool.
+async function exigirNoTimbrada(db, tipo, serie, id) {
+  const r = (await reqNC(db.request(), tipo, serie, id)
+    .query(`SELECT UUID FROM Empresa2.NotaCred WHERE Id_NotaCredito=@id AND ${NC_EQ}`)).recordset[0];
+  if (r && trim(r.UUID)) throw Object.assign(new Error('La nota ya está timbrada; solo se puede consultar.'), { status: 409 });
+}
+
+// Una nota detallada (no "un concepto") ya EMITIDA tiene su efecto aplicado sobre
+// las facturas/ND: cada cambio de línea aplica solo su diferencia y Grabar no
+// vuelve a aplicar nada (evita sumar dos veces lo ya aplicado).
+async function notaYaAplicada(db, tipo, serie, id) {
+  const r = (await reqNC(db.request(), tipo, serie, id)
+    .query(`SELECT Status, FlagResNota FROM Empresa2.NotaCred WHERE Id_NotaCredito=@id AND ${NC_EQ}`)).recordset[0];
+  return !!r && trim(r.Status).toUpperCase() === 'EMITIDA' && Number(r.FlagResNota) !== 1;
+}
+
+// signo=+1 aplica el importe de la línea, -1 lo devuelve. `importe` es el monto de la línea.
+async function aplicarEfectoLineaNC(tx, linea, signo, importe, anio) {
+  if (importe <= 0.005) return;
+  if (Number(linea.ID_NOFACTURA) > 0) {
+    await ajustarSaldoFactura(tx, 'nota_credito', {
+      idNoFactura: linea.ID_NOFACTURA, serieFac: linea.SerieFac, importe, signo, anio: signo > 0 ? anio : undefined,
+    });
+  } else if (Number(linea.Id_NotaDebito) > 0) {
+    await ajustarSaldoNotaDebito(tx, { idNotaDebito: linea.Id_NotaDebito, serieND: linea.SerieND, importeAplicado: signo > 0 ? importe : 0 });
+  }
+}
+
 router.get('/', (req, res) => res.render('notacred', { usuario: req.session.usuario, modulo: 'notacred' }));
 
 // ── BROWSE (2 pestañas NC/ND) ───────────────────────────────────────────────
@@ -328,6 +356,7 @@ router.post('/partida/agregar', requierePermiso('notacred.editar'), async (req, 
       // Cabecera: crear en borrador si es la primera línea.
       let idNotaCredito = parseInt(f.idNotaCredito) || 0;
       let serieCab = serieKey(f.serieCab);
+      let yaAplicada = false;
       if (!idNotaCredito) {
         const nextRes = await reqNC(new sql.Request(tx), tipo, serieCab).query(`SELECT ISNULL(MAX(Id_NotaCredito),0)+1 AS next FROM Empresa2.NotaCred WITH (UPDLOCK, HOLDLOCK) WHERE ${NC_EQ}`);
         idNotaCredito = nextRes.recordset[0].next;
@@ -369,8 +398,10 @@ router.post('/partida/agregar', requierePermiso('notacred.editar'), async (req, 
             @flagres, @tipo, 0, 0, 0, 0, 0, @whois, @lugarexp
           )`);
       } else {
-        const cabRes = await reqNC(new sql.Request(tx), tipo, serieCab, idNotaCredito).query(`SELECT Status FROM Empresa2.NotaCred WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
+        const cabRes = await reqNC(new sql.Request(tx), tipo, serieCab, idNotaCredito).query(`SELECT Status, UUID FROM Empresa2.NotaCred WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
         if (!cabRes.recordset[0]) throw Object.assign(new Error('Nota no encontrada.'), { status: 400 });
+        if (trim(cabRes.recordset[0].UUID)) throw Object.assign(new Error('La nota ya está timbrada; solo se puede consultar.'), { status: 409 });
+        yaAplicada = await notaYaAplicada(tx, tipo, serieCab, idNotaCredito);
 
         // Defensa por si el browse de selección quedó desactualizado (ej. dos
         // pestañas abiertas) -- el mismo documento no puede quedar dos veces
@@ -428,6 +459,14 @@ router.post('/partida/agregar', requierePermiso('notacred.editar'), async (req, 
         @totalfac, @pagosrealfac, @notascreditofac, @reten, @sub, @iva, @importeaplica, @desc
       )`);
 
+      // Nota ya EMITIDA: la línea nueva aplica su efecto de inmediato.
+      if (yaAplicada) {
+        await aplicarEfectoLineaNC(tx, {
+          ID_NOFACTURA: origen.esFactura ? origen.idRef : 0, SerieFac: origen.serieRef,
+          Id_NotaDebito: origen.esFactura ? 0 : origen.idRef, SerieND: origen.serieRef,
+        }, 1, importeAplica, new Date().getFullYear());
+      }
+
       const totales = await recalcularCabecera(tx, tipo, serieCab, idNotaCredito);
       return { idNotaCredito, serie: serieCab || '', idDeta, totales };
     });
@@ -444,6 +483,7 @@ router.post('/linea/actualizar-importe', requierePermiso('notacred.editar'), asy
   try {
     const pool = await getPool();
     const result = await withTransaction(pool, async (tx) => {
+      await exigirNoTimbrada(tx, tipo, serie, parseInt(idNotaCredito));
       const lineaRes = await reqNC(new sql.Request(tx), tipo, serie, parseInt(idNotaCredito))
         .input('idd', sql.Decimal(7), parseInt(idDeta))
         .query(`SELECT * FROM Empresa2.NotaCredDeta WITH (UPDLOCK, ROWLOCK) WHERE ID_NOTACREDITO=@id AND ID_NOTASCREDDETA=@idd AND ${NC_EQ}`);
@@ -483,6 +523,18 @@ router.post('/linea/actualizar-importe', requierePermiso('notacred.editar'), asy
         .input('ret', sql.Decimal(9,2), nuevoRet).input('apl', sql.Decimal(11,2), nuevoAplica)
         .query(`UPDATE Empresa2.NotaCredDeta SET SUBTOTAL=@sub, IVA=@iva, RETENCION=@ret, IMPORTEAPLICA=@apl WHERE ID_NOTACREDITO=@id AND ID_NOTASCREDDETA=@idd AND ${NC_EQ}`);
 
+      // Nota ya EMITIDA: solo se aplica la diferencia contra lo ya aplicado.
+      if (await notaYaAplicada(tx, tipo, serie, parseInt(idNotaCredito))) {
+        const dif = Math.round((nuevoAplica - num(linea.IMPORTEAPLICA)) * 100) / 100;
+        if (Math.abs(dif) > 0.005) {
+          if (Number(linea.ID_NOFACTURA) > 0) {
+            await ajustarSaldoFactura(tx, 'nota_credito', { idNoFactura: linea.ID_NOFACTURA, serieFac: linea.SerieFac, importe: dif, signo: 1 });
+          } else if (Number(linea.Id_NotaDebito) > 0) {
+            await ajustarSaldoNotaDebito(tx, { idNotaDebito: linea.Id_NotaDebito, serieND: linea.SerieND, importeAplicado: nuevoAplica });
+          }
+        }
+      }
+
       const totales = await recalcularCabecera(tx, tipo, serie, parseInt(idNotaCredito));
       return { limitado, saldoDisponible, totales };
     });
@@ -498,6 +550,7 @@ router.post('/linea/actualizar-descripcion', requierePermiso('notacred.editar'),
   const { tipo, serie, idNotaCredito, idDeta, descripcion } = req.body;
   try {
     const pool = await getPool();
+    await exigirNoTimbrada(pool, tipo, serie, parseInt(idNotaCredito));
     await reqNC(pool.request(), tipo, serie, parseInt(idNotaCredito))
       .input('idd', sql.Decimal(7), parseInt(idDeta))
       .input('desc', sql.VarChar(1000), trim(descripcion) || null)
@@ -511,6 +564,13 @@ router.post('/partida/eliminar', requierePermiso('notacred.editar'), async (req,
   try {
     const pool = await getPool();
     await withTransaction(pool, async (tx) => {
+      await exigirNoTimbrada(tx, tipo, serie, parseInt(idNotaCredito));
+      // Nota ya EMITIDA: al quitar la línea se devuelve su efecto a la factura/ND.
+      if (await notaYaAplicada(tx, tipo, serie, parseInt(idNotaCredito))) {
+        const lin = (await reqNC(new sql.Request(tx), tipo, serie, parseInt(idNotaCredito)).input('idd', sql.Decimal(7), parseInt(idDeta))
+          .query(`SELECT * FROM Empresa2.NotaCredDeta WITH (UPDLOCK, ROWLOCK) WHERE ID_NOTACREDITO=@id AND ID_NOTASCREDDETA=@idd AND ${NC_EQ}`)).recordset[0];
+        if (lin) await aplicarEfectoLineaNC(tx, lin, -1, num(lin.IMPORTEAPLICA));
+      }
       await reqNC(new sql.Request(tx), tipo, serie, parseInt(idNotaCredito))
         .input('idd', sql.Decimal(7), parseInt(idDeta))
         .query(`DELETE FROM Empresa2.NotaCredDeta WHERE ID_NOTACREDITO=@id AND ID_NOTASCREDDETA=@idd AND ${NC_EQ}`);
@@ -530,7 +590,8 @@ router.post('/cabecera/actualizar', requierePermiso('notacred.editar'), async (r
     const result = await withTransaction(pool, async (tx) => {
       const cabRes = await reqNC(new sql.Request(tx), tipo, serie, id).query(`SELECT UUID FROM Empresa2.NotaCred WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
       if (!cabRes.recordset[0]) throw Object.assign(new Error('Nota no encontrada.'), { status: 404 });
-      const yaTimbrada = !!trim(cabRes.recordset[0].UUID);
+      if (trim(cabRes.recordset[0].UUID)) throw Object.assign(new Error('La nota ya está timbrada; solo se puede consultar.'), { status: 409 });
+      const yaTimbrada = false;
 
       const r2 = reqNC(new sql.Request(tx), tipo, serie, id)
         .input('flagres', sql.TinyInt, req.body.esResumen ? 1 : 0);
@@ -613,6 +674,9 @@ router.post('/cabecera/grabar', requierePermiso('notacred.editar'), async (req, 
   try {
     const pool = await getPool();
     await withTransaction(pool, async (tx) => {
+      await exigirNoTimbrada(tx, tipo, serie, id);
+      // Ya EMITIDA (detallada): su efecto ya está aplicado línea por línea; no se vuelve a sumar.
+      if (await notaYaAplicada(tx, tipo, serie, id)) return;
       const detRes = await reqNC(new sql.Request(tx), tipo, serie, id).query(`SELECT * FROM Empresa2.NotaCredDeta WHERE ID_NOTACREDITO=@id AND ${NC_EQ}`);
       if (!detRes.recordset.length) throw Object.assign(new Error('La nota no tiene líneas.'), { status: 400 });
       const anio = new Date().getFullYear();
