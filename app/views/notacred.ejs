@@ -20,6 +20,9 @@
       <div class="col-auto ms-auto btn-action-group">
         <button class="btn btn-sm btn-success" onclick="openAdd()"><i class="bi bi-plus-lg"></i> Nueva Nota</button>
         <button class="btn btn-sm btn-primary" data-requires-selection disabled onclick="openEdit()"><i class="bi bi-eye"></i> Ver / Editar</button>
+        <% if (tienePermiso('notacred.btn_copiar')) { %>
+        <button class="btn btn-sm btn-secondary" id="btnCopiarNC" disabled onclick="copiarNota()" title="Crea una nota nueva con los datos y líneas de la nota cancelada seleccionada"><i class="bi bi-files"></i> Copiar</button>
+        <% } %>
         <% if (tienePermiso('notacred.btn_timbrar')) { %>
         <button class="btn btn-sm btn-warning" id="btnTimbrarNC" disabled onclick="openTimbrarNC()"><i class="bi bi-file-earmark-check"></i> Timbrar</button>
         <% } %>
@@ -375,6 +378,7 @@ function fmtMoney(v){
   const signo=n<0?'-':'';
   return signo+'$'+Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 }
+function fmtFechaMx(v){const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(v||''));return m?`${m[3]}/${m[2]}/${m[1]}`:(v||'');} // aaaa-mm-dd -> dd/mm/aaaa
 function showError(msg){const e=document.getElementById('frmError');e.textContent=msg;e.classList.remove('d-none');}
 function hideError(){document.getElementById('frmError').classList.add('d-none');}
 function showWarning(msg){const e=document.getElementById('frmWarning');e.textContent=msg;e.classList.remove('d-none');}
@@ -463,11 +467,11 @@ function openEdit(){
   modal.show();
 }
 
-function cargarNota(tipo, serie, id){
+function cargarNota(tipo, serie, id, omitidasCopia){
   fetch(`/notacred/get?tipo=${tipo}&serie=${encodeURIComponent(serie)}&id=${id}`).then(r=>r.json()).then(d=>{
     if(d.error){showError(d.error);return;}
     const c=d.cabecera;
-    _nota={idNotaCredito:c.Id_NotaCredito, serie:(c.Serie||'').trim(), tipo:tipo, confirmada:true, cliente:c.Id_Cliente, esResumen:c.FlagResNota==1};
+    _nota={idNotaCredito:c.Id_NotaCredito, serie:(c.Serie||'').trim(), tipo:tipo, confirmada:!omitidasCopia, cliente:c.Id_Cliente, esResumen:c.FlagResNota==1};   // omitidasCopia (arreglo) solo viene al abrir una copia: borrador sin grabar
     document.getElementById('f_Tipo').value=tipo;
     document.getElementById('f_Tipo').disabled=true;
     document.getElementById('f_Serie').value=(c.Serie||'').trim();
@@ -503,6 +507,7 @@ function cargarNota(tipo, serie, id){
     document.getElementById('f_ImporteLetras_disp').value=(c.ImporteLetras||'').trim();
     document.getElementById('f_WhoIs_disp').textContent=(c.WhoIs||'').trim()||USUARIO_ACTUAL;
     setSoloLectura(yaTimbrada);
+    if(omitidasCopia && omitidasCopia.length) showWarning('No se copiaron: '+omitidasCopia.join('; '));
   });
 }
 
@@ -715,7 +720,7 @@ function loadDocLk(){
       const fecha = docLkTipo==='factura' ? r.FechaFactura : r.Fecha;
       const saldo = docLkTipo==='factura' ? r.Saldo : r.ImporteTotal;
       const serieRef = docLkTipo==='factura' ? (r.SerieFac||'') : (r.SerieND||'');
-      return `<tr data-folio="${folio}" data-serie="${serieRef}" style="cursor:pointer"><td>${folio}</td><td>${fecha}</td><td class="text-end">${fmtMoney(saldo)}</td><td>${r.Status||''}</td></tr>`;
+      return `<tr data-folio="${folio}" data-serie="${serieRef}" style="cursor:pointer"><td>${folio}</td><td>${fmtFechaMx(fecha)}</td><td class="text-end">${fmtMoney(saldo)}</td><td>${r.Status||''}</td></tr>`;
     }).join('');
     document.getElementById('docLkInfo').textContent=`Pág ${d.page}/${d.totalPages} — ${d.total} registros`;
     document.getElementById('docLkPrev').disabled=d.page<=1;
@@ -831,7 +836,28 @@ document.addEventListener('click', function(e){
   const status=(window._selectedRow?.Status||'').trim().toUpperCase();
   if(btnTi) btnTi.disabled = yaTimbrada || status==='CANCELADO';
   if(btnCa) btnCa.disabled = status==='CANCELADO';
+  const btnCo=document.getElementById('btnCopiarNC');
+  if(btnCo) btnCo.disabled = status!=='CANCELADO';
 });
+
+// Copia la nota CANCELADA seleccionada (datos + líneas) en una nueva (borrador) y la abre para grabarla.
+function copiarNota(){
+  const r=window._selectedRow;
+  if(!r || (r.Status||'').trim().toUpperCase()!=='CANCELADO') return;
+  const tipo=r.Tipo||_tipoActivo;
+  if(!confirm('¿Crear una nota nueva copiando los datos y las líneas de la nota '+r.Id_NotaCredito+'? Quedará sin grabar hasta que presione Grabar.')) return;
+  const btn=document.getElementById('btnCopiarNC'); if(btn) btn.disabled=true;
+  fetch('/notacred/copiar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tipo, serie:(r.Serie||'').trim(), idNotaCredito:r.Id_NotaCredito})})
+    .then(x=>x.json()).then(d=>{
+      if(btn) btn.disabled=false;
+      if(d.error){alert(d.error);return;}
+      clearForm();
+      document.getElementById('frmTitle').textContent=(tipo==='NC'?'Nota de Crédito':'Nota de Débito')+' #'+d.idNotaCredito+' (copia de #'+r.Id_NotaCredito+')';
+      cargarNota(tipo, d.serie||'', d.idNotaCredito, d.omitidas);
+      modal.show();
+      browse.load();
+    }).catch(()=>{ if(btn) btn.disabled=false; alert('Error de comunicación con el servidor.'); });
+}
 function openTimbrarNC(){
   if(!window._selectedRow) return;
   const { Id_NotaCredito, Serie, Tipo } = window._selectedRow;

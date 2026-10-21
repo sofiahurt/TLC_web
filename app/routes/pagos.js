@@ -3,8 +3,9 @@ const router = express.Router();
 const { getPool, sql } = require('../config/db');
 const { browseQuery } = require('../config/browse');
 const { requierePermiso } = require('../middleware/permisos');
-const { ajustarSaldoFactura, ajustarSaldoNotaDebito } = require('../services/saldo-factura');
+const { ajustarSaldoFactura, ajustarSaldoNotaDebito, aplicadoND, recalcularStatusND } = require('../services/saldo-factura');
 const conciliacion = require('../services/conciliacion-saldos');
+const { quienAplica } = require('../services/docs-aplicados');
 
 // Empresa2.Pagos/PagFac NO están particionadas por año a diferencia del
 // legado (Pagos19..Pagos25, PagFac19..PagFac25 son archivos históricos que no
@@ -42,6 +43,8 @@ router.get('/data', async (req, res) => {
       req,
     });
     const fmt = v => v == null ? '' : (v instanceof Date ? v.toISOString().slice(0, 10) : String(v).trim());
+    // Fecha visible dd/mm/aaaa (data-value conserva ISO aaaa-mm-dd).
+    const fmtF = v => { const t = fmt(v); const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(t); return m ? `${m[3]}/${m[2]}/${m[1]}` : t; };
     const fmtN = v => {
       const n = v == null ? 0 : Number(v);
       const signo = n < 0 ? '-' : '';
@@ -51,8 +54,8 @@ router.get('/data', async (req, res) => {
       const canceladoConAcuse = fmt(r.Status).toUpperCase() === 'CANCELADO' && !!fmt(r.UUID);
       return `<tr data-id="${r.Id_NoPago}">
       <td data-field="Id_NoPago" data-value="${r.Id_NoPago}">${r.Id_NoPago}</td>
-      <td data-field="Fecha" data-value="${fmt(r.Fecha)}">${fmt(r.Fecha)}</td>
-      <td data-field="FechaPago" data-value="${fmt(r.FechaPago)}">${fmt(r.FechaPago)}</td>
+      <td data-field="Fecha" data-value="${fmt(r.Fecha)}">${fmtF(r.Fecha)}</td>
+      <td data-field="FechaPago" data-value="${fmt(r.FechaPago)}">${fmtF(r.FechaPago)}</td>
       <td data-field="NombreCom" data-value="${fmt(r.NombreCom)}">${fmt(r.NombreCom)}</td>
       <td data-field="NomClientePago" data-value="${fmt(r.NomClientePago)}">${fmt(r.NomClientePago)}</td>
       <td data-field="TotalImporte" data-value="${r.TotalImporte||0}" class="text-end">${fmtN(r.TotalImporte)}</td>
@@ -228,7 +231,7 @@ async function aplicarEfectoLinea(tx, linea, signo, anio) {
   if (Number(linea.NOFACTURA) > 0) {
     await ajustarSaldoFactura(tx, 'pago', { idNoFactura: linea.NOFACTURA, serieFac: linea.SERIEFAC, importe, signo, anio: signo > 0 ? anio : undefined });
   } else if (Number(linea.ID_NOTACREDITO) > 0) {
-    await ajustarSaldoNotaDebito(tx, { idNotaDebito: linea.ID_NOTACREDITO, serieND: linea.SERIEND, importeAplicado: signo > 0 ? num(linea.IMPRTE) + num(linea.COMPESACION) : 0 });
+    await recalcularStatusND(tx, { idNotaDebito: linea.ID_NOTACREDITO, serieND: linea.SERIEND, extra: signo > 0 ? num(linea.IMPRTE) + num(linea.COMPESACION) : 0, excluirPago: linea.ID_NOPAGO });
   }
 }
 
@@ -339,11 +342,13 @@ router.post('/partida/agregar', requierePermiso('pagos.editar'), async (req, res
           .query(`SELECT TOP 1 1 AS x FROM Empresa2.PagFac WHERE ID_NOPAGO=@idpago AND ID_NOTACREDITO=@idnd AND ISNULL(LTRIM(RTRIM(SERIEND)),'')=ISNULL(@seriend,'')`);
         if (dupRes.recordset[0]) throw Object.assign(new Error('Esa Nota de Débito ya fue agregada a este cobro.'), { status: 400 });
 
-        // Todo o nada (confirmado con el usuario, igual que el legado): no
-        // maneja saldo parcial, el importe siempre es el total de la ND.
+        // La ND admite pago parcial: su saldo es el total menos lo ya aplicado por otros cobros/notas.
+        const aplicadoPrevio = await aplicadoND(tx, { idNotaDebito, serieND, excluirPago: idNoPago });
+        const saldoND = Math.round(Math.max(num(nd.ImporteTotal) - aplicadoPrevio, 0) * 100) / 100;
+        if (saldoND <= 0.005) throw Object.assign(new Error('Esa Nota de Débito ya está pagada.'), { status: 400 });
         origen = {
           idCliente: Number(nd.Id_Cliente), total: num(nd.ImporteTotal), subtotal: num(nd.Subtotal), iva: num(nd.IVA), reten: num(nd.Retencion),
-          saldoAnt: num(nd.ImporteTotal), anio: nd.Fecha ? new Date(nd.Fecha).getFullYear() : new Date().getFullYear(),
+          saldoAnt: saldoND, anio: nd.Fecha ? new Date(nd.Fecha).getFullYear() : new Date().getFullYear(),
           idRef: idNotaDebito, serieRef: serieND, esFactura: false,
         };
       }
@@ -389,7 +394,7 @@ router.post('/partida/agregar', requierePermiso('pagos.editar'), async (req, res
 
       // Cobro ya REALIZADO: la línea nueva aplica su saldo en el momento.
       if (estadoCobro === 'REALIZADO') {
-        await aplicarEfectoLinea(tx, { NOFACTURA: origen.esFactura ? origen.idRef : 0, SERIEFAC: origen.serieRef, ID_NOTACREDITO: origen.esFactura ? 0 : origen.idRef,
+        await aplicarEfectoLinea(tx, { ID_NOPAGO: idNoPago, NOFACTURA: origen.esFactura ? origen.idRef : 0, SERIEFAC: origen.serieRef, ID_NOTACREDITO: origen.esFactura ? 0 : origen.idRef,
           SERIEND: origen.serieRef, IMPRTE: imprte, COMPESACION: compensacion, TOTALPAGO: totalPago }, 1, new Date().getFullYear());
       }
 
@@ -432,10 +437,15 @@ async function fijarImporteLinea(tx, idNoPago, idNoPagFac, imprte, compensacion,
         .query(`SELECT * FROM Empresa2.PagFac WITH (UPDLOCK, ROWLOCK) WHERE ID_NOPAGO=@idpago AND ID_NOPAGFAC=@idd`);
       const linea = lineaRes.recordset[0];
       if (!linea) throw Object.assign(new Error('Línea no encontrada.'), { status: 404 });
-      if (Number(linea.NOFACTURA) <= 0) throw Object.assign(new Error('Solo el importe de líneas contra Factura se puede ajustar; las Notas de Débito son todo-o-nada.'), { status: 400 });
+      const esND = Number(linea.NOFACTURA) <= 0;
+      if (esND && !(Number(linea.ID_NOTACREDITO) > 0)) throw Object.assign(new Error('Línea inválida.'), { status: 400 });
 
       let facTotal, facSubtotal, facIva, facReten;
-      {
+      if (esND) {
+        const nd = (await new sql.Request(tx).input('id', sql.Decimal(7), linea.ID_NOTACREDITO).input('serie', sql.VarChar(10), serieKey(linea.SERIEND))
+          .query(`SELECT ImporteTotal, Subtotal, IVA, Retencion FROM Empresa2.NotaCred WHERE Id_NotaCredito=@id AND LTRIM(RTRIM(Tipo))='ND' AND ISNULL(LTRIM(RTRIM(Serie)),'')=ISNULL(@serie,'')`)).recordset[0];
+        facTotal = num(nd?.ImporteTotal); facSubtotal = num(nd?.Subtotal); facIva = num(nd?.IVA); facReten = num(nd?.Retencion);
+      } else {
         const facRes = await new sql.Request(tx).input('id', sql.Decimal(9), linea.NOFACTURA).input('serieFac', sql.VarChar(20), serieKey(linea.SERIEFAC))
           .query(`SELECT TOTAL, SubTotal, IVA, Retencion FROM Empresa2.Factura WHERE Id_NoFactura=@id AND ISNULL(LTRIM(RTRIM(SerieFac)),'')=ISNULL(@serieFac,'')`);
         const fac = facRes.recordset[0];
@@ -477,7 +487,8 @@ async function fijarImporteLinea(tx, idNoPago, idNoPagFac, imprte, compensacion,
       // Cobro ya REALIZADO: solo se aplica la diferencia contra lo ya aplicado.
       const diferencia = Math.round((totalPago - num(linea.TOTALPAGO)) * 100) / 100;
       if (estadoCobro === 'REALIZADO' && Math.abs(diferencia) > 0.005) {
-        await ajustarSaldoFactura(tx, 'pago', { idNoFactura: linea.NOFACTURA, serieFac: linea.SERIEFAC, importe: diferencia, signo: 1 });
+        if (esND) await recalcularStatusND(tx, { idNotaDebito: linea.ID_NOTACREDITO, serieND: linea.SERIEND, extra: totalPago, excluirPago: idNoPago });
+        else await ajustarSaldoFactura(tx, 'pago', { idNoFactura: linea.NOFACTURA, serieFac: linea.SERIEFAC, importe: diferencia, signo: 1 });
       }
 
       const totales = await recalcularSumaPartidas(tx, idNoPago);
@@ -640,7 +651,7 @@ router.post('/cabecera/grabar', requierePermiso('pagos.editar'), async (req, res
             idNoFactura: linea.NOFACTURA, serieFac: linea.SERIEFAC, importe: importeTotalLinea, signo: 1, anio,
           });
         } else if (Number(linea.ID_NOTACREDITO) > 0) {
-          await ajustarSaldoNotaDebito(tx, { idNotaDebito: linea.ID_NOTACREDITO, serieND: linea.SERIEND, importeAplicado: num(linea.IMPRTE) + num(linea.COMPESACION) });
+          await recalcularStatusND(tx, { idNotaDebito: linea.ID_NOTACREDITO, serieND: linea.SERIEND, extra: num(linea.IMPRTE) + num(linea.COMPESACION), excluirPago: idNoPago });
         }
       }
 
@@ -684,7 +695,7 @@ async function revertirEfectoSaldoPago(tx, idNoPago) {
     if (Number(linea.NOFACTURA) > 0) {
       await ajustarSaldoFactura(tx, 'pago', { idNoFactura: linea.NOFACTURA, serieFac: linea.SERIEFAC, importe: importeTotalLinea, signo: -1 });
     } else if (Number(linea.ID_NOTACREDITO) > 0) {
-      await ajustarSaldoNotaDebito(tx, { idNotaDebito: linea.ID_NOTACREDITO, serieND: linea.SERIEND, importeAplicado: 0 });
+      await recalcularStatusND(tx, { idNotaDebito: linea.ID_NOTACREDITO, serieND: linea.SERIEND, extra: 0, excluirPago: idNoPago });
     }
   }
 }
@@ -706,6 +717,96 @@ router.post('/cancelar', requierePermiso('pagos.btn_cancelar'), async (req, res)
       await new sql.Request(tx).input('id', sql.Decimal(9), idNoPago).query(`UPDATE Empresa2.Pagos SET Status='CANCELADO' WHERE Id_NoPago=@id`);
     });
     res.json({ ok: true });
+  } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
+});
+
+// ── COPIAR un cobro CANCELADO en uno nuevo (BORRADOR) con sus mismas líneas ──
+// Las líneas se reajustan al saldo ACTUAL de cada factura/ND (el original ya
+// revirtió su efecto): se omiten las ya pagadas/canceladas y el importe se topa
+// al saldo disponible. El efecto sobre saldos se aplica hasta Grabar.
+// Texto de por qué se omite una línea: si ya está saldada, indica en qué cobro/nota.
+async function motivoOmision(tx, esFactura, id, serie, saldada) {
+  if (!saldada) return 'cancelada o inexistente';
+  const docs = await quienAplica(tx, { esFactura, id, serie });
+  return docs.length ? 'ya está en ' + docs.join(', ') : 'sin saldo pendiente';
+}
+
+router.post('/copiar', requierePermiso('pagos.editar'), requierePermiso('pagos.btn_copiar'), async (req, res) => {
+  const idNoPago = parseInt(req.body.idNoPago);
+  if (!idNoPago) return res.status(400).json({ error: 'Cobro inválido.' });
+  try {
+    const pool = await getPool();
+    const result = await withTransaction(pool, async (tx) => {
+      const orig = (await new sql.Request(tx).input('id', sql.Decimal(9), idNoPago)
+        .query(`SELECT Status FROM Empresa2.Pagos WITH (UPDLOCK, ROWLOCK) WHERE Id_NoPago=@id`)).recordset[0];
+      if (!orig) throw Object.assign(new Error('Cobro no encontrado.'), { status: 404 });
+      if (trim(orig.Status).toUpperCase() !== 'CANCELADO') throw Object.assign(new Error('Solo se puede copiar un cobro cancelado.'), { status: 400 });
+      const lineas = (await new sql.Request(tx).input('id', sql.Decimal(9), idNoPago)
+        .query(`SELECT * FROM Empresa2.PagFac WHERE ID_NOPAGO=@id ORDER BY ID_NOPAGFAC`)).recordset;
+      if (!lineas.length) throw Object.assign(new Error('El cobro no tiene líneas que copiar.'), { status: 400 });
+
+      const r2 = v => Math.round(v * 100) / 100;
+      const nuevasLineas = [], omitidas = [];
+      for (const l of lineas) {
+        const esFactura = Number(l.NOFACTURA) > 0;
+        const etiqueta = esFactura
+          ? `Factura ${trim(l.SERIEFAC)}${trim(l.SERIEFAC) ? '-' : ''}${l.NOFACTURA}`
+          : `Nota de Débito ${trim(l.SERIEND)}${trim(l.SERIEND) ? '-' : ''}${l.ID_NOTACREDITO}`;
+        let saldo;
+        if (esFactura) {
+          const fac = (await new sql.Request(tx).input('id', sql.Decimal(9), l.NOFACTURA).input('serieFac', sql.VarChar(20), serieKey(l.SERIEFAC))
+            .query(`SELECT TOTAL, PagosReal, NotasCredito, Status FROM Empresa2.Factura WITH (UPDLOCK, ROWLOCK) WHERE Id_NoFactura=@id AND ISNULL(LTRIM(RTRIM(SerieFac)),'')=ISNULL(@serieFac,'')`)).recordset[0];
+          if (!fac || trim(fac.Status).toUpperCase() === 'CANCELADA') { omitidas.push(etiqueta + ': cancelada o inexistente'); continue; }
+          saldo = r2(Math.max(num(fac.TOTAL) - num(fac.PagosReal) - num(fac.NotasCredito), 0));
+        } else {
+          const nd = (await new sql.Request(tx).input('id', sql.Decimal(7), l.ID_NOTACREDITO).input('serie', sql.VarChar(10), serieKey(l.SERIEND))
+            .query(`SELECT ImporteTotal, Status FROM Empresa2.NotaCred WITH (UPDLOCK, ROWLOCK) WHERE Id_NotaCredito=@id AND LTRIM(RTRIM(Tipo))='ND' AND ISNULL(LTRIM(RTRIM(Serie)),'')=ISNULL(@serie,'')`)).recordset[0];
+          const st = trim(nd && nd.Status).toUpperCase();
+          if (!nd || st === 'CANCELADO' || st === 'PAGADA') { omitidas.push(etiqueta + ': ' + (await motivoOmision(tx, false, l.ID_NOTACREDITO, l.SERIEND, !!nd && st === 'PAGADA'))); continue; }
+          saldo = r2(Math.max(num(nd.ImporteTotal) - await aplicadoND(tx, { idNotaDebito: l.ID_NOTACREDITO, serieND: l.SERIEND, excluirPago: idNoPago }), 0));
+        }
+        if (saldo <= 0.005) { omitidas.push(etiqueta + ': ' + (await motivoOmision(tx, esFactura, esFactura ? l.NOFACTURA : l.ID_NOTACREDITO, esFactura ? l.SERIEFAC : l.SERIEND, true))); continue; }
+        const totalOrig = num(l.TOTALPAGO);
+        const total = r2(Math.min(totalOrig, saldo));
+        if (total <= 0.005) { omitidas.push(etiqueta + ': sin importe a pagar'); continue; }
+        nuevasLineas.push({ l, saldo, total, f: totalOrig > 0.005 ? total / totalOrig : 0 });
+      }
+      if (!nuevasLineas.length) {
+        throw Object.assign(new Error('Ninguna línea del cobro se puede copiar (ya están pagadas, canceladas o sin saldo): ' + omitidas.join('; ')), { status: 400 });
+      }
+
+      const nuevo = (await new sql.Request(tx).query(`SELECT ISNULL(MAX(Id_NoPago),0)+1 AS next FROM Empresa2.Pagos WITH (UPDLOCK, HOLDLOCK)`)).recordset[0].next;
+      const usuario = [req.session.usuario.nombre, req.session.usuario.apellido].filter(Boolean).join(' ').trim();
+      await new sql.Request(tx)
+        .input('id', sql.Decimal(9), idNoPago).input('nuevo', sql.Decimal(9), nuevo)
+        .input('hoy', sql.Date, hoy()).input('hora', sql.VarChar(8), new Date().toTimeString().slice(0, 8)).input('usr', sql.VarChar(80), usuario)
+        .query(`SELECT * INTO #p FROM Empresa2.Pagos WHERE Id_NoPago=@id;
+          UPDATE #p SET Id_NoPago=@nuevo, Fecha=@hoy, Hora=@hora, FechaPago=@hoy, HoraPago=@hora, Status='BORRADOR', ObsCancela=NULL, Realizo=@usr,
+            SelloDigital=NULL, SelloSAT=NULL, NoCertificadoSAT=NULL, SelloCFD=NULL, FechaTimbrado=NULL, UUID=NULL, ProvTim=NULL, CadenaTimbre=NULL, CodBarBin=NULL,
+            ImporteCheque=0, SumaPartidas=0, TotalComp=0, TotalIVA=0, TotalRet=0, BaseIVA=0, BaseRet=0, TotalIVA_C=0, TotalRet_C=0, BaseIVA_C=0, BaseRet_C=0, TotalImporte=0;
+          INSERT INTO Empresa2.Pagos SELECT * FROM #p;
+          DROP TABLE #p;`);
+
+      let idd = 0;
+      for (const { l, saldo, total, f } of nuevasLineas) {
+        idd++;
+        const imprte = Math.min(r2(num(l.IMPRTE) * f), total);
+        await new sql.Request(tx)
+          .input('old', sql.Decimal(9), idNoPago).input('oldd', sql.Decimal(7), l.ID_NOPAGFAC)
+          .input('nuevo', sql.Decimal(9), nuevo).input('idd', sql.Decimal(7), idd)
+          .input('saldo', sql.Decimal(11, 2), saldo).input('imprte', sql.Decimal(11, 2), imprte).input('total', sql.Decimal(11, 2), total)
+          .input('f', sql.Float, f)
+          .query(`SELECT * INTO #l FROM Empresa2.PagFac WHERE ID_NOPAGO=@old AND ID_NOPAGFAC=@oldd;
+            UPDATE #l SET ID_NOPAGO=@nuevo, ID_NOPAGFAC=@idd, SALDOANT=@saldo, IMPRTE=@imprte, COMPESACION=@total-@imprte, TOTALPAGO=@total,
+              SUBTOTAL=ROUND(SUBTOTAL*@f,2), RETENCION=ROUND(RETENCION*@f,2), IVA=ROUND(IVA*@f,2),
+              SUBTOTALCOMP=ROUND(SUBTOTALCOMP*@f,2), IVACOMP=ROUND(IVACOMP*@f,2), RETENCIONCOMP=ROUND(RETENCIONCOMP*@f,2);
+            INSERT INTO Empresa2.PagFac SELECT * FROM #l;
+            DROP TABLE #l;`);
+      }
+      const totales = await recalcularSumaPartidas(tx, nuevo);
+      return { idNoPago: nuevo, totales, omitidas };
+    });
+    res.json({ ok: true, ...result });
   } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
 });
 

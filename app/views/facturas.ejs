@@ -15,6 +15,9 @@
       <div class="col-auto ms-auto btn-action-group">
         <button class="btn btn-sm btn-success" onclick="openAdd()"><i class="bi bi-plus-lg"></i> Nueva Factura</button>
         <button class="btn btn-sm btn-primary" data-requires-selection disabled onclick="openEdit()"><i class="bi bi-eye"></i> Ver / Editar</button>
+        <% if (tienePermiso('facturas.btn_copiar')) { %>
+        <button class="btn btn-sm btn-secondary" id="btnCopiarFactura" disabled onclick="copiarFactura()" title="Crea una factura nueva con los datos y partidas de la factura cancelada seleccionada"><i class="bi bi-files"></i> Copiar</button>
+        <% } %>
         <% if (tienePermiso('facturas.btn_timbrar')) { %>
         <button class="btn btn-sm btn-warning" id="btnTimbrarFactura" disabled onclick="openTimbrarFactura()"><i class="bi bi-file-earmark-check"></i> Timbrar</button>
         <% } %>
@@ -383,7 +386,28 @@ document.addEventListener('click', function(e){
   if(btnTi) btnTi.disabled = yaTimbrada || status==='CANCELADA';
   const btnCa=document.getElementById('btnCancelarFactura');
   if(btnCa) btnCa.disabled = status==='PAGADA' || status==='CANCELADA';
+  const btnCo=document.getElementById('btnCopiarFactura');
+  if(btnCo) btnCo.disabled = status!=='CANCELADA';
 });
+
+// Copia la factura CANCELADA seleccionada (datos + partidas) en una nueva y la abre.
+function copiarFactura(){
+  const r=window._selectedRow;
+  if(!r || (r.Status||'').trim().toUpperCase()!=='CANCELADA') return;
+  if(!confirm('¿Crear una factura nueva copiando los datos y las partidas de la factura '+r.Id_NoFactura+'?')) return;
+  const btn=document.getElementById('btnCopiarFactura'); if(btn) btn.disabled=true;
+  fetch('/facturas/copiar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idNoFactura:r.Id_NoFactura,serieFac:(r.SerieFac||'').trim()})})
+    .then(x=>x.json()).then(d=>{
+      if(btn) btn.disabled=false;
+      if(d.error){alert(d.error);return;}
+      clearForm();
+      document.getElementById('frmTitle').textContent='Factura #'+d.idNoFactura;
+      cargarFactura(d.idNoFactura, d.serieFac||'');
+      if(d.omitidas && d.omitidas.length) setTimeout(()=>showWarning('No se copiaron: '+d.omitidas.join('; ')),700);
+      modal.show();
+      browse.load();
+    }).catch(()=>{ if(btn) btn.disabled=false; alert('Error de comunicación con el servidor.'); });
+}
 
 function openTimbrarFactura(){
   if(!window._selectedRow) return;
@@ -492,6 +516,7 @@ function setSoloLectura(on){
   document.getElementById('frmSoloLectura').classList.toggle('d-none', !on);
   document.querySelectorAll('#frmModal .modal-body input:not([type=checkbox]):not([type=radio]), #frmModal .modal-body textarea').forEach(e=>{ if(on){ e.dataset.roPrev=e.readOnly?'1':'0'; e.readOnly=true; } else if(e.dataset.roPrev!==undefined){ e.readOnly=e.dataset.roPrev==='1'; delete e.dataset.roPrev; } });
 }
+function fmtFechaMx(v){const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(v||''));return m?`${m[3]}/${m[2]}/${m[1]}`:(v||'');} // aaaa-mm-dd -> dd/mm/aaaa
 function clearForm(){
   setSoloLectura(false);
   _factura={idNoFactura:null, confirmada:false, cliente:null};
@@ -877,7 +902,7 @@ function loadCpLk(){
       document.getElementById('cpLkBody').innerHTML=d.rows.map(r=>{
         const monto=r.CostoFlete||r.CostoRenta||0;
         const extra=cpLkStatus==='FACTURADO' ? `${r.NoFactura||''}${r.AnioFactura?(' / '+r.AnioFactura):''}` : '';
-        return `<tr data-cp="${r.CartaPorte}" style="cursor:pointer"><td>${r.CartaPorte}</td><td>${r.FechaPedido}</td><td>${r.DesFlete}</td><td>${r.Status||''}</td><td class="text-end">${fmtN(monto)}</td><td>${extra}</td></tr>`;
+        return `<tr data-cp="${r.CartaPorte}" style="cursor:pointer"><td>${r.CartaPorte}</td><td>${fmtFechaMx(r.FechaPedido)}</td><td>${r.DesFlete}</td><td>${r.Status||''}</td><td class="text-end">${fmtN(monto)}</td><td>${extra}</td></tr>`;
       }).join('');
       document.getElementById('cpLkInfo').textContent=`Pág ${d.page}/${d.totalPages} — ${d.total} registros`;
       document.getElementById('cpLkPrev').disabled=d.page<=1;

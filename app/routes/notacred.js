@@ -5,6 +5,7 @@ const { browseQuery } = require('../config/browse');
 const { requierePermiso } = require('../middleware/permisos');
 const { importeALetras } = require('../services/importe-letras');
 const { ajustarSaldoFactura, ajustarSaldoNotaDebito } = require('../services/saldo-factura');
+const { quienAplica } = require('../services/docs-aplicados');
 
 // La clave real de una Nota de Crédito/Débito es (Tipo, Serie, Id_NotaCredito)
 // -- NC y ND llevan numeración INDEPENDIENTE aunque compartan la misma tabla
@@ -119,6 +120,8 @@ router.get('/data', async (req, res) => {
       baseParams: { tipoFiltro: tipo },
     });
     const fmt = v => v == null ? '' : (v instanceof Date ? v.toISOString().slice(0, 10) : String(v).trim());
+    // Fecha visible dd/mm/aaaa (data-value conserva ISO aaaa-mm-dd).
+    const fmtF = v => { const t = fmt(v); const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(t); return m ? `${m[3]}/${m[2]}/${m[1]}` : t; };
     // Solo para texto visible -- data-value siempre lleva el número crudo, sin
     // formato, así que nada que lea esos atributos se ve afectado.
     const fmtN = v => {
@@ -132,7 +135,7 @@ router.get('/data', async (req, res) => {
       <td data-field="Tipo" data-value="${tipo}"><span class="badge ${tipo==='NC'?'bg-success':'bg-info text-dark'}">${tipo}</span></td>
       <td data-field="Serie" data-value="${fmt(r.Serie)}">${fmt(r.Serie)}</td>
       <td data-field="Id_NotaCredito" data-value="${r.Id_NotaCredito}">${r.Id_NotaCredito}</td>
-      <td data-field="Fecha" data-value="${fmt(r.Fecha)}">${fmt(r.Fecha)}</td>
+      <td data-field="Fecha" data-value="${fmt(r.Fecha)}">${fmtF(r.Fecha)}</td>
       <td data-field="NombreCom" data-value="${fmt(r.NombreCom)}">${fmt(r.NombreCom)}</td>
       <td data-field="Subtotal" data-value="${r.Subtotal||0}" class="text-end">${fmtN(r.Subtotal)}</td>
       <td data-field="IVA" data-value="${r.IVA||0}" class="text-end">${fmtN(r.IVA)}</td>
@@ -757,6 +760,108 @@ router.post('/cancelar', requierePermiso('notacred.btn_cancelar'), async (req, r
       await reqNC(new sql.Request(tx), tipo, serie, id).query(`UPDATE Empresa2.NotaCred SET Status='CANCELADO' WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
     });
     res.json({ ok: true });
+  } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
+});
+
+// ── COPIAR una nota CANCELADA (NC/ND) en una nueva (BORRADOR) con sus líneas ──
+// Las líneas se reajustan al saldo ACTUAL de cada factura/ND (el original ya
+// revirtió su efecto). El efecto sobre saldos se aplica hasta Grabar.
+// Texto de por qué se omite una línea: si ya está saldada, indica en qué cobro/nota.
+async function motivoOmision(tx, esFactura, id, serie, saldada) {
+  if (!saldada) return 'cancelada o inexistente';
+  const docs = await quienAplica(tx, { esFactura, id, serie });
+  return docs.length ? 'ya está en ' + docs.join(', ') : 'sin saldo pendiente';
+}
+
+router.post('/copiar', requierePermiso('notacred.editar'), requierePermiso('notacred.btn_copiar'), async (req, res) => {
+  const { tipo, serie } = req.body;
+  const id = parseInt(req.body.idNotaCredito);
+  if (!id) return res.status(400).json({ error: 'Nota inválida.' });
+  try {
+    const pool = await getPool();
+    const result = await withTransaction(pool, async (tx) => {
+      const orig = (await reqNC(new sql.Request(tx), tipo, serie, id)
+        .query(`SELECT Status, FlagResNota, Subtotal FROM Empresa2.NotaCred WITH (UPDLOCK, ROWLOCK) WHERE Id_NotaCredito=@id AND ${NC_EQ}`)).recordset[0];
+      if (!orig) throw Object.assign(new Error('Nota no encontrada.'), { status: 404 });
+      if (trim(orig.Status).toUpperCase() !== 'CANCELADO') throw Object.assign(new Error('Solo se puede copiar una nota cancelada.'), { status: 400 });
+      const esResumen = Number(orig.FlagResNota) === 1;
+      const lineas = (await reqNC(new sql.Request(tx), tipo, serie, id)
+        .query(`SELECT * FROM Empresa2.NotaCredDeta WHERE ID_NOTACREDITO=@id AND ${NC_EQ} ORDER BY ID_NOTASCREDDETA`)).recordset;
+      if (!lineas.length) throw Object.assign(new Error('La nota no tiene líneas que copiar.'), { status: 400 });
+
+      const r2 = v => Math.round(v * 100) / 100;
+      const nuevas = [], omitidas = [];
+      for (const l of lineas) {
+        const esFactura = Number(l.ID_NOFACTURA) > 0;
+        const etiqueta = esFactura
+          ? `Factura ${trim(l.SerieFac)}${trim(l.SerieFac) ? '-' : ''}${l.ID_NOFACTURA}`
+          : `Nota de Débito ${trim(l.SerieND)}${trim(l.SerieND) ? '-' : ''}${l.Id_NotaDebito}`;
+        let t;
+        if (esFactura) {
+          const fac = (await new sql.Request(tx).input('id', sql.Decimal(9), l.ID_NOFACTURA).input('serieFac', sql.VarChar(20), serieKey(l.SerieFac))
+            .query(`SELECT TOTAL, PagosReal, NotasCredito, Status, UUID FROM Empresa2.Factura WITH (UPDLOCK, ROWLOCK) WHERE Id_NoFactura=@id AND ISNULL(LTRIM(RTRIM(SerieFac)),'')=ISNULL(@serieFac,'')`)).recordset[0];
+          const st = trim(fac && fac.Status).toUpperCase();
+          if (!fac || st === 'CANCELADA' || st === 'PAGADA') { omitidas.push(etiqueta + ': ' + await motivoOmision(tx, true, l.ID_NOFACTURA, l.SerieFac, !!fac && st === 'PAGADA')); continue; }
+          t = { total: num(fac.TOTAL), pagosReal: num(fac.PagosReal), notasCredito: num(fac.NotasCredito), uuid: trim(fac.UUID) };
+        } else {
+          const nd = (await new sql.Request(tx).input('id', sql.Decimal(7), l.Id_NotaDebito).input('serie', sql.VarChar(10), serieKey(l.SerieND))
+            .query(`SELECT ImporteTotal, Status, UUID FROM Empresa2.NotaCred WITH (UPDLOCK, ROWLOCK) WHERE Id_NotaCredito=@id AND LTRIM(RTRIM(Tipo))='ND' AND ISNULL(LTRIM(RTRIM(Serie)),'')=ISNULL(@serie,'')`)).recordset[0];
+          const st = trim(nd && nd.Status).toUpperCase();
+          if (!nd || st === 'CANCELADO' || st === 'PAGADA') { omitidas.push(etiqueta + ': ' + await motivoOmision(tx, false, l.Id_NotaDebito, l.SerieND, !!nd && st === 'PAGADA')); continue; }
+          t = { total: num(nd.ImporteTotal), pagosReal: 0, notasCredito: 0, uuid: trim(nd.UUID) };
+        }
+        const saldo = r2(Math.max(t.total - t.pagosReal - t.notasCredito, 0));
+        if (saldo <= 0.005) { omitidas.push(etiqueta + ': ' + await motivoOmision(tx, esFactura, esFactura ? l.ID_NOFACTURA : l.Id_NotaDebito, esFactura ? l.SerieFac : l.SerieND, true)); continue; }
+        const aplicaOrig = num(l.IMPORTEAPLICA);
+        const aplica = r2(Math.min(aplicaOrig > 0.005 ? aplicaOrig : saldo, saldo));
+        nuevas.push({ l, t, saldo, aplica, f: aplicaOrig > 0.005 ? aplica / aplicaOrig : 1 });
+      }
+      if (!nuevas.length) {
+        throw Object.assign(new Error('Ninguna línea de la nota se puede copiar (ya están pagadas, canceladas o sin saldo): ' + omitidas.join('; ')), { status: 400 });
+      }
+
+      const nuevo = (await reqNC(new sql.Request(tx), tipo, serie)
+        .query(`SELECT ISNULL(MAX(Id_NotaCredito),0)+1 AS next FROM Empresa2.NotaCred WITH (UPDLOCK, HOLDLOCK) WHERE ${NC_EQ}`)).recordset[0].next;
+      const usuario = [req.session.usuario.nombre, req.session.usuario.apellido].filter(Boolean).join(' ').trim();
+      await reqNC(new sql.Request(tx), tipo, serie, id)
+        .input('nuevo', sql.Decimal(7), nuevo).input('hoy', sql.Date, hoy()).input('hora', sql.VarChar(8), new Date().toTimeString().slice(0, 8)).input('usr', sql.VarChar(80), usuario)
+        .query(`SELECT * INTO #n FROM Empresa2.NotaCred WHERE Id_NotaCredito=@id AND ${NC_EQ};
+          UPDATE #n SET Id_NotaCredito=@nuevo, Fecha=@hoy, Hora=@hora, Status='BORRADOR', WhoIs=@usr, WhoMod=NULL, FechaMod=NULL, FechaCancela=NULL,
+            NoAprobacion=NULL, AnioAprobacion=NULL, CadenaOriginal=NULL, Sello=NULL, Certificado=NULL, noCertificado=NULL, SelloSAT=NULL,
+            noCertificadoSAT=NULL, SelloCFD=NULL, FechaTimbrado=NULL, UUID=NULL, CodBarBi=NULL, RfcProvCertif=NULL;
+          INSERT INTO Empresa2.NotaCred SELECT * FROM #n;
+          DROP TABLE #n;`);
+
+      let idd = 0;
+      for (const { l, t, aplica, f } of nuevas) {
+        idd++;
+        await reqNC(new sql.Request(tx), tipo, serie, id)
+          .input('nuevo', sql.Decimal(7), nuevo).input('oldd', sql.Decimal(7), l.ID_NOTASCREDDETA).input('idd', sql.Decimal(7), idd)
+          .input('totalfac', sql.Decimal(11, 2), t.total).input('pagosreal', sql.Decimal(11, 2), t.pagosReal).input('notascred', sql.Decimal(11, 2), t.notasCredito)
+          .input('uuidfac', sql.VarChar(60), t.uuid || null).input('aplica', sql.Decimal(11, 2), aplica).input('f', sql.Float, f)
+          .query(`SELECT * INTO #l FROM Empresa2.NotaCredDeta WHERE ID_NOTACREDITO=@id AND ID_NOTASCREDDETA=@oldd AND ${NC_EQ};
+            UPDATE #l SET ID_NOTACREDITO=@nuevo, ID_NOTASCREDDETA=@idd, TOTALFAC=@totalfac, PAGOSREALFAC=@pagosreal, NOTASCREDITOFAC=@notascred, UUIDFac=@uuidfac,
+              IMPORTEAPLICA=@aplica, SUBTOTAL=ROUND(SUBTOTAL*@f,2), IVA=ROUND(IVA*@f,2), RETENCION=ROUND(RETENCION*@f,2);
+            INSERT INTO Empresa2.NotaCredDeta SELECT * FROM #l;
+            DROP TABLE #l;`);
+      }
+
+      if (esResumen) {
+        // El concepto único no debe exceder el saldo de lo que sí se pudo copiar.
+        const saldoDisp = r2(nuevas.reduce((a, x) => a + x.saldo, 0));
+        const sub = r2(num(orig.Subtotal));
+        if (r2(sub * 1.12) > saldoDisp) {
+          const nSub = r2(saldoDisp / 1.12), nIva = r2(nSub * 0.16), nRet = r2(nSub * 0.04), nTot = r2(nSub + nIva - nRet);
+          await reqNC(new sql.Request(tx), tipo, serie, nuevo)
+            .input('sub', sql.Decimal(9, 2), nSub).input('iva', sql.Decimal(10, 2), nIva).input('ret', sql.Decimal(9, 2), nRet).input('tot', sql.Decimal(12, 2), nTot)
+            .input('letras', sql.VarChar(200), importeALetras(nTot, 'MXN'))
+            .query(`UPDATE Empresa2.NotaCred SET Subtotal=@sub, IVA=@iva, Retencion=@ret, ImporteTotal=@tot, SumaPartidas=@tot, ImporteLetras=@letras WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
+        }
+      }
+      const totales = await recalcularCabecera(tx, tipo, serie, nuevo);
+      return { idNotaCredito: nuevo, serie: serieKey(serie) || '', tipo: trim(tipo), totales, omitidas };
+    });
+    res.json({ ok: true, ...result });
   } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
 });
 

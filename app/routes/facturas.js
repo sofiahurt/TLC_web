@@ -286,6 +286,8 @@ router.get('/data', async (req, res) => {
       req
     });
     const fmt = v => v == null ? '' : (v instanceof Date ? v.toISOString().slice(0,10) : String(v).trim());
+    // Fecha visible dd/mm/aaaa (data-value conserva ISO aaaa-mm-dd).
+    const fmtF = v => { const t = fmt(v); const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(t); return m ? `${m[3]}/${m[2]}/${m[1]}` : t; };
     // Solo para texto visible -- data-value siempre lleva el número crudo.
     const fmtN = v => {
       const n = v == null ? 0 : Number(v);
@@ -297,7 +299,7 @@ router.get('/data', async (req, res) => {
       return `<tr data-id="${r.Id_NoFactura}">
       <td data-field="SerieFac" data-value="${fmt(r.SerieFac)}">${fmt(r.SerieFac)}</td>
       <td data-field="Id_NoFactura" data-value="${r.Id_NoFactura}">${r.Id_NoFactura}</td>
-      <td data-field="FechaFactura" data-value="${fmt(r.FechaFactura)}">${fmt(r.FechaFactura)}</td>
+      <td data-field="FechaFactura" data-value="${fmt(r.FechaFactura)}">${fmtF(r.FechaFactura)}</td>
       <td data-field="NombreCom" data-value="${fmt(r.NombreCom)}">${fmt(r.NombreCom)}</td>
       <td data-field="RFC" data-value="${fmt(r.RFC)}">${fmt(r.RFC)}</td>
       <td data-field="MonFactura" data-value="${fmt(r.MonFactura)}">${fmt(r.MonFactura)}</td>
@@ -832,6 +834,105 @@ router.post('/cabecera/cancelar-sin-confirmar', requierePermiso('facturas.editar
       }
     });
     res.json({ ok: true });
+  } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
+});
+
+// Agrupa las partidas omitidas por motivo: "Cartas Porte A, B, C y N más: ya está en Factura X".
+function resumenOmitidas(lista) {
+  const g = new Map();
+  for (const o of lista) { if (!g.has(o.motivo)) g.set(o.motivo, []); g.get(o.motivo).push(o.cp); }
+  return [...g].map(([motivo, cps]) => `${cps.length === 1 ? 'Carta Porte' : cps.length + ' Cartas Porte'} ${cps.slice(0, 4).join(', ')}${cps.length > 4 ? ' y ' + (cps.length - 4) + ' más' : ''}: ${motivo}`);
+}
+
+// ── COPIAR una factura CANCELADA en una nueva (cabecera + partidas) ──────────
+// La nueva nace EMITIDA, con folio consecutivo, fecha/hora de hoy, sin timbre, sin
+// pagos ni notas; las Cartas Porte de las partidas vuelven a quedar FACTURADO.
+router.post('/copiar', requierePermiso('facturas.editar'), requierePermiso('facturas.btn_copiar'), async (req, res) => {
+  const idNoFactura = parseInt(req.body.idNoFactura);
+  const serieFac = req.body.serieFac;
+  if (!idNoFactura) return res.status(400).json({ error: 'Factura inválida.' });
+  try {
+    const pool = await getPool();
+    const result = await withTransaction(pool, async (tx) => {
+      const orig = (await reqSerieFac(new sql.Request(tx), serieFac).input('id', sql.Decimal(9), idNoFactura)
+        .query(`SELECT Status FROM Empresa2.Factura WITH (UPDLOCK, ROWLOCK) WHERE Id_NoFactura=@id AND ${SERIEFAC_EQ}`)).recordset[0];
+      if (!orig) throw Object.assign(new Error('Factura no encontrada.'), { status: 404 });
+      if (trim(orig.Status).toUpperCase() !== 'CANCELADA') throw Object.assign(new Error('Solo se puede copiar una factura cancelada.'), { status: 400 });
+
+      const lineas = (await reqSerieFac(new sql.Request(tx), serieFac).input('id', sql.Decimal(9), idNoFactura)
+        .query(`SELECT * FROM Empresa2.FacDeta WHERE ID_NOFACTURA=@id AND ${SERIEFAC_EQ} ORDER BY ID_NODETAFAC`)).recordset;
+      if (!lineas.length) throw Object.assign(new Error('La factura no tiene partidas que copiar.'), { status: 400 });
+
+      // Cada Carta Porte debe seguir disponible: no cancelada y sin esos conceptos
+      // ya facturados en otra factura vigente.
+      // Una partida cuya Carta Porte esté cancelada o ya facturada en otra factura
+      // vigente se omite (indicando en cuál); las demás sí se copian.
+      const cps = new Map(), omitidas = [], conservar = [];
+      for (const l of lineas) {
+        const serie = trim(l.SERIE), cp = trim(l.CARTAPORTE);
+        if (!cp) { conservar.push(l.ID_NODETAFAC); continue; } // partida sin Carta Porte (concepto libre)
+        const cpRow = (await new sql.Request(tx).input('serie', sql.VarChar(3), serie).input('cp', sql.VarChar(30), cp)
+          .query(`SELECT Status FROM Empresa2.CartaPorte WITH (UPDLOCK, ROWLOCK) WHERE Serie=@serie AND CartaPorte=@cp`)).recordset[0];
+        const st = trim(cpRow && cpRow.Status).toUpperCase();
+        if (!cpRow) { omitidas.push({ cp: `${serie}-${cp}`, motivo: 'ya no existe' }); continue; }
+        if (st === 'CANCELADO' || st === 'CANCELAD0') { omitidas.push({ cp: `${serie}-${cp}`, motivo: 'está cancelada' }); continue; }
+        const previo = await yaFacturadoPorConcepto(tx, serie, cp, null);
+        const choca = Object.entries(CONCEPTOS).filter(([k, c]) => ISNULLtoBool(l[c.flagCol]) && num(previo[k]) > 0.005);
+        if (choca.length) {
+          const docs = new Set();
+          for (const [, c] of choca) {
+            const d = await new sql.Request(tx).input('serie', sql.VarChar(3), serie).input('cp', sql.VarChar(30), cp)
+              .query(`SELECT DISTINCT fd.ID_NOFACTURA n, LTRIM(RTRIM(ISNULL(fd.SerieFac,''))) s FROM Empresa2.FacDeta fd
+                      JOIN Empresa2.Factura f ON f.Id_NoFactura=fd.ID_NOFACTURA AND ISNULL(LTRIM(RTRIM(f.SerieFac)),'')=ISNULL(LTRIM(RTRIM(fd.SerieFac)),'')
+                      WHERE LTRIM(RTRIM(fd.SERIE))=@serie AND LTRIM(RTRIM(fd.CARTAPORTE))=@cp AND f.Status<>'CANCELADA' AND ISNULL(fd.${c.flagCol},0)=1`);
+            d.recordset.forEach(r => docs.add(`Factura ${r.s ? r.s + '-' : ''}${r.n}`));
+          }
+          omitidas.push({ cp: `${serie}-${cp}`, motivo: 'ya está en ' + ([...docs].join(', ') || 'otra factura vigente') });
+          continue;
+        }
+        conservar.push(l.ID_NODETAFAC);
+        cps.set(serie + '|' + cp, { serie, cp });
+      }
+      if (!conservar.length) {
+        throw Object.assign(new Error('No se pudo copiar ninguna partida: ' + resumenOmitidas(omitidas).join('; ')), { status: 400 });
+      }
+
+      const nuevo = (await reqSerieFac(new sql.Request(tx), serieFac)
+        .query(`SELECT ISNULL(MAX(Id_NoFactura),0)+1 AS next FROM Empresa2.Factura WITH (UPDLOCK, HOLDLOCK) WHERE ${SERIEFAC_EQ}`)).recordset[0].next;
+      const usuario = [req.session.usuario.nombre, req.session.usuario.apellido].filter(Boolean).join(' ').trim();
+
+      // Copia exacta (mismos tipos) con SELECT INTO; solo se reinician los datos propios del documento.
+      await reqSerieFac(new sql.Request(tx), serieFac)
+        .input('id', sql.Decimal(9), idNoFactura).input('nuevo', sql.Decimal(9), nuevo)
+        .input('hoy', sql.Date, hoy()).input('hora', sql.VarChar(8), new Date().toTimeString().slice(0, 8))
+        .input('usr', sql.VarChar(60), usuario)
+        .query(`SELECT * INTO #f FROM Empresa2.Factura WHERE Id_NoFactura=@id AND ${SERIEFAC_EQ};
+          UPDATE #f SET Id_NoFactura=@nuevo, FechaFactura=@hoy, Hora=@hora, FechaRevision=NULL, FechaPago=NULL,
+            PagosReal=0, NotasCredito=0, Facturo=@usr, Status='EMITIDA', NotaCancelacion=NULL,
+            AnioPago=NULL, AnioPago2=NULL, AnioNotaCred=NULL, AnioNotaCred2=NULL, noCertificado=NULL, Sustituida=NULL,
+            FechaTimbrado=NULL, UUID=NULL, RfcProvCertif=NULL, CodBarBi=NULL, FlagVerificada=0, WhoVerifico=NULL,
+            c_MotCancela=NULL, UUIDRelCan=NULL, FechaCancela=NULL, WhoCancela=NULL;
+          INSERT INTO Empresa2.Factura SELECT * FROM #f;
+          DROP TABLE #f;
+          SELECT * INTO #d FROM Empresa2.FacDeta WHERE ID_NOFACTURA=@id AND ${SERIEFAC_EQ};
+          DELETE FROM #d WHERE ID_NODETAFAC NOT IN (${conservar.map(Number).join(',')});
+          UPDATE #d SET ID_NOFACTURA=@nuevo;
+          WITH x AS (SELECT ID_NODETAFAC, ROW_NUMBER() OVER (ORDER BY ID_NODETAFAC) rn FROM #d) UPDATE x SET ID_NODETAFAC=rn;
+          INSERT INTO Empresa2.FacDeta SELECT * FROM #d;
+          DROP TABLE #d;`);
+
+      const anio = new Date(hoy()).getFullYear();
+      for (const { serie, cp } of cps.values()) {
+        if (!cp) continue;
+        await new sql.Request(tx).input('serie', sql.VarChar(3), serie).input('cp', sql.VarChar(30), cp)
+          .input('nofac', sql.Decimal(9), nuevo).input('anio', sql.Decimal(4), anio)
+          .query(`UPDATE Empresa2.CartaPorte SET Status='FACTURADO', NoFactura=@nofac, AnioFactura=@anio WHERE Serie=@serie AND CartaPorte=@cp`);
+        await recalcularImporteFacCP(tx, serie, cp);
+      }
+      const totales = await recalcularCabecera(tx, nuevo, serieFac);
+      return { idNoFactura: nuevo, serieFac: serieKey(serieFac) || '', totales, omitidas: resumenOmitidas(omitidas) };
+    });
+    res.json({ ok: true, ...result });
   } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
 });
 

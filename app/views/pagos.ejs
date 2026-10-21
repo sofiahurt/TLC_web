@@ -15,6 +15,9 @@
       <div class="col-auto ms-auto btn-action-group">
         <button class="btn btn-sm btn-success" onclick="openAdd()"><i class="bi bi-plus-lg"></i> Nuevo Cobro</button>
         <button class="btn btn-sm btn-primary" data-requires-selection disabled onclick="openEdit()"><i class="bi bi-eye"></i> Ver / Editar</button>
+        <% if (tienePermiso('pagos.btn_copiar')) { %>
+        <button class="btn btn-sm btn-secondary" id="btnCopiarPago" disabled onclick="copiarPago()" title="Crea un cobro nuevo con los datos y líneas del cobro cancelado seleccionado"><i class="bi bi-files"></i> Copiar</button>
+        <% } %>
         <% if (tienePermiso('pagos.btn_timbrar')) { %>
         <button class="btn btn-sm btn-warning" id="btnTimbrarPago" disabled onclick="openTimbrarPago()"><i class="bi bi-file-earmark-check"></i> Timbrar</button>
         <% } %>
@@ -321,6 +324,7 @@ document.addEventListener('keydown', function(e) {
 }, true);
 
 function hoyISO(){return new Date().toISOString().slice(0,10);}
+function fmtFechaMx(v){const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(v||''));return m?`${m[3]}/${m[2]}/${m[1]}`:(v||'');} // aaaa-mm-dd -> dd/mm/aaaa
 function horaAhora(){const d=new Date();return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');}
 function horaDe(v){return v?String(v).slice(11,16):'';} // las horas SQL llegan como 1970-01-01THH:MM:SS
 function fmtN(v){return (parseFloat(v)||0).toFixed(2);}
@@ -486,7 +490,7 @@ function pintarTotales(lineas){
 function filaDetalleHtml(l){
   const ref = Number(l.NOFACTURA)>0 ? ('Factura #'+l.NOFACTURA) : ('ND #'+l.ID_NOTACREDITO);
   const cerrado = _pago.status==='CANCELADO' || _pago.timbrado; // cancelado o timbrado no se modifica
-  const puedeEditar = Number(l.NOFACTURA)>0 && !cerrado; // ND es todo o nada, sin edición
+  const puedeEditar = !cerrado;   // Factura y Nota de Débito (admite pago parcial)
   // Pagos realizados ANTES de esta línea (sin incluir este mismo cobro) =
   // total original del documento menos el saldo que ya traía al momento de
   // agregarse (SALDOANT). SALDOANT solo es confiable si es >= lo que esta
@@ -678,7 +682,7 @@ function loadDocLk(){
       const pagosRealizados = docLkTipo==='factura' ? r.PagosRealizados : 0;
       const saldo = docLkTipo==='factura' ? r.Saldo : r.ImporteTotal;
       const serieRef = docLkTipo==='factura' ? (r.SerieFac||'') : (r.SerieND||'');
-      return `<tr data-folio="${folio}" data-serie="${serieRef}" style="cursor:pointer"><td>${folio}</td><td>${fecha}</td><td class="text-end">${fmtMoney(total)}</td><td class="text-end">${fmtMoney(pagosRealizados)}</td><td class="text-end">${fmtMoney(saldo)}</td><td>${r.Status||''}</td></tr>`;
+      return `<tr data-folio="${folio}" data-serie="${serieRef}" style="cursor:pointer"><td>${folio}</td><td>${fmtFechaMx(fecha)}</td><td class="text-end">${fmtMoney(total)}</td><td class="text-end">${fmtMoney(pagosRealizados)}</td><td class="text-end">${fmtMoney(saldo)}</td><td>${r.Status||''}</td></tr>`;
     }).join('');
     document.getElementById('docLkInfo').textContent=`Pág ${d.page}/${d.totalPages} — ${d.total} registros`;
     document.getElementById('docLkPrev').disabled=d.page<=1;
@@ -836,7 +840,30 @@ document.addEventListener('click', function(e){
   const status=(window._selectedRow?.Status||'').trim().toUpperCase();
   if(btnTi) btnTi.disabled = yaTimbrado || status==='CANCELADO';
   if(btnCa) btnCa.disabled = status==='CANCELADO';
+  const btnCo=document.getElementById('btnCopiarPago');
+  if(btnCo) btnCo.disabled = status!=='CANCELADO';
 });
+
+// Copia el cobro CANCELADO seleccionado (datos + líneas) en uno nuevo (borrador) y lo abre para grabarlo.
+function copiarPago(){
+  const r=window._selectedRow;
+  if(!r || (r.Status||'').trim().toUpperCase()!=='CANCELADO') return;
+  if(!confirm('¿Crear un cobro nuevo copiando los datos y las líneas del cobro '+r.Id_NoPago+'? Quedará sin grabar hasta que presione Grabar.')) return;
+  const btn=document.getElementById('btnCopiarPago'); if(btn) btn.disabled=true;
+  fetch('/pagos/copiar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idNoPago:r.Id_NoPago})})
+    .then(x=>x.json()).then(d=>{
+      if(btn) btn.disabled=false;
+      if(d.error){alert(d.error);return;}
+      clearForm();
+      document.getElementById('frmTitle').textContent='Cobro #'+d.idNoPago+' (copia de #'+r.Id_NoPago+')';
+      cargarPago(d.idNoPago, ()=>{
+        _pago.confirmada=false;   // borrador: si cierra sin grabar, se descarta
+        if(d.omitidas && d.omitidas.length) showWarning('No se copiaron: '+d.omitidas.join('; '));
+      });
+      modal.show();
+      browse.load();
+    }).catch(()=>{ if(btn) btn.disabled=false; alert('Error de comunicación con el servidor.'); });
+}
 function openTimbrarPago(){
   if(!window._selectedRow) return;
   document.getElementById('timbraPagoBody').innerHTML = `<p>¿Timbrar el Cobro #${window._selectedRow.Id_NoPago}?</p>`;
