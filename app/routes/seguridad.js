@@ -186,8 +186,8 @@ router.get('/sesiones/historial', async (req, res) => {
     let where = 'WHERE 1=1';
     const usr = trim(req.query.usuario);
     if (usr) { rq.input('usr', sql.VarChar(100), '%' + usr + '%'); where += ' AND Usuario LIKE @usr'; }
-    if (/^d{4}-d{2}-d{2}$/.test(req.query.desde || '')) { rq.input('d', sql.Date, req.query.desde); where += ' AND Entrada >= @d'; }
-    if (/^d{4}-d{2}-d{2}$/.test(req.query.hasta || '')) { rq.input('h', sql.Date, req.query.hasta); where += ' AND Entrada < DATEADD(DAY,1,@h)'; }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(req.query.desde || '')) { rq.input('d', sql.Date, req.query.desde); where += ' AND Entrada >= @d'; }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(req.query.hasta || '')) { rq.input('h', sql.Date, req.query.hasta); where += ' AND Entrada < DATEADD(DAY,1,@h)'; }
     const r = await rq.query(`
       SELECT TOP 500 Id_Sesion, Usuario, IP, Navegador, Anio, Central, MotivoSalida,
              CONVERT(varchar(19), Entrada, 120) AS Entrada,

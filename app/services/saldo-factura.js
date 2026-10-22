@@ -86,27 +86,29 @@ async function ajustarSaldoNotaDebito(tx, { idNotaDebito, serieND, importeAplica
 // Lo ya aplicado a una Nota de Débito por Cobros REALIZADO y Notas de Crédito
 // EMITIDA (pagos parciales incluidos). `excluirPago` deja fuera un cobro en
 // curso (el que se está aplicando/revirtiendo), cuyo aporte se suma aparte.
-async function aplicadoND(tx, { idNotaDebito, serieND, excluirPago }) {
+async function aplicadoND(tx, { idNotaDebito, serieND, excluirPago, excluirNota }) {
   const r = await new sql.Request(tx)
     .input('id', sql.Decimal(7), idNotaDebito).input('serie', sql.VarChar(20), serieKey(serieND)).input('ex', sql.Decimal(9), excluirPago || 0)
+    .input('exn', sql.Decimal(7), excluirNota ? excluirNota.id : 0).input('exs', sql.VarChar(20), excluirNota ? serieKey(excluirNota.serie) : null)
     .query(`SELECT
       (SELECT ISNULL(SUM(pf.IMPRTE + ISNULL(pf.COMPESACION,0)),0) FROM Empresa2.PagFac pf JOIN Empresa2.Pagos pg ON pg.Id_NoPago=pf.ID_NOPAGO
         WHERE pf.ID_NOTACREDITO=@id AND ISNULL(pf.NOFACTURA,0)=0 AND ISNULL(LTRIM(RTRIM(pf.SERIEND)),'')=ISNULL(@serie,'')
           AND LTRIM(RTRIM(pg.Status))='REALIZADO' AND pg.Id_NoPago<>@ex) AS pagos,
       (SELECT ISNULL(SUM(d.IMPORTEAPLICA),0) FROM Empresa2.NotaCredDeta d JOIN Empresa2.NotaCred n
           ON n.Id_NotaCredito=d.ID_NOTACREDITO AND ISNULL(LTRIM(RTRIM(n.Serie)),'')=ISNULL(LTRIM(RTRIM(d.SERIE)),'') AND LTRIM(RTRIM(n.Tipo))=LTRIM(RTRIM(d.TIPO))
-        WHERE d.Id_NotaDebito=@id AND ISNULL(LTRIM(RTRIM(d.SerieND)),'')=ISNULL(@serie,'') AND LTRIM(RTRIM(n.Tipo))='NC' AND LTRIM(RTRIM(n.Status))='EMITIDA') AS notas`);
+        WHERE d.Id_NotaDebito=@id AND ISNULL(LTRIM(RTRIM(d.SerieND)),'')=ISNULL(@serie,'') AND LTRIM(RTRIM(n.Tipo))='NC' AND LTRIM(RTRIM(n.Status))='EMITIDA'
+          AND NOT (n.Id_NotaCredito=@exn AND ISNULL(LTRIM(RTRIM(n.Serie)),'')=ISNULL(@exs,''))) AS notas`);
   return num(r.recordset[0].pagos) + num(r.recordset[0].notas);
 }
 
 // Status de la ND a partir de TODO lo aplicado (varios cobros/notas, parciales)
 // más el aporte `extra` del cobro en curso.
-async function recalcularStatusND(tx, { idNotaDebito, serieND, extra = 0, excluirPago }) {
+async function recalcularStatusND(tx, { idNotaDebito, serieND, extra = 0, excluirPago, excluirNota }) {
   const nd = (await new sql.Request(tx).input('id', sql.Decimal(7), idNotaDebito).input('serie', sql.VarChar(10), serieKey(serieND))
     .query(`SELECT ImporteTotal FROM Empresa2.NotaCred WITH (UPDLOCK, ROWLOCK)
             WHERE Id_NotaCredito=@id AND LTRIM(RTRIM(Tipo))='ND' AND ISNULL(LTRIM(RTRIM(Serie)),'')=ISNULL(@serie,'')`)).recordset[0];
   if (!nd) return null;
-  const aplicado = (await aplicadoND(tx, { idNotaDebito, serieND, excluirPago })) + num(extra);
+  const aplicado = (await aplicadoND(tx, { idNotaDebito, serieND, excluirPago, excluirNota })) + num(extra);
   const nuevoStatus = statusPorSaldo(nd.ImporteTotal, 0, aplicado);
   await new sql.Request(tx).input('id', sql.Decimal(7), idNotaDebito).input('serie', sql.VarChar(10), serieKey(serieND)).input('status', sql.VarChar(20), nuevoStatus)
     .query(`UPDATE Empresa2.NotaCred SET Status=@status WHERE Id_NotaCredito=@id AND LTRIM(RTRIM(Tipo))='ND' AND ISNULL(LTRIM(RTRIM(Serie)),'')=ISNULL(@serie,'')`);

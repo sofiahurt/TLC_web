@@ -4,7 +4,7 @@ const { getPool, sql } = require('../config/db');
 const { browseQuery } = require('../config/browse');
 const { requierePermiso } = require('../middleware/permisos');
 const { importeALetras } = require('../services/importe-letras');
-const { ajustarSaldoFactura, ajustarSaldoNotaDebito } = require('../services/saldo-factura');
+const { ajustarSaldoFactura, recalcularStatusND } = require('../services/saldo-factura');
 const { quienAplica } = require('../services/docs-aplicados');
 
 // La clave real de una Nota de Crédito/Débito es (Tipo, Serie, Id_NotaCredito)
@@ -94,14 +94,15 @@ async function notaYaAplicada(db, tipo, serie, id) {
 }
 
 // signo=+1 aplica el importe de la línea, -1 lo devuelve. `importe` es el monto de la línea.
-async function aplicarEfectoLineaNC(tx, linea, signo, importe, anio) {
+async function aplicarEfectoLineaNC(tx, linea, signo, importe, anio, nota) {
   if (importe <= 0.005) return;
   if (Number(linea.ID_NOFACTURA) > 0) {
     await ajustarSaldoFactura(tx, 'nota_credito', {
       idNoFactura: linea.ID_NOFACTURA, serieFac: linea.SerieFac, importe, signo, anio: signo > 0 ? anio : undefined,
     });
   } else if (Number(linea.Id_NotaDebito) > 0) {
-    await ajustarSaldoNotaDebito(tx, { idNotaDebito: linea.Id_NotaDebito, serieND: linea.SerieND, importeAplicado: signo > 0 ? importe : 0 });
+    // La línea ya existe y la nota está EMITIDA (se cuenta sola al aplicar); al devolver se excluye esta nota.
+    await recalcularStatusND(tx, { idNotaDebito: linea.Id_NotaDebito, serieND: linea.SerieND, excluirNota: signo > 0 ? undefined : nota });
   }
 }
 
@@ -467,7 +468,7 @@ router.post('/partida/agregar', requierePermiso('notacred.editar'), async (req, 
         await aplicarEfectoLineaNC(tx, {
           ID_NOFACTURA: origen.esFactura ? origen.idRef : 0, SerieFac: origen.serieRef,
           Id_NotaDebito: origen.esFactura ? 0 : origen.idRef, SerieND: origen.serieRef,
-        }, 1, importeAplica, new Date().getFullYear());
+        }, 1, importeAplica, new Date().getFullYear(), { serie: serieCab, id: idNotaCredito });
       }
 
       const totales = await recalcularCabecera(tx, tipo, serieCab, idNotaCredito);
@@ -533,7 +534,7 @@ router.post('/linea/actualizar-importe', requierePermiso('notacred.editar'), asy
           if (Number(linea.ID_NOFACTURA) > 0) {
             await ajustarSaldoFactura(tx, 'nota_credito', { idNoFactura: linea.ID_NOFACTURA, serieFac: linea.SerieFac, importe: dif, signo: 1 });
           } else if (Number(linea.Id_NotaDebito) > 0) {
-            await ajustarSaldoNotaDebito(tx, { idNotaDebito: linea.Id_NotaDebito, serieND: linea.SerieND, importeAplicado: nuevoAplica });
+            await recalcularStatusND(tx, { idNotaDebito: linea.Id_NotaDebito, serieND: linea.SerieND });
           }
         }
       }
@@ -572,7 +573,7 @@ router.post('/partida/eliminar', requierePermiso('notacred.editar'), async (req,
       if (await notaYaAplicada(tx, tipo, serie, parseInt(idNotaCredito))) {
         const lin = (await reqNC(new sql.Request(tx), tipo, serie, parseInt(idNotaCredito)).input('idd', sql.Decimal(7), parseInt(idDeta))
           .query(`SELECT * FROM Empresa2.NotaCredDeta WITH (UPDLOCK, ROWLOCK) WHERE ID_NOTACREDITO=@id AND ID_NOTASCREDDETA=@idd AND ${NC_EQ}`)).recordset[0];
-        if (lin) await aplicarEfectoLineaNC(tx, lin, -1, num(lin.IMPORTEAPLICA));
+        if (lin) await aplicarEfectoLineaNC(tx, lin, -1, num(lin.IMPORTEAPLICA), undefined, { serie, id: parseInt(idNotaCredito) });
       }
       await reqNC(new sql.Request(tx), tipo, serie, parseInt(idNotaCredito))
         .input('idd', sql.Decimal(7), parseInt(idDeta))
@@ -692,7 +693,7 @@ router.post('/cabecera/grabar', requierePermiso('notacred.editar'), async (req, 
             idNoFactura: linea.ID_NOFACTURA, serieFac: linea.SerieFac, importe, signo: 1, anio,
           });
         } else if (Number(linea.Id_NotaDebito) > 0) {
-          await ajustarSaldoNotaDebito(tx, { idNotaDebito: linea.Id_NotaDebito, serieND: linea.SerieND, importeAplicado: importe });
+          await recalcularStatusND(tx, { idNotaDebito: linea.Id_NotaDebito, serieND: linea.SerieND, extra: importe });
         }
       }
 
@@ -737,7 +738,7 @@ async function revertirEfectoSaldo(tx, tipo, serie, id) {
         idNoFactura: linea.ID_NOFACTURA, serieFac: linea.SerieFac, importe, signo: -1,
       });
     } else if (Number(linea.Id_NotaDebito) > 0) {
-      await ajustarSaldoNotaDebito(tx, { idNotaDebito: linea.Id_NotaDebito, serieND: linea.SerieND, importeAplicado: 0 });
+      await recalcularStatusND(tx, { idNotaDebito: linea.Id_NotaDebito, serieND: linea.SerieND, excluirNota: { serie, id } });
     }
   }
 }

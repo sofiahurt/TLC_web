@@ -133,8 +133,8 @@ router.get('/conciliacion/data', requierePermiso('utilerias.conciliar'), async (
   const filtros = {
     idCliente: parseInt(q.cliente) || null, folio: parseInt(q.folio) || null,
     folioDesde: parseInt(q.folioDesde) || null, folioHasta: parseInt(q.folioHasta) || null,
-    desde: /^d{4}-d{2}-d{2}$/.test(q.desde || '') ? q.desde : null,
-    hasta: /^d{4}-d{2}-d{2}$/.test(q.hasta || '') ? q.hasta : null,
+    desde: /^\d{4}-\d{2}-\d{2}$/.test(q.desde || '') ? q.desde : null,
+    hasta: /^\d{4}-\d{2}-\d{2}$/.test(q.hasta || '') ? q.hasta : null,
   };
   try {
     const pool = await getPool();
