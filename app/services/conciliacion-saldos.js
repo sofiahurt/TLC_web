@@ -112,10 +112,12 @@ WITH P AS (
   WHERE LTRIM(RTRIM(pg.Status)) = 'REALIZADO' AND pf.ID_NOTACREDITO > 0 AND ISNULL(pf.NOFACTURA,0) = 0
   GROUP BY pf.ID_NOTACREDITO, ${SK('pf.SERIEND')}),
 N AS (
-  SELECT d.Id_NotaDebito id, ${SK('d.SerieND')} s, SUM(d.IMPORTEAPLICA) ap,
+  SELECT d.Id_NotaDebito id, ${SK('d.SerieND')} s,
+         SUM(CASE WHEN n.FlagResNota=1 AND k.c=1 THEN n.ImporteTotal ELSE d.IMPORTEAPLICA END) ap,
          STRING_AGG(CAST(d.ID_NOTACREDITO AS varchar(12)), ',') ids
   FROM Empresa2.NotaCredDeta d JOIN Empresa2.NotaCred n
     ON n.Id_NotaCredito = d.ID_NOTACREDITO AND ${SK('n.Serie')} = ${SK('d.SERIE')} AND LTRIM(RTRIM(n.Tipo)) = LTRIM(RTRIM(d.TIPO))
+  CROSS APPLY (SELECT COUNT(*) c FROM Empresa2.NotaCredDeta x WHERE x.ID_NOTACREDITO=n.Id_NotaCredito AND ${SK('x.SERIE')}=${SK('n.Serie')} AND LTRIM(RTRIM(x.TIPO))=LTRIM(RTRIM(n.Tipo))) k
   WHERE LTRIM(RTRIM(n.Status)) = 'EMITIDA' AND LTRIM(RTRIM(n.Tipo)) = 'NC' AND d.Id_NotaDebito > 0
   GROUP BY d.Id_NotaDebito, ${SK('d.SerieND')})
 SELECT nd.Id_NotaCredito, ${SK('nd.Serie')} Serie, nd.Id_Cliente, LTRIM(RTRIM(nd.NombreCom)) Cliente, nd.Fecha,

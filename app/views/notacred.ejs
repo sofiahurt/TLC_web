@@ -402,7 +402,7 @@ function clearForm(){
   document.getElementById('f_NombreCom_disp').readOnly=false;
   document.getElementById('f_RFC').value='';
   document.getElementById('f_Status').value='BORRADOR';
-  document.getElementById('f_EsResumen').checked=(_tipoActivo==='NC');
+  document.getElementById('f_EsResumen').checked=false;   // Un Concepto inicia desmarcado
   document.getElementById('f_Fecha').disabled=false;
   document.getElementById('f_Fecha').value=hoyISO();
   document.querySelectorAll('.sat-lupa-btn').forEach(b=>b.disabled=false);
@@ -467,11 +467,11 @@ function openEdit(){
   modal.show();
 }
 
-function cargarNota(tipo, serie, id, omitidasCopia){
+function cargarNota(tipo, serie, id, omitidasCopia, conservarConfirmada){
   fetch(`/notacred/get?tipo=${tipo}&serie=${encodeURIComponent(serie)}&id=${id}`).then(r=>r.json()).then(d=>{
     if(d.error){showError(d.error);return;}
     const c=d.cabecera;
-    _nota={idNotaCredito:c.Id_NotaCredito, serie:(c.Serie||'').trim(), tipo:tipo, confirmada:!omitidasCopia, cliente:c.Id_Cliente, esResumen:c.FlagResNota==1};   // omitidasCopia (arreglo) solo viene al abrir una copia: borrador sin grabar
+    _nota={idNotaCredito:c.Id_NotaCredito, serie:(c.Serie||'').trim(), tipo:tipo, confirmada:(conservarConfirmada!==undefined?conservarConfirmada:!omitidasCopia), cliente:c.Id_Cliente, esResumen:c.FlagResNota==1};   // omitidasCopia (arreglo) solo viene al abrir una copia: borrador sin grabar
     document.getElementById('f_Tipo').value=tipo;
     document.getElementById('f_Tipo').disabled=true;
     document.getElementById('f_Serie').value=(c.Serie||'').trim();
@@ -505,7 +505,7 @@ function cargarNota(tipo, serie, id, omitidasCopia){
     document.getElementById('f_RetencionResumen_disp').value=fmtMoney(c.Retencion);
     document.getElementById('f_TotalResumen_disp').value=fmtMoney(c.ImporteTotal);
     document.getElementById('f_ImporteLetras_disp').value=(c.ImporteLetras||'').trim();
-    document.getElementById('f_WhoIs_disp').textContent=(c.WhoIs||'').trim()||USUARIO_ACTUAL;
+    document.getElementById('f_WhoIs_disp').textContent=(c.WhoIs||'').trim();   // quien la realizó; no se sustituye por el usuario actual
     setSoloLectura(yaTimbrada);
     if(omitidasCopia && omitidasCopia.length) showWarning('No se copiaron: '+omitidasCopia.join('; '));
   });
@@ -564,6 +564,8 @@ function onCabeceraFieldChange(){
     .then(r=>r.json()).then(d=>{
       if(d.error){showError(d.error);return;}
       document.getElementById('f_ImporteLetras_disp').value=(d.totales.ImporteLetras||'').trim();
+      // Cambió el check Un Concepto: se recargan partidas e importes (en 0 o a su saldo)
+      if(d.modoCambio) cargarNota(_nota.tipo,_nota.serie,_nota.idNotaCredito,undefined,_nota.confirmada);
     });
 }
 
@@ -600,8 +602,8 @@ function filaDetalleHtml(l){
         <span class="subtotal-disp">${fmtMoney(l.SUBTOTAL)}</span>
         <input type="number" class="form-control form-control-sm text-end py-0 subtotal-edit d-none" style="width:90px;display:inline-block" step="0.01" min="0" value="${fmtN(l.SUBTOTAL)}"
           onblur="confirmarEdicionImporte(${l.ID_NOTASCREDDETA}, this)" onkeydown="if(event.key==='Enter') this.blur(); if(event.key==='Escape') cancelarEdicionImporte(this,'${fmtN(l.SUBTOTAL)}');">
-        <button class="btn btn-sm btn-outline-secondary py-0 px-1 btn-editar-importe" title="Editar importe" onclick="activarEdicionImporte(this)"><i class="bi bi-pencil"></i></button>
       </td>`;
+  const btnEditar = _nota.esResumen ? '' : `<button class="btn btn-sm btn-outline-secondary py-0 px-1 btn-editar-importe" title="Editar importe" onclick="activarEdicionImporte(this)"><i class="bi bi-pencil"></i></button> `;
   return `<tr data-idd="${l.ID_NOTASCREDDETA}">
     <td>${ref}</td>
     <td class="small">${uuid}</td>
@@ -610,7 +612,7 @@ function filaDetalleHtml(l){
     <td class="text-end">${fmtMoney(l.IVA)}</td>
     <td class="text-end">${fmtMoney(l.RETENCION)}</td>
     <td class="text-end">${fmtMoney(l.IMPORTEAPLICA)}</td>
-    <td class="text-center"><button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="eliminarLinea(${l.ID_NOTASCREDDETA})"><i class="bi bi-trash"></i></button></td>
+    <td class="text-center text-nowrap">${btnEditar}<button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="eliminarLinea(${l.ID_NOTASCREDDETA})"><i class="bi bi-trash"></i></button></td>
   </tr>`;
 }
 function pintarDetalle(lineas){
@@ -619,10 +621,10 @@ function pintarDetalle(lineas){
 }
 
 function activarEdicionImporte(btn){
-  const td=btn.closest('td');
-  td.querySelector('.subtotal-disp').classList.add('d-none');
+  const tr=btn.closest('tr');
+  tr.querySelector('.subtotal-disp').classList.add('d-none');
   btn.classList.add('d-none');
-  const inp=td.querySelector('.subtotal-edit');
+  const inp=tr.querySelector('.subtotal-edit');
   inp.classList.remove('d-none');
   inp.focus(); inp.select();
 }

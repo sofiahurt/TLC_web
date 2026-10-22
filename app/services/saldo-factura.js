@@ -83,6 +83,7 @@ async function ajustarSaldoNotaDebito(tx, { idNotaDebito, serieND, importeAplica
   return { Status: nuevoStatus };
 }
 
+// (En una NC "Un Concepto" con una sola línea cuenta el importe TOTAL de la nota.)
 // Lo ya aplicado a una Nota de Débito por Cobros REALIZADO y Notas de Crédito
 // EMITIDA (pagos parciales incluidos). `excluirPago` deja fuera un cobro en
 // curso (el que se está aplicando/revirtiendo), cuyo aporte se suma aparte.
@@ -94,8 +95,9 @@ async function aplicadoND(tx, { idNotaDebito, serieND, excluirPago, excluirNota 
       (SELECT ISNULL(SUM(pf.IMPRTE + ISNULL(pf.COMPESACION,0)),0) FROM Empresa2.PagFac pf JOIN Empresa2.Pagos pg ON pg.Id_NoPago=pf.ID_NOPAGO
         WHERE pf.ID_NOTACREDITO=@id AND ISNULL(pf.NOFACTURA,0)=0 AND ISNULL(LTRIM(RTRIM(pf.SERIEND)),'')=ISNULL(@serie,'')
           AND LTRIM(RTRIM(pg.Status))='REALIZADO' AND pg.Id_NoPago<>@ex) AS pagos,
-      (SELECT ISNULL(SUM(d.IMPORTEAPLICA),0) FROM Empresa2.NotaCredDeta d JOIN Empresa2.NotaCred n
+      (SELECT ISNULL(SUM(CASE WHEN n.FlagResNota=1 AND k.c=1 THEN n.ImporteTotal ELSE d.IMPORTEAPLICA END),0) FROM Empresa2.NotaCredDeta d JOIN Empresa2.NotaCred n
           ON n.Id_NotaCredito=d.ID_NOTACREDITO AND ISNULL(LTRIM(RTRIM(n.Serie)),'')=ISNULL(LTRIM(RTRIM(d.SERIE)),'') AND LTRIM(RTRIM(n.Tipo))=LTRIM(RTRIM(d.TIPO))
+          CROSS APPLY (SELECT COUNT(*) c FROM Empresa2.NotaCredDeta x WHERE x.ID_NOTACREDITO=n.Id_NotaCredito AND ISNULL(LTRIM(RTRIM(x.SERIE)),'')=ISNULL(LTRIM(RTRIM(n.Serie)),'') AND LTRIM(RTRIM(x.TIPO))=LTRIM(RTRIM(n.Tipo))) k
         WHERE d.Id_NotaDebito=@id AND ISNULL(LTRIM(RTRIM(d.SerieND)),'')=ISNULL(@serie,'') AND LTRIM(RTRIM(n.Tipo))='NC' AND LTRIM(RTRIM(n.Status))='EMITIDA'
           AND NOT (n.Id_NotaCredito=@exn AND ISNULL(LTRIM(RTRIM(n.Serie)),'')=ISNULL(@exs,''))) AS notas`);
   return num(r.recordset[0].pagos) + num(r.recordset[0].notas);

@@ -106,6 +106,86 @@ async function aplicarEfectoLineaNC(tx, linea, signo, importe, anio, nota) {
   }
 }
 
+// Un Concepto, NC con una sola factura: el importe aplicado a la factura es el total de la nota.
+// Deja la línea con esos importes (para poder revertirla al cancelar) y regresa lo aplicado (topado al saldo).
+async function fijarImporteResumenFactura(tx, tipo, serie, id, linea, cab) {
+  const fac = (await new sql.Request(tx).input('id', sql.Decimal(9), linea.ID_NOFACTURA).input('serieFac', sql.VarChar(20), serieKey(linea.SerieFac))
+    .query(`SELECT TOTAL, PagosReal, NotasCredito FROM Empresa2.Factura WHERE Id_NoFactura=@id AND ISNULL(LTRIM(RTRIM(SerieFac)),'')=ISNULL(@serieFac,'')`)).recordset[0];
+  const saldo = fac ? Math.max(num(fac.TOTAL) - num(fac.PagosReal) - num(fac.NotasCredito), 0) : 0;
+  const total = Math.round(Math.min(num(cab.ImporteTotal), saldo) * 100) / 100;
+  await reqNC(new sql.Request(tx), tipo, serie, id).input('idd', sql.Decimal(7), linea.ID_NOTASCREDDETA)
+    .input('sub', sql.Decimal(11,2), num(cab.Subtotal)).input('iva', sql.Decimal(9,2), num(cab.IVA)).input('ret', sql.Decimal(9,2), num(cab.Retencion)).input('apl', sql.Decimal(11,2), total)
+    .query(`UPDATE Empresa2.NotaCredDeta SET SUBTOTAL=@sub, IVA=@iva, RETENCION=@ret, IMPORTEAPLICA=@apl WHERE ID_NOTACREDITO=@id AND ID_NOTASCREDDETA=@idd AND ${NC_EQ}`);
+  return total;
+}
+
+// Cambia el modo "Un Concepto" de una nota no timbrada (BORRADOR o EMITIDA).
+//  - marcar: las partidas pasan a 0 y, si la nota ya estaba EMITIDA, se deshace el efecto de cada línea;
+//    luego aplica el efecto del modo resumen (NC con una sola factura => total de la nota; una sola ND => total de la nota).
+//  - desmarcar: cada partida vuelve al saldo de su documento y, si estaba EMITIDA, se aplica el efecto línea por línea.
+// Regresa true si hubo cambio de modo.
+async function cambiarModoResumen(tx, tipo, serie, id, nuevoRes) {
+  const cab = (await reqNC(new sql.Request(tx), tipo, serie, id)
+    .query(`SELECT Status, FlagResNota, Subtotal, IVA, Retencion, ImporteTotal FROM Empresa2.NotaCred WITH (UPDLOCK, ROWLOCK) WHERE Id_NotaCredito=@id AND ${NC_EQ}`)).recordset[0];
+  if (!cab || Number(cab.FlagResNota) === nuevoRes) return false;
+  const status = trim(cab.Status).toUpperCase();
+  if (status !== 'BORRADOR' && status !== 'EMITIDA') return false;
+  const aplicada = status === 'EMITIDA';
+  const anio = new Date().getFullYear();
+
+  // 1) deshacer el efecto vigente (con los importes actuales de las líneas)
+  if (aplicada) await revertirEfectoSaldo(tx, tipo, serie, id);
+
+  // 2) nuevos importes de las partidas
+  const lins = (await reqNC(new sql.Request(tx), tipo, serie, id).query(`SELECT * FROM Empresa2.NotaCredDeta WHERE ID_NOTACREDITO=@id AND ${NC_EQ} ORDER BY ID_NOTASCREDDETA`)).recordset;
+  for (const l of lins) {
+    let sub = 0, iva = 0, ret = 0, apl = 0;
+    if (!nuevoRes) {
+      const esFac = Number(l.ID_NOFACTURA) > 0;
+      const o = esFac
+        ? (await new sql.Request(tx).input('id', sql.Decimal(9), l.ID_NOFACTURA).input('s', sql.VarChar(20), serieKey(l.SerieFac))
+            .query(`SELECT SubTotal AS sub, IVA AS iva, Retencion AS ret, TOTAL AS tot, ISNULL(PagosReal,0)+ISNULL(NotasCredito,0) AS ap FROM Empresa2.Factura WHERE Id_NoFactura=@id AND ISNULL(LTRIM(RTRIM(SerieFac)),'')=ISNULL(@s,'')`)).recordset[0]
+        : (await new sql.Request(tx).input('id', sql.Decimal(7), l.Id_NotaDebito).input('s', sql.VarChar(10), serieKey(l.SerieND))
+            .query(`SELECT Subtotal AS sub, IVA AS iva, Retencion AS ret, ImporteTotal AS tot, 0 AS ap FROM Empresa2.NotaCred WHERE Id_NotaCredito=@id AND LTRIM(RTRIM(Tipo))='ND' AND ISNULL(LTRIM(RTRIM(Serie)),'')=ISNULL(@s,'')`)).recordset[0];
+      if (o) { sub = num(o.sub); iva = num(o.iva); ret = num(o.ret); apl = Math.round(Math.max(num(o.tot) - num(o.ap), 0) * 100) / 100; }
+    }
+    await reqNC(new sql.Request(tx), tipo, serie, id).input('idd', sql.Decimal(7), l.ID_NOTASCREDDETA)
+      .input('sub', sql.Decimal(11,2), sub).input('iva', sql.Decimal(9,2), iva).input('ret', sql.Decimal(9,2), ret).input('apl', sql.Decimal(11,2), apl)
+      .query(`UPDATE Empresa2.NotaCredDeta SET SUBTOTAL=@sub, IVA=@iva, RETENCION=@ret, IMPORTEAPLICA=@apl WHERE ID_NOTACREDITO=@id AND ID_NOTASCREDDETA=@idd AND ${NC_EQ}`);
+  }
+  await reqNC(new sql.Request(tx), tipo, serie, id).input('flagres', sql.TinyInt, nuevoRes)
+    .query(`UPDATE Empresa2.NotaCred SET FlagResNota=@flagres WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
+  if (nuevoRes) {
+    // Un Concepto: el importe de la nota se captura de nuevo en la cabecera (parte de 0).
+    await reqNC(new sql.Request(tx), tipo, serie, id).input('letras', sql.VarChar(200), importeALetras(0, 'MXN'))
+      .query(`UPDATE Empresa2.NotaCred SET Subtotal=0, IVA=0, Retencion=0, ImporteTotal=0, SumaPartidas=0, ImporteLetras=@letras WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
+    cab.Subtotal = 0; cab.IVA = 0; cab.Retencion = 0; cab.ImporteTotal = 0;
+  }
+
+  // 3) aplicar el efecto del nuevo modo (la nota ya EMITIDA sigue contando como aplicada)
+  if (aplicada) {
+    const lineas = (await reqNC(new sql.Request(tx), tipo, serie, id).query(`SELECT * FROM Empresa2.NotaCredDeta WHERE ID_NOTACREDITO=@id AND ${NC_EQ} ORDER BY ID_NOTASCREDDETA`)).recordset;
+    for (const l of lineas) {
+      if (nuevoRes) {
+        if (lineas.length === 1 && trim(tipo) === 'NC' && Number(l.ID_NOFACTURA) > 0) {
+          const importe = await fijarImporteResumenFactura(tx, tipo, serie, id, l, cab);
+          if (importe > 0.005) await ajustarSaldoFactura(tx, 'nota_credito', { idNoFactura: l.ID_NOFACTURA, serieFac: l.SerieFac, importe, signo: 1, anio });
+        } else if (lineas.length === 1 && Number(l.Id_NotaDebito) > 0) {
+          await recalcularStatusND(tx, { idNotaDebito: l.Id_NotaDebito, serieND: l.SerieND });
+        }
+      } else {
+        const importe = num(l.IMPORTEAPLICA);
+        if (Number(l.ID_NOFACTURA) > 0) {
+          if (importe > 0.005) await ajustarSaldoFactura(tx, 'nota_credito', { idNoFactura: l.ID_NOFACTURA, serieFac: l.SerieFac, importe, signo: 1, anio });
+        } else if (Number(l.Id_NotaDebito) > 0) {
+          await recalcularStatusND(tx, { idNotaDebito: l.Id_NotaDebito, serieND: l.SerieND });
+        }
+      }
+    }
+  }
+  return true;
+}
+
 router.get('/', (req, res) => res.render('notacred', { usuario: req.session.usuario, modulo: 'notacred' }));
 
 // ── BROWSE (2 pestañas NC/ND) ───────────────────────────────────────────────
@@ -361,6 +441,7 @@ router.post('/partida/agregar', requierePermiso('notacred.editar'), async (req, 
       let idNotaCredito = parseInt(f.idNotaCredito) || 0;
       let serieCab = serieKey(f.serieCab);
       let yaAplicada = false;
+      let esResumenNota = !!f.esResumen;
       if (!idNotaCredito) {
         const nextRes = await reqNC(new sql.Request(tx), tipo, serieCab).query(`SELECT ISNULL(MAX(Id_NotaCredito),0)+1 AS next FROM Empresa2.NotaCred WITH (UPDLOCK, HOLDLOCK) WHERE ${NC_EQ}`);
         idNotaCredito = nextRes.recordset[0].next;
@@ -402,8 +483,9 @@ router.post('/partida/agregar', requierePermiso('notacred.editar'), async (req, 
             @flagres, @tipo, 0, 0, 0, 0, 0, @whois, @lugarexp
           )`);
       } else {
-        const cabRes = await reqNC(new sql.Request(tx), tipo, serieCab, idNotaCredito).query(`SELECT Status, UUID FROM Empresa2.NotaCred WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
+        const cabRes = await reqNC(new sql.Request(tx), tipo, serieCab, idNotaCredito).query(`SELECT Status, UUID, FlagResNota FROM Empresa2.NotaCred WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
         if (!cabRes.recordset[0]) throw Object.assign(new Error('Nota no encontrada.'), { status: 400 });
+        esResumenNota = Number(cabRes.recordset[0].FlagResNota) === 1;
         if (trim(cabRes.recordset[0].UUID)) throw Object.assign(new Error('La nota ya está timbrada; solo se puede consultar.'), { status: 409 });
         yaAplicada = await notaYaAplicada(tx, tipo, serieCab, idNotaCredito);
 
@@ -430,10 +512,11 @@ router.post('/partida/agregar', requierePermiso('notacred.editar'), async (req, 
       // aplica igual en resumen -- ahí es el importe operativo que reduce el
       // saldo de ESE documento en /cabecera/grabar, independiente del importe
       // declarado en el concepto único de cabecera (ver /cabecera/importe-resumen).
-      const importeAplica = saldo;
-      const subtotalLinea = origen.subtotal;
-      const ivaLinea = origen.iva;
-      const retenLinea = origen.reten;
+      // Un Concepto: las partidas entran en 0; el importe vive en la cabecera y se aplica al grabar.
+      const importeAplica = esResumenNota ? 0 : saldo;
+      const subtotalLinea = esResumenNota ? 0 : origen.subtotal;
+      const ivaLinea = esResumenNota ? 0 : origen.iva;
+      const retenLinea = esResumenNota ? 0 : origen.reten;
       const nextDetaRes = await reqNC(new sql.Request(tx), tipo, serieCab, idNotaCredito).query(`SELECT ISNULL(MAX(ID_NOTASCREDDETA),0)+1 AS next FROM Empresa2.NotaCredDeta WHERE ID_NOTACREDITO=@id AND ${NC_EQ}`);
       const idDeta = nextDetaRes.recordset[0].next;
 
@@ -597,8 +680,13 @@ router.post('/cabecera/actualizar', requierePermiso('notacred.editar'), async (r
       if (trim(cabRes.recordset[0].UUID)) throw Object.assign(new Error('La nota ya está timbrada; solo se puede consultar.'), { status: 409 });
       const yaTimbrada = false;
 
+      // Cambio del check Un Concepto: marcado => partidas en 0; desmarcado => importes de cada documento.
+      // En una nota ya EMITIDA también se deshace/aplica el efecto sobre facturas y ND.
+      const nuevoRes = req.body.esResumen ? 1 : 0;
+      const modoCambio = await cambiarModoResumen(tx, tipo, serie, id, nuevoRes);
+
       const r2 = reqNC(new sql.Request(tx), tipo, serie, id)
-        .input('flagres', sql.TinyInt, req.body.esResumen ? 1 : 0);
+        .input('flagres', sql.TinyInt, nuevoRes);
       let sets = ['FlagResNota=@flagres'];
       if (!yaTimbrada) {
         if (trim(req.body.fecha)) { r2.input('fecha', sql.Date, trim(req.body.fecha)); sets.push('Fecha=@fecha'); }
@@ -611,9 +699,9 @@ router.post('/cabecera/actualizar', requierePermiso('notacred.editar'), async (r
         if (trim(req.body.descripcion) !== '') { r2.input('descripcion', sql.VarChar(100), trim(req.body.descripcion)); sets.push('Descripcion=@descripcion'); }
       }
       await r2.query(`UPDATE Empresa2.NotaCred SET ${sets.join(', ')} WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
-      return await recalcularCabecera(tx, tipo, serie, id);
+      return { ...(await recalcularCabecera(tx, tipo, serie, id)), modoCambio };
     });
-    res.json({ ok: true, totales: result });
+    res.json({ ok: true, totales: result, modoCambio: result.modoCambio });
   } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
 });
 
@@ -631,7 +719,7 @@ router.post('/cabecera/importe-resumen', requierePermiso('notacred.editar'), asy
     const pool = await getPool();
     const result = await withTransaction(pool, async (tx) => {
       const cabRes = await reqNC(new sql.Request(tx), tipo, serie, id)
-        .query(`SELECT UUID, FlagResNota FROM Empresa2.NotaCred WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
+        .query(`SELECT UUID, FlagResNota, Status FROM Empresa2.NotaCred WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
       const cab = cabRes.recordset[0];
       if (!cab) throw Object.assign(new Error('Nota no encontrada.'), { status: 404 });
       if (Number(cab.FlagResNota) !== 1) throw Object.assign(new Error('Esta nota no está en modo resumen.'), { status: 400 });
@@ -664,6 +752,19 @@ router.post('/cabecera/importe-resumen', requierePermiso('notacred.editar'), asy
         .input('letras', sql.VarChar(200), importeLetras)
         .query(`UPDATE Empresa2.NotaCred SET Subtotal=@sub, IVA=@iva, Retencion=@ret, ImporteTotal=@tot, SumaPartidas=@tot, ImporteLetras=@letras WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
 
+      // Nota ya EMITIDA con una sola línea: el efecto sobre esa factura/ND sigue al total de la nota.
+      if (trim(cab.Status).toUpperCase() === 'EMITIDA' && lineasRes.recordset.length === 1) {
+        const l1 = (await reqNC(new sql.Request(tx), tipo, serie, id).query(`SELECT * FROM Empresa2.NotaCredDeta WHERE ID_NOTACREDITO=@id AND ${NC_EQ}`)).recordset[0];
+        if (l1 && Number(l1.ID_NOFACTURA) > 0 && trim(tipo) === 'NC') {
+          const antes = num(l1.IMPORTEAPLICA);
+          const nuevoApl = await fijarImporteResumenFactura(tx, tipo, serie, id, l1, { Subtotal: nuevoSub, IVA: nuevoIva, Retencion: nuevoRet, ImporteTotal: total });
+          const dif = Math.round((nuevoApl - antes) * 100) / 100;
+          if (Math.abs(dif) > 0.005) await ajustarSaldoFactura(tx, 'nota_credito', { idNoFactura: l1.ID_NOFACTURA, serieFac: l1.SerieFac, importe: dif, signo: 1 });
+        } else if (l1 && Number(l1.Id_NotaDebito) > 0) {
+          await recalcularStatusND(tx, { idNotaDebito: l1.Id_NotaDebito, serieND: l1.SerieND });
+        }
+      }
+
       return { limitado, saldoDisponible, totales: { Subtotal: nuevoSub, IVA: nuevoIva, Retencion: nuevoRet, ImporteTotal: total, ImporteLetras: importeLetras } };
     });
     res.json({ ok: true, ...result });
@@ -681,12 +782,28 @@ router.post('/cabecera/grabar', requierePermiso('notacred.editar'), async (req, 
       await exigirNoTimbrada(tx, tipo, serie, id);
       // Ya EMITIDA (detallada): su efecto ya está aplicado línea por línea; no se vuelve a sumar.
       if (await notaYaAplicada(tx, tipo, serie, id)) return;
+      const stActual = (await reqNC(new sql.Request(tx), tipo, serie, id).query(`SELECT Status FROM Empresa2.NotaCred WHERE Id_NotaCredito=@id AND ${NC_EQ}`)).recordset[0];
+      if (stActual && trim(stActual.Status).toUpperCase() === 'EMITIDA') return;   // Un Concepto ya grabada: no se aplica dos veces
       const detRes = await reqNC(new sql.Request(tx), tipo, serie, id).query(`SELECT * FROM Empresa2.NotaCredDeta WHERE ID_NOTACREDITO=@id AND ${NC_EQ}`);
       if (!detRes.recordset.length) throw Object.assign(new Error('La nota no tiene líneas.'), { status: 400 });
       const anio = new Date().getFullYear();
 
+      const cab = (await reqNC(new sql.Request(tx), tipo, serie, id)
+        .query(`SELECT FlagResNota, Subtotal, IVA, Retencion, ImporteTotal FROM Empresa2.NotaCred WHERE Id_NotaCredito=@id AND ${NC_EQ}`)).recordset[0];
+      const esResumen = Number(cab.FlagResNota) === 1;
+      const unaLinea = detRes.recordset.length === 1;
+
       for (const linea of detRes.recordset) {
-        const importe = num(linea.IMPORTEAPLICA);
+        let importe = num(linea.IMPORTEAPLICA);
+        // Un Concepto, NC con una sola factura: lo aplicado a la factura es el total de la nota.
+        if (esResumen && unaLinea && trim(tipo) === 'NC' && Number(linea.ID_NOFACTURA) > 0) {
+          importe = await fijarImporteResumenFactura(tx, tipo, serie, id, linea, cab);
+        }
+        // Un Concepto con una sola ND: su status se calcula con el total de la nota (ver aplicadoND).
+        if (esResumen && unaLinea && Number(linea.Id_NotaDebito) > 0) {
+          await recalcularStatusND(tx, { idNotaDebito: linea.Id_NotaDebito, serieND: linea.SerieND, extra: num(cab.ImporteTotal) });
+          continue;
+        }
         if (importe <= 0.005) continue;
         if (Number(linea.ID_NOFACTURA) > 0) {
           await ajustarSaldoFactura(tx, 'nota_credito', {
@@ -732,7 +849,8 @@ async function revertirEfectoSaldo(tx, tipo, serie, id) {
   const detRes = await reqNC(new sql.Request(tx), tipo, serie, id).query(`SELECT * FROM Empresa2.NotaCredDeta WHERE ID_NOTACREDITO=@id AND ${NC_EQ}`);
   for (const linea of detRes.recordset) {
     const importe = num(linea.IMPORTEAPLICA);
-    if (importe <= 0.005) continue;
+    // Una ND como línea se recalcula siempre (en Un Concepto la línea va en 0 y el efecto es el total de la nota).
+    if (importe <= 0.005 && !(Number(linea.Id_NotaDebito) > 0)) continue;
     if (Number(linea.ID_NOFACTURA) > 0) {
       await ajustarSaldoFactura(tx, 'nota_credito', {
         idNoFactura: linea.ID_NOFACTURA, serieFac: linea.SerieFac, importe, signo: -1,
@@ -814,8 +932,9 @@ router.post('/copiar', requierePermiso('notacred.editar'), requierePermiso('nota
         const saldo = r2(Math.max(t.total - t.pagosReal - t.notasCredito, 0));
         if (saldo <= 0.005) { omitidas.push(etiqueta + ': ' + await motivoOmision(tx, esFactura, esFactura ? l.ID_NOFACTURA : l.Id_NotaDebito, esFactura ? l.SerieFac : l.SerieND, true)); continue; }
         const aplicaOrig = num(l.IMPORTEAPLICA);
-        const aplica = r2(Math.min(aplicaOrig > 0.005 ? aplicaOrig : saldo, saldo));
-        nuevas.push({ l, t, saldo, aplica, f: aplicaOrig > 0.005 ? aplica / aplicaOrig : 1 });
+        // Un Concepto: las partidas van en 0 (el importe vive en la cabecera).
+        const aplica = esResumen ? 0 : r2(Math.min(aplicaOrig > 0.005 ? aplicaOrig : saldo, saldo));
+        nuevas.push({ l, t, saldo, aplica, f: esResumen ? 0 : (aplicaOrig > 0.005 ? aplica / aplicaOrig : 1) });
       }
       if (!nuevas.length) {
         throw Object.assign(new Error('Ninguna línea de la nota se puede copiar (ya están pagadas, canceladas o sin saldo): ' + omitidas.join('; ')), { status: 400 });
