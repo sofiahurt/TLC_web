@@ -42,6 +42,8 @@ function claveUnidadDescripcion(claveUnidad) {
 // aplica) y regresa los importes para acumular a nivel comprobante.
 function agregarConcepto(conceptosNode, { claveProdServ, claveUnidad, descripcion, subtotal, iva, reten }) {
   const importe = fmtDec(subtotal, 2);
+  // ObjetoImp: 02 (sí objeto de impuesto) si lleva IVA o retención; 01 (no objeto) si no lleva ninguno.
+  const llevaImpuestos = iva > 0.005 || reten > 0.005;
   const concepto = conceptosNode.ele('cfdi:Concepto', {
     ClaveProdServ: fmt(claveProdServ) || '78141500',
     Cantidad:      '1',
@@ -50,8 +52,13 @@ function agregarConcepto(conceptosNode, { claveProdServ, claveUnidad, descripcio
     Descripcion:   fmt(descripcion) || 'SERVICIO DE TRANSPORTE',
     ValorUnitario: importe,
     Importe:       importe,
-    ObjetoImp:     '02',
+    ObjetoImp:     llevaImpuestos ? '02' : '01',
   });
+
+  if (!llevaImpuestos) {
+    concepto.up();
+    return { subtotal: parseFloat(importe), iva, reten };
+  }
 
   const impuestosNode = concepto.ele('cfdi:Impuestos');
   if (iva > 0.005) {

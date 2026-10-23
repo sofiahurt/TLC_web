@@ -35,6 +35,8 @@ function extraerDatosXMLNotaCredito(xmlString) {
   const receptor = porLocalName(doc, 'Receptor');
   const tfd      = porLocalName(doc, 'TimbreFiscalDigital');
   return {
+    // ObjetoImp tomado del propio XML (timbrado o armado en memoria): 02 si algún concepto es objeto de impuesto.
+    objetoImp:        /ObjetoImp="02"/.test(xmlString) ? '02' : '01',
     noCertificado:    attr(comprobante, 'NoCertificado'),
     emisorRfc:        attr(emisor, 'Rfc'),
     receptorRfc:      attr(receptor, 'Rfc'),
@@ -135,6 +137,11 @@ function cajaCliente(d) {
   };
 }
 
+// ObjetoImp del SAT, igual al del XML de la nota.
+function objetoImpuestoTxt(d) {
+  return d.objetoImp === '02' ? '02 - Sí objeto de Impuestos' : '01 - No objeto de Impuestos';
+}
+
 function cajaFolio(d) {
   const tipoTxt = d.nc.Tipo === 'NC' ? 'N O T A   D E   C R É D I T O' : 'N O T A   D E   D É B I T O';
   const folioTxt = String(d.nc.Id_NotaCredito).padStart(6, ' ');
@@ -154,10 +161,12 @@ function cajaFolio(d) {
         { text: 'Folio Fiscal:', bold: true, fontSize: 7 },
         { text: fmt(d.nc.UUID) || '(sin timbrar)', fontSize: 7 },
       ]}],
-      [{ border: [true,false,true,true], margin: [4,2,4,3], columns: [
+      [{ border: [true,false,true,false], margin: [4,2,4,2], columns: [
         { text: [{ text: 'Fecha Timbre: ', bold: true, fontSize: 7 }], width: 'auto' },
         { text: fmt(d.nc.FechaTimbrado), fontSize: 7, width: '*' },
       ]}],
+      [{ border: [true,false,true,false], margin: [4,2,4,2], text: [{ text: 'Exportación: ', bold: true, fontSize: 7 }, { text: '01 - No Aplica', fontSize: 7 }] }],
+      [{ border: [true,false,true,true], margin: [4,2,4,3], text: [{ text: 'Obj.Impuestos: ', bold: true, fontSize: 7 }, { text: objetoImpuestoTxt(d), fontSize: 7 }] }],
     ]},
   };
 }
