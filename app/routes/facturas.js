@@ -4,6 +4,7 @@ const { getPool, sql } = require('../config/db');
 const { browseQuery } = require('../config/browse');
 const { requierePermiso } = require('../middleware/permisos');
 const { importeALetras } = require('../services/importe-letras');
+const { getSatDb } = require('../config/sat-db');
 
 // La clave real de una factura es el par (SerieFac, Id_NoFactura) — la tabla
 // Empresa2.Factura NO tiene ningún índice/PK, y SerieFac normalmente viene
@@ -357,6 +358,23 @@ router.get('/get', async (req, res) => {
 });
 
 // ── DEFAULTS DE CLIENTE (punto 2) ─────────────────────────────────────────────
+// Descripción oficial (catálogo SAT) de una clave de producto/servicio; '' si no existe.
+function descripcionClaveProdServ(clave) {
+  try {
+    const row = getSatDb().prepare('SELECT descripcion FROM sat_ProdServ WHERE c_claveprodserv = ?').get(trim(clave));
+    return row ? trim(row.descripcion).slice(0, 100) : '';
+  } catch (e) { return ''; }
+}
+
+// Antepone a la descripción del renglón el giro del cliente: "LOGÍSTICA - " si el cliente tiene el
+// check de Logística, "FLETE - " si no. `db` es el pool o una transacción.
+async function conPrefijoGiro(db, idCliente, descripcion) {
+  const r = await new sql.Request(db).input('id', sql.Decimal(7), idCliente)
+    .query('SELECT LOGISTICA FROM Empresa2.Clientes WHERE ID_CLIENTE=@id');
+  const prefijo = r.recordset[0] && Number(r.recordset[0].LOGISTICA) === 1 ? 'LOGÍSTICA - ' : 'FLETE - ';
+  return (prefijo + trim(descripcion)).slice(0, 100);
+}
+
 router.get('/lookup/cliente-defaults', async (req, res) => {
   try {
     const pool = await getPool();
@@ -536,7 +554,9 @@ router.post('/partida/agregar', requierePermiso('facturas.editar'), async (req, 
       // body, si no, el default del sistema legado ('78141500'). ClaveUnidad
       // siempre 'E48' (fijo, igual que en el sistema legado).
       const claveProdServ = trim(f.claveProdServ) || '78141500';
-      const descProdServ = trim(f.descripcionProdServ);
+      // Descripción del renglón: la del cliente si trae; si no, la descripción de la clave de concepto (catálogo SAT).
+      // Se antepone LOGÍSTICA - / FLETE - según el check de Logística del cliente.
+      const descProdServ = await conPrefijoGiro(tx, idCliente, trim(f.descripcionProdServ) || descripcionClaveProdServ(claveProdServ));
 
       const nextDetaRes = await reqSerieFac(new sql.Request(tx), serieFac).input('id', sql.Decimal(9), idNoFactura)
         .query(`SELECT ISNULL(MAX(ID_NODETAFAC),0)+1 AS next FROM Empresa2.FacDeta WHERE ID_NOFACTURA=@id AND ${SERIEFAC_EQ}`);
@@ -791,12 +811,19 @@ router.post('/detalle/editar', requierePermiso('facturas.editar'), async (req, r
   const idNoDetaFac = parseInt(req.body.idNoDetaFac);
   const serieFac = req.body.serieFac;
   const claveProdServ = trim(req.body.C_CLAVEPRODSERV).slice(0, 20);
-  const descripcion = trim(req.body.DESCRIPCION).slice(0, 100);
+  // Si se deja vacía, se usa la descripción de la clave de concepto del renglón.
+  let descripcion = trim(req.body.DESCRIPCION).slice(0, 100);
   const textoAdd = trim(req.body.TEXTOADD).slice(0, 999);
   if (!idNoFactura || !idNoDetaFac) return res.status(400).json({ error: 'Faltan parámetros' });
   try {
     const pool = await getPool();
     await exigirNoTimbrada(pool, serieFac, idNoFactura);
+    if (!descripcion) {
+      // Vacía: se llena con la descripción de la clave del renglón, con el giro del cliente al inicio.
+      const cli = (await reqSerieFac(pool.request(), serieFac).input('id', sql.Decimal(9), idNoFactura)
+        .query(`SELECT Id_Cliente FROM Empresa2.Factura WHERE Id_NoFactura=@id AND ${SERIEFAC_EQ}`)).recordset[0];
+      if (cli) descripcion = await conPrefijoGiro(pool, cli.Id_Cliente, descripcionClaveProdServ(claveProdServ));
+    }
     const result = await reqSerieFac(pool.request(), serieFac)
       .input('idf', sql.Decimal(9), idNoFactura).input('idd', sql.Decimal(6), idNoDetaFac)
       .input('cve', sql.VarChar(20), claveProdServ || null)
