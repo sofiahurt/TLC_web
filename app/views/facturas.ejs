@@ -199,6 +199,12 @@
           </table>
         </div>
 
+        <% if (tienePermiso('facturas.btn_recalcular')) { %>
+        <div class="text-end mt-2">
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="btnRecalcularTotales" onclick="recalcularTotales()" title="Recalcula Subtotal, IVA, Retención y Total de acuerdo a las partidas incluidas"><i class="bi bi-calculator"></i> Recalcular totales</button>
+        </div>
+        <% } %>
+
         <div class="row g-2 mt-2">
           <div class="col-md-12">
             <label class="form-label small mb-1">Importe con letra</label>
@@ -664,6 +670,15 @@ function pintarTotales(c){
   document.getElementById('totRet').textContent=fmtN(c.Retencion);
   document.getElementById('totTot').textContent=fmtN(c.TOTAL);
   document.getElementById('f_ImporteLetras_disp').value=(c.ImporteLetras||'').trim();
+}
+
+function recalcularTotales(){
+  if(!_factura.idNoFactura){showError('Primero confirma la factura.');return;}
+  fetch('/facturas/cabecera/recalcular',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idNoFactura:_factura.idNoFactura,serieFac:_factura.serieFac})})
+    .then(r=>r.json()).then(d=>{
+      if(d.error){showError(d.error);return;}
+      pintarTotales(d.totales);
+    });
 }
 
 const CONCEPTOS=[

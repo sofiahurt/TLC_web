@@ -11,6 +11,7 @@ const PERMISOS = [
   { clave: 'facturas.campo_incluircp',  modulo: 'facturas',   descripcion: 'Checkbox "Incluir CP"',                                 orden: 4 },
   { clave: 'facturas.campo_unconcepto', modulo: 'facturas',   descripcion: 'Checkbox "Un Concepto"',                                 orden: 5 },
   { clave: 'facturas.btn_copiar',       modulo: 'facturas',   descripcion: 'Botón Copiar factura cancelada (Facturas)',             orden: 6 },
+  { clave: 'facturas.btn_recalcular',  modulo: 'facturas',   descripcion: 'Botón Recalcular totales de la factura (Facturas)',     orden: 7 },
   { clave: 'pagos.btn_copiar',          modulo: 'pagos',      descripcion: 'Botón Copiar cobro cancelado (Pagos)',                  orden: 6 },
   { clave: 'notacred.btn_copiar',       modulo: 'notacred',   descripcion: 'Botón Copiar nota cancelada (Notas de Crédito/Débito)', orden: 6 },
   { clave: 'tarifas.btn_exportar',      modulo: 'tarifas',    descripcion: 'Botón Exportar a Excel (Tarifas)',                      orden: 6 },

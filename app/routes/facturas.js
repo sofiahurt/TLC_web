@@ -48,14 +48,17 @@ async function recalcularCabecera(tx, idNoFactura, serieFac) {
 
   const sumRes = await reqSerieFac(new sql.Request(tx), serieFac)
     .input('id', sql.Decimal(9), idNoFactura)
-    .query(`SELECT ISNULL(SUM(SUBTOTAL),0) subtotal, ISNULL(SUM(IVA),0) ivaL, ISNULL(SUM(RETEN),0) retenL, ISNULL(SUM(TOTAL),0) totalL
+    .query(`SELECT ISNULL(SUM(SUBTOTAL),0) subtotal, ISNULL(SUM(IVA),0) ivaL, ISNULL(SUM(RETEN),0) retenL, ISNULL(SUM(TOTAL),0) totalL,
+                   ISNULL(SUM(CASE WHEN ISNULL(RETEN,0)>0 THEN SUBTOTAL ELSE 0 END),0) subConRet
             FROM Empresa2.FacDeta WHERE ID_NOFACTURA=@id AND ${SERIEFAC_EQ}`);
   const s = sumRes.recordset[0];
   const subtotal = Math.round(s.subtotal * 100) / 100;
   let iva, reten, total;
   if (flagResFac) {
     iva   = Math.round(subtotal * 0.16 * 100) / 100;
-    reten = Math.round(subtotal * 0.04 * 100) / 100;
+    // La retención del 4% solo aplica sobre las partidas que sí llevan retención
+    // (las que no, p. ej. solo extras, no deben sumar retención al resumen).
+    reten = Math.round(s.subConRet * 0.04 * 100) / 100;
     total = Math.round((subtotal + iva - reten) * 100) / 100;
   } else {
     iva   = Math.round(s.ivaL * 100) / 100;
@@ -535,10 +538,10 @@ router.post('/partida/agregar', requierePermiso('facturas.editar'), async (req, 
           .input('lugarexp', sql.VarChar(10), lugarExpedicion || null)
           .query(`INSERT INTO Empresa2.Factura(
             Id_NoFactura,FechaFactura,Hora,Id_Cliente,NombreCom,RFC,MonFactura,TipoCambio,Status,
-            c_FormaPago,ClaveMP,MetodoPago,c_UsoCFDI,FlagResFac,IncluirCP,Descripcion,Observaciones,SerieFac,Facturo,SubTotal,IVA,Retencion,TOTAL,LugarExpedicion
+            c_FormaPago,ClaveMP,MetodoPago,c_UsoCFDI,FlagResFac,IncluirCP,Descripcion,Observaciones,SerieFac,Facturo,SubTotal,IVA,Retencion,TOTAL,LugarExpedicion,TipoCFDI
           ) VALUES(
             @id,@fecha,@hora,@idCli,@nombreCom,@rfc,@mon,@tc,@status,
-            @cformapago,@clavemp,@metodopago,@cusocfdi,@flagres,@incluircp,@descripcion,@observaciones,@serieFac,@realizo,0,0,0,0,@lugarexp
+            @cformapago,@clavemp,@metodopago,@cusocfdi,@flagres,@incluircp,@descripcion,@observaciones,@serieFac,@realizo,0,0,0,0,@lugarexp,'CFDI40'
           )`);
       } else {
         const facRes = await reqSerieFac(new sql.Request(tx), serieFac).input('id', sql.Decimal(9), idNoFactura)
@@ -686,6 +689,25 @@ router.post('/cabecera/actualizar', requierePermiso('facturas.editar'), async (r
       await r2.query(`UPDATE Empresa2.Factura SET FlagResFac=@flagres, IncluirCP=@incluircp, Descripcion=@descripcion, Observaciones=@observaciones${extraSet}
                 WHERE Id_NoFactura=@id AND ${SERIEFAC_EQ}`);
 
+      return await recalcularCabecera(tx, idNoFactura, serieFac);
+    });
+    res.json({ ok: true, totales: result });
+  } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
+});
+
+// ── RECALCULAR TOTALES de cabecera según las partidas incluidas ───────────────
+router.post('/cabecera/recalcular', requierePermiso('facturas.editar'), requierePermiso('facturas.btn_recalcular'), async (req, res) => {
+  const idNoFactura = parseInt(req.body.idNoFactura);
+  const serieFac = req.body.serieFac;
+  if (!idNoFactura) return res.status(400).json({ error: 'Factura inválida.' });
+  try {
+    const pool = await getPool();
+    const result = await withTransaction(pool, async (tx) => {
+      const facRes = await reqSerieFac(new sql.Request(tx), serieFac).input('id', sql.Decimal(9), idNoFactura)
+        .query(`SELECT UUID, Status FROM Empresa2.Factura WHERE Id_NoFactura=@id AND ${SERIEFAC_EQ}`);
+      if (!facRes.recordset[0]) throw Object.assign(new Error('Factura no encontrada.'), { status: 404 });
+      if (trim(facRes.recordset[0].UUID)) throw Object.assign(new Error('La factura ya está timbrada; solo se puede consultar.'), { status: 409 });
+      if (trim(facRes.recordset[0].Status).toUpperCase() === 'CANCELADA') throw Object.assign(new Error('La factura está cancelada.'), { status: 400 });
       return await recalcularCabecera(tx, idNoFactura, serieFac);
     });
     res.json({ ok: true, totales: result });
@@ -938,7 +960,7 @@ router.post('/copiar', requierePermiso('facturas.editar'), requierePermiso('fact
             PagosReal=0, NotasCredito=0, Facturo=@usr, Status='EMITIDA', NotaCancelacion=NULL,
             AnioPago=NULL, AnioPago2=NULL, AnioNotaCred=NULL, AnioNotaCred2=NULL, noCertificado=NULL, Sustituida=NULL,
             FechaTimbrado=NULL, UUID=NULL, RfcProvCertif=NULL, CodBarBi=NULL, FlagVerificada=0, WhoVerifico=NULL,
-            c_MotCancela=NULL, UUIDRelCan=NULL, FechaCancela=NULL, WhoCancela=NULL;
+            c_MotCancela=NULL, UUIDRelCan=NULL, FechaCancela=NULL, WhoCancela=NULL, TipoCFDI='CFDI40';
           INSERT INTO Empresa2.Factura SELECT * FROM #f;
           DROP TABLE #f;
           SELECT * INTO #d FROM Empresa2.FacDeta WHERE ID_NOFACTURA=@id AND ${SERIEFAC_EQ};
