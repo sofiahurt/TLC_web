@@ -110,6 +110,26 @@ router.get('/lookup/colonias', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+router.get('/lookup/sat/pais',           satLookupHandler('sat_pais',          'c_pais'));
+// Código postal: el catálogo tiene ~95 mil filas, se filtra y pagina en SQLite.
+router.get('/lookup/sat/codigo-postal', (req, res) => {
+  try {
+    const q = (req.query.q || '').trim();
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const { getSatDb } = require('../config/sat-db');
+    const db = getSatDb();
+    const from = `FROM sat_codpostal c
+                  LEFT JOIN sat_estado e ON e.c_estado = c.c_estado
+                  LEFT JOIN sat_municipio m ON m.c_estado = c.c_estado AND m.c_municipio = c.c_municipio`;
+    const where = q ? `WHERE c.c_codigopostal LIKE ? OR e.nombre_del_estado LIKE ? OR m.descripcion LIKE ?` : '';
+    const params = q ? [`${q}%`, `%${q}%`, `%${q}%`] : [];
+    const total = db.prepare(`SELECT COUNT(*) n ${from} ${where}`).get(...params).n;
+    const rows = db.prepare(`SELECT c.c_codigopostal AS clave, e.nombre_del_estado AS estado, m.descripcion AS municipio ${from} ${where}
+                             ORDER BY c.c_codigopostal LIMIT 10 OFFSET ?`).all(...params, (page - 1) * 10)
+      .map(r => ({ ...r, descripcion: [r.estado, r.municipio].filter(Boolean).join(' - ') }));
+    res.json({ rows, total, totalPages: Math.max(1, Math.ceil(total / 10)), page });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
 router.get('/lookup/sat/regimen-fiscal', satLookupHandler('sat_regimenfiscal', 'c_regimenfiscal'));
 router.get('/lookup/sat/forma-pago',     satLookupHandler('sat_formas_pago',   'c_FormaPago'));
 router.get('/lookup/sat/uso-cfdi',       satLookupHandler('sat_usoCDFI',       'c_usocfdi'));
@@ -173,6 +193,15 @@ router.post('/eliminar', requierePermiso('clientes.editar'), async (req, res) =>
 });
 
 // ── TAB "DOMICILIOS" DEL FORMULARIO DE CLIENTE (DomCarDes, acotado al cliente) ──
+router.get('/domicilios/siguiente-id', async (req, res) => {
+  try {
+    const pool = await getPool();
+    const r = await pool.request().input('idcli', sql.Decimal(7), req.query.cliente || null)
+      .query(`SELECT ISNULL(MAX(ID_DOMICILIO),0)+1 AS next FROM Empresa2.DomCarDes WHERE ID_CLIENTE=@idcli`);
+    res.json({ next: r.recordset[0].next });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.get('/domicilios/data', async (req, res) => {
   try {
     const idCliente = parseInt(req.query.idCliente);

@@ -103,6 +103,13 @@ async function lookupGeneric(res, table, idCol, descCol, q, page) {
   } catch (err) { res.status(500).json({ error: err.message }); }
 }
 
+router.get('/lookup/siguiente-id', async (req, res) => {
+  try {
+    const pool = await getPool();
+    const r = await pool.request().query(`SELECT ISNULL(MAX(ID_TARIFA),0)+1 AS next FROM Empresa2.Tarifas`);
+    res.json({ next: r.recordset[0].next });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
 router.get('/lookup/ciudades', (req, res) => lookupGeneric(res, 'Empresa2.Ciudades', 'ID_CIUDAD', 'CIUDAD', (req.query.q||'').trim(), parseInt(req.query.page)||1));
 router.get('/lookup/tipoflete', (req, res) => lookupGeneric(res, 'Empresa2.TipoFlete', 'ID_TIPOFLETE', 'FLETE', (req.query.q||'').trim(), parseInt(req.query.page)||1));
 router.get('/lookup/transport', (req, res) => lookupGeneric(res, 'Empresa2.Transport', 'ID_TRANSPORTISTA', 'NOMBRECOMUN', (req.query.q||'').trim(), parseInt(req.query.page)||1));

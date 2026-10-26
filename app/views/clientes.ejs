@@ -73,11 +73,11 @@
                 <button class="btn btn-outline-secondary" type="button" onclick="openLookupColonia()"><i class="bi bi-search"></i></button>
               </div>
             </div>
-            <div class="col-md-2"><label class="form-label fw-semibold">C.P.</label><input type="text" id="f_CP" class="form-control" maxlength="6" readonly></div>
+            <div class="col-md-2"><label class="form-label fw-semibold">C.P.</label><div class="input-group"><input type="text" id="f_CP" class="form-control" maxlength="6" placeholder="Seleccionar..." readonly><button class="btn btn-outline-secondary" type="button" onclick="openLookupSat('cp')"><i class="bi bi-search"></i></button></div></div>
             <div class="col-md-3"><label class="form-label fw-semibold">Ciudad</label><input type="text" id="f_CIUDAD" class="form-control" maxlength="80"></div>
             <div class="col-md-3"><label class="form-label fw-semibold">Municipio</label><input type="text" id="f_MUNICIPIO" class="form-control" maxlength="40"></div>
             <div class="col-md-3"><label class="form-label fw-semibold">Estado</label><input type="text" id="f_ESTADO" class="form-control" maxlength="40"></div>
-            <div class="col-md-2"><label class="form-label fw-semibold">País</label><input type="text" id="f_PAIS" class="form-control" maxlength="40"></div>
+            <div class="col-md-2"><label class="form-label fw-semibold">País</label><div class="input-group"><input type="text" id="f_PAIS" class="form-control" maxlength="40" placeholder="Seleccionar..." readonly><button class="btn btn-outline-secondary" type="button" onclick="openLookupSat('pais')"><i class="bi bi-search"></i></button></div></div>
             <div class="col-md-2"><label class="form-label fw-semibold">Días crédito</label><input type="number" id="f_DIASCREDITO" class="form-control"></div>
             <div class="col-md-3"><label class="form-label fw-semibold">Email facturas</label><input type="text" id="f_EMAILFACTURAS" class="form-control" maxlength="200"></div>
             <div class="col-md-3"><label class="form-label fw-semibold">Realizó</label><input type="text" id="f_REALIZO" class="form-control" maxlength="60"></div>
@@ -210,18 +210,18 @@
       <div id="domCliError" class="alert alert-danger d-none py-2 small"></div>
       <div class="row g-2">
         <div class="col-md-3"><label class="form-label small mb-1">ID Dom. <span class="text-danger">*</span></label><input type="number" id="dom_ID_DOMICILIO" class="form-control form-control-sm"></div>
-        <div class="col-md-3"><label class="form-label small mb-1">Tipo</label><input type="text" id="dom_TIPO" class="form-control form-control-sm" maxlength="10"></div>
+        <div class="col-md-3"><label class="form-label small mb-1">Tipo</label><select id="dom_TIPO" class="form-select form-select-sm"><option value="Carga" selected>Carga</option><option value="Descarga">Descarga</option></select></div>
         <div class="col-md-6"><label class="form-label small mb-1">Nac/Inter</label><input type="text" id="dom_NACINTER" class="form-control form-control-sm" maxlength="15"></div>
         <div class="col-md-12"><label class="form-label small mb-1">Descripción</label><input type="text" id="dom_DESCRIPCION" class="form-control form-control-sm" maxlength="80"></div>
         <div class="col-md-6"><label class="form-label small mb-1">Calle</label><input type="text" id="dom_CALLE" class="form-control form-control-sm" maxlength="100"></div>
         <div class="col-md-3"><label class="form-label small mb-1">No. Ext</label><input type="text" id="dom_NOEXT" class="form-control form-control-sm" maxlength="20"></div>
         <div class="col-md-3"><label class="form-label small mb-1">No. Int</label><input type="text" id="dom_NOINT" class="form-control form-control-sm" maxlength="20"></div>
         <div class="col-md-4"><label class="form-label small mb-1">Colonia</label><input type="text" id="dom_COLONIA" class="form-control form-control-sm" maxlength="80"></div>
-        <div class="col-md-2"><label class="form-label small mb-1">C.P.</label><input type="text" id="dom_CP" class="form-control form-control-sm" maxlength="6"></div>
+        <div class="col-md-2"><label class="form-label small mb-1">C.P.</label><div class="input-group input-group-sm"><input type="text" id="dom_CP" class="form-control form-control-sm" maxlength="6" placeholder="Seleccionar..." readonly><button class="btn btn-outline-secondary" type="button" onclick="openLookupSat('domCp')"><i class="bi bi-search"></i></button></div></div>
         <div class="col-md-3"><label class="form-label small mb-1">Ciudad</label><input type="text" id="dom_CIUDAD" class="form-control form-control-sm" maxlength="80"></div>
         <div class="col-md-3"><label class="form-label small mb-1">Municipio</label><input type="text" id="dom_MUNICIPIO" class="form-control form-control-sm" maxlength="40"></div>
         <div class="col-md-2"><label class="form-label small mb-1">Estado</label><input type="text" id="dom_ESTADO" class="form-control form-control-sm" maxlength="30"></div>
-        <div class="col-md-2"><label class="form-label small mb-1">País</label><input type="text" id="dom_PAIS" class="form-control form-control-sm" maxlength="20"></div>
+        <div class="col-md-2"><label class="form-label small mb-1">País</label><div class="input-group input-group-sm"><input type="text" id="dom_PAIS" class="form-control form-control-sm" maxlength="20" placeholder="Seleccionar..." readonly><button class="btn btn-outline-secondary" type="button" onclick="openLookupSat('domPais')"><i class="bi bi-search"></i></button></div></div>
         <div class="col-md-2"><label class="form-label small mb-1">Teléfono</label><input type="text" id="dom_TELEFONO" class="form-control form-control-sm" maxlength="15"></div>
         <div class="col-md-5"><label class="form-label small mb-1">Contacto</label><input type="text" id="dom_CONTACTO" class="form-control form-control-sm" maxlength="150"></div>
         <div class="col-md-5"><label class="form-label small mb-1">Observaciones</label><input type="text" id="dom_OBSERVACIONES" class="form-control form-control-sm" maxlength="255"></div>
@@ -256,6 +256,10 @@ document.getElementById('lkColNext').addEventListener('click',()=>{lkColPage++;l
 document.getElementById('lkColBody').addEventListener('click',e=>{const row=e.target.closest('tr[data-id]');if(!row)return;document.getElementById('f_ID_COLONIA').value=row.dataset.id;document.getElementById('f_COLONIA').value=row.dataset.col;document.getElementById('f_CP').value=row.dataset.cp;lkColModal.hide();});
 // SAT Lookups (modal compartido para los 4 catálogos fiscales)
 const _satLkCfg={
+  pais:{title:'País',url:'/clientes/lookup/sat/pais',onSelect:(clave)=>{document.getElementById('f_PAIS').value=clave;}},
+  cp:{title:'Código Postal',url:'/clientes/lookup/sat/codigo-postal',onSelect:(clave,desc,ds)=>{document.getElementById('f_CP').value=clave;if(ds.est)document.getElementById('f_ESTADO').value=ds.est;if(ds.mun)document.getElementById('f_MUNICIPIO').value=ds.mun;}},
+  domPais:{title:'País',url:'/clientes/lookup/sat/pais',onSelect:(clave)=>{document.getElementById('dom_PAIS').value=clave;}},
+  domCp:{title:'Código Postal',url:'/clientes/lookup/sat/codigo-postal',onSelect:(clave,desc,ds)=>{document.getElementById('dom_CP').value=clave;if(ds.est)document.getElementById('dom_ESTADO').value=ds.est;if(ds.mun)document.getElementById('dom_MUNICIPIO').value=ds.mun;}},
   regimenFiscal:{title:'Régimen Fiscal',url:'/clientes/lookup/sat/regimen-fiscal',onSelect:(clave,desc)=>{document.getElementById('f_C_REGIMENFISCAL').value=clave;document.getElementById('f_REGIMENFISCAL').value=desc;document.getElementById('f_REGIMENFISCAL_disp').value=`${clave} - ${desc}`;}},
   formaPago:{title:'Forma de Pago',url:'/clientes/lookup/sat/forma-pago',onSelect:(clave,desc)=>{document.getElementById('f_C_FORMAPAGO').value=clave;document.getElementById('f_DESC_FORMAPAGO').value=desc;document.getElementById('f_FORMAPAGO_disp').value=`${clave} - ${desc}`;}},
   usoCfdi:{title:'Uso CFDI',url:'/clientes/lookup/sat/uso-cfdi',onSelect:(clave,desc)=>{document.getElementById('f_C_USOCFDI').value=clave;document.getElementById('f_DESC_USOCFDI').value=desc;document.getElementById('f_USOCFDI_disp').value=`${clave} - ${desc}`;}},
@@ -264,11 +268,11 @@ const _satLkCfg={
 };
 let _satLkModal=null,_satLkPage=1,_satLkCur=null;
 function openLookupSat(type){_satLkCur=_satLkCfg[type];_satLkPage=1;document.getElementById('satLkTitle').textContent=_satLkCur.title;document.getElementById('satLkQ').value='';loadSatLk();if(!_satLkModal)_satLkModal=new bootstrap.Modal(document.getElementById('lookupSat'));_satLkModal.show();}
-function loadSatLk(){fetch(`${_satLkCur.url}?q=${encodeURIComponent(document.getElementById('satLkQ').value)}&page=${_satLkPage}`).then(r=>r.json()).then(d=>{document.getElementById('satLkBody').innerHTML=d.rows.map(r=>`<tr data-clave="${r.clave}" data-desc="${(r.descripcion||'').replace(/"/g,'&quot;')}" style="cursor:pointer"><td>${r.clave}</td><td>${r.descripcion||''}</td></tr>`).join('');document.getElementById('satLkInfo').textContent=`Pág ${d.page}/${d.totalPages}`;document.getElementById('satLkPrev').disabled=d.page<=1;document.getElementById('satLkNext').disabled=d.page>=d.totalPages;});}
+function loadSatLk(){fetch(`${_satLkCur.url}?q=${encodeURIComponent(document.getElementById('satLkQ').value)}&page=${_satLkPage}`).then(r=>r.json()).then(d=>{document.getElementById('satLkBody').innerHTML=d.rows.map(r=>`<tr data-clave="${r.clave}" data-desc="${(r.descripcion||'').replace(/"/g,'&quot;')}" data-est="${(r.estado||'').replace(/"/g,'&quot;')}" data-mun="${(r.municipio||'').replace(/"/g,'&quot;')}" style="cursor:pointer"><td>${r.clave}</td><td>${r.descripcion||''}</td></tr>`).join('');document.getElementById('satLkInfo').textContent=`Pág ${d.page}/${d.totalPages}`;document.getElementById('satLkPrev').disabled=d.page<=1;document.getElementById('satLkNext').disabled=d.page>=d.totalPages;});}
 document.getElementById('satLkQ').addEventListener('input',debounce(()=>{_satLkPage=1;loadSatLk();},300));
 document.getElementById('satLkPrev').addEventListener('click',()=>{if(_satLkPage>1){_satLkPage--;loadSatLk();}});
 document.getElementById('satLkNext').addEventListener('click',()=>{_satLkPage++;loadSatLk();});
-document.getElementById('satLkBody').addEventListener('click',e=>{const row=e.target.closest('tr[data-clave]');if(!row)return;_satLkCur.onSelect(row.dataset.clave,row.dataset.desc);_satLkModal.hide();});
+document.getElementById('satLkBody').addEventListener('click',e=>{const row=e.target.closest('tr[data-clave]');if(!row)return;_satLkCur.onSelect(row.dataset.clave,row.dataset.desc,row.dataset);_satLkModal.hide();});
 // Tab Domicilios (DomCarDes acotado al cliente en edición del frmModal)
 let _domCliIdCliente=null,_domCliPage=1,_domCliMode='add';
 const domCliModal=new bootstrap.Modal(document.getElementById('domCliModal'));
@@ -296,7 +300,7 @@ function domCliLoad(){
 document.getElementById('domCliPrev').addEventListener('click',()=>{if(_domCliPage>1){_domCliPage--;domCliLoad();}});
 document.getElementById('domCliNext').addEventListener('click',()=>{_domCliPage++;domCliLoad();});
 document.getElementById('domCliBody').addEventListener('dblclick',e=>{const tr=e.target.closest('tr[data-id]');if(tr)domCliOpenEdit(tr);});
-function domCliClearForm(){domFlds.forEach(f=>{document.getElementById('dom_'+f).value='';});document.getElementById('dom_ID_DOMICILIO').value='';}
+function domCliClearForm(){domFlds.forEach(f=>{document.getElementById('dom_'+f).value='';});document.getElementById('dom_TIPO').value='Carga';document.getElementById('dom_ID_DOMICILIO').value='';}
 function domCliOpenAdd(){
   if(!_domCliIdCliente)return;
   _domCliMode='add';domCliClearForm();
@@ -304,6 +308,7 @@ function domCliOpenAdd(){
   document.getElementById('dom_ID_DOMICILIO').readOnly=false;
   document.getElementById('domCliError').classList.add('d-none');
   domCliModal.show();
+  fetch('/clientes/domicilios/siguiente-id?cliente='+encodeURIComponent(_domCliIdCliente)).then(r=>r.json()).then(d=>{if(d.next&&_domCliMode==='add'&&!document.getElementById('dom_ID_DOMICILIO').value)document.getElementById('dom_ID_DOMICILIO').value=d.next;});
 }
 function domCliOpenEdit(el){
   const tr=el.tagName==='TR'?el:el.closest('tr');const data={};
@@ -313,6 +318,7 @@ function domCliOpenEdit(el){
   document.getElementById('dom_ID_DOMICILIO').value=data.ID_DOMICILIO||'';
   document.getElementById('dom_ID_DOMICILIO').readOnly=true;
   domFlds.forEach(f=>{document.getElementById('dom_'+f).value=data[f]||'';});
+  document.getElementById('dom_TIPO').value=(data.TIPO||'').trim()||'Carga';
   document.getElementById('domCliError').classList.add('d-none');
   domCliModal.show();
 }

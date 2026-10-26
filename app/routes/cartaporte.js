@@ -207,7 +207,7 @@ router.get('/get', async (req, res) => {
       CostoPension: r.CostoPension||0, CostoRefacciones: r.CostoRefacciones||0,
       CostoOtros: r.CostoOtros||0,
       Status: fmt(r.Status), Observaciones: fmt(r.Observaciones),
-      Booking: fmt(r.Booking), Contenedor: fmt(r.Contenedor),
+      Booking: fmt(r.Booking) || fmt(r.NoPedidoCliente), Contenedor: fmt(r.Contenedor),
       RealizoPedido: fmt(r.RealizoPedido), MotCamPrecio: fmt(r.MotCamPrecio)
     });
   } catch (err) { res.status(500).json({ error: err.message }); }

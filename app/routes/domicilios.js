@@ -3,8 +3,49 @@ const router = express.Router();
 const { getPool, sql } = require('../config/db');
 const { browseQuery } = require('../config/browse');
 const { requierePermiso } = require('../middleware/permisos');
+const { getSatDb } = require('../config/sat-db');
 
 router.get('/', (req, res) => res.render('domicilios', { usuario: req.session.usuario, modulo: 'domicilios' }));
+
+// ── LOOKUPS de catálogos SAT (SQLite de solo lectura) ─────────────────────────
+router.get('/lookup/sat/pais', (req, res) => {
+  try {
+    const q = (req.query.q || '').trim();
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const db = getSatDb();
+    const like = `%${q}%`;
+    const total = db.prepare(`SELECT COUNT(*) n FROM sat_pais WHERE c_pais LIKE ? OR descripcion LIKE ?`).get(like, like).n;
+    const rows = db.prepare(`SELECT c_pais AS clave, descripcion FROM sat_pais WHERE c_pais LIKE ? OR descripcion LIKE ?
+                             ORDER BY descripcion LIMIT 10 OFFSET ?`).all(like, like, (page - 1) * 10);
+    res.json({ rows, total, totalPages: Math.max(1, Math.ceil(total / 10)), page });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.get('/lookup/sat/codigo-postal', (req, res) => {
+  try {
+    const q = (req.query.q || '').trim();
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const db = getSatDb();
+    const from = `FROM sat_codpostal c
+                  LEFT JOIN sat_estado e ON e.c_estado = c.c_estado
+                  LEFT JOIN sat_municipio m ON m.c_estado = c.c_estado AND m.c_municipio = c.c_municipio`;
+    const where = q ? `WHERE c.c_codigopostal LIKE ? OR e.nombre_del_estado LIKE ? OR m.descripcion LIKE ?` : '';
+    const params = q ? [`${q}%`, `%${q}%`, `%${q}%`] : [];
+    const total = db.prepare(`SELECT COUNT(*) n ${from} ${where}`).get(...params).n;
+    const rows = db.prepare(`SELECT c.c_codigopostal AS cp, e.nombre_del_estado AS estado, m.descripcion AS municipio ${from} ${where}
+                             ORDER BY c.c_codigopostal LIMIT 10 OFFSET ?`).all(...params, (page - 1) * 10);
+    res.json({ rows, total, totalPages: Math.max(1, Math.ceil(total / 10)), page });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.get('/siguiente-id', async (req, res) => {
+  try {
+    const pool = await getPool();
+    const r = await pool.request().input('idcli', sql.Decimal(7), req.query.cliente || null)
+      .query(`SELECT ISNULL(MAX(ID_DOMICILIO),0)+1 AS next FROM Empresa2.DomCarDes WHERE ID_CLIENTE=@idcli`);
+    res.json({ next: r.recordset[0].next });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
 
 router.get('/data', async (req, res) => {
   try {
