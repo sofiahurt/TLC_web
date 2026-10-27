@@ -4,6 +4,17 @@ const fs   = require('fs');
 const path = require('path');
 const express  = require('express');
 const router   = express.Router();
+
+// Columnas de dinero/costos de Empresa2.CartaPorte que se anulan al timbrar un traslado o cancelar la CP
+// (los Depósitos, en Empresa2.DepoSolicitud, no se tocan).
+const COSTOS_CARTAPORTE = [
+  'CostoFlete', 'CostoRenta', 'Kilometros', 'CostoManiobras', 'CostoDemoras', 'CostoAutopistas',
+  'CostoDobOpe', 'CostoDisel', 'CostoParada', 'CostosOtros', 'CargoExtraTrans',
+  'RetenKilo', 'RetenMX', 'SubTotalMX', 'IVAMX', 'TOTALMX',
+  'RetenUSD', 'SubTotalUSD', 'IVAUSD', 'TOTALUSD', 'ImporteFac',
+  'CostoPrestamo', 'CostoTalacha', 'CostoCompllanta', 'CostoDiesel', 'CostoCasetas', 'CostoComidas',
+  'CostoManiobrasExt', 'CostoBascula', 'CostoPension', 'CostoRefacciones', 'CostoOtros',
+];
 const { getPool, sql } = require('../config/db');
 const { buildCFDITraslado } = require('../services/cfdi-traslado');
 const { buildCFDIFactura } = require('../services/cfdi-factura');
@@ -200,7 +211,10 @@ router.post('/timbrar', requierePermiso('cartaporte.btn_timbrar'), async (req, r
     // regresado por sellarXML) — NO el del PAC (pacResult.noCertificadoSAT es el
     // de la autoridad certificadora del timbre, un dato distinto que no tiene
     // columna propia y se sigue leyendo del XML timbrado cuando se arma el PDF.
-    const setStatus = conexion.testFel ? '' : `, Status='TRASLADO'`;
+    // Un traslado no se cobra: al timbrar de verdad se ponen en cero TODOS los
+    // costos/importes de la propia Carta Porte (los Depósitos viven en
+    // Empresa2.DepoSolicitud y no se tocan). En modo prueba no se modifica nada.
+    const setStatus = conexion.testFel ? '' : `, Status='TRASLADO', ${COSTOS_CARTAPORTE.map(c => `${c}=0`).join(', ')}`;
     await pool.request()
       .input('serie',  sql.VarChar(3),  serie)
       .input('cp',     sql.VarChar(30), cartaporte)
@@ -546,7 +560,7 @@ router.post('/cancelar-cartaporte', requierePermiso('cartaporte.btn_cancelar'), 
       .input('motivo', sql.VarChar(3), motivo || null).input('folioSust', sql.VarChar(52), folioSustitucion || null)
       .input('nota', sql.VarChar(250), nota || null).input('quien', sql.VarChar(80), quien)
       .query(`UPDATE Empresa2.CartaPorte SET
-        Status='CANCELADO', SubTotalMX=0, IVAMX=0, RetenMX=0, TOTALMX=0,
+        Status='CANCELADO', ${COSTOS_CARTAPORTE.map(c => `${c}=0`).join(', ')},
         FechaCancela=GETDATE(), WhoCancela=@quien, c_MotCancela=@motivo, UUIDRelCan=@folioSust, NotaCancelacion=@nota
         WHERE Serie=@serie AND CartaPorte=@cp`);
 

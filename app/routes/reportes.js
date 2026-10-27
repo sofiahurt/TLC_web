@@ -176,6 +176,25 @@ const COLUMNAS_CARTAPORTE = [
   { header: 'Cancelo',     campo: 'WhoCancela',   tipo: 'texto' },
 ];
 
+// Una Carta Porte de Traslado o Cancelada no se cobra: en el reporte se quitan sus costos y
+// solo queda la parte de Depósitos (maniobras, casetas, pensión, estadías,
+// demoras, otros y el monto de depósitos). Subtotal/IVA/Total se recalculan
+// únicamente con esos extras (IVA 16%, sin retención), igual que fn_CartaPorteDetalle.
+// Aplica también a los traslados anteriores, que conservan sus costos en la BD.
+function soloDepositosSiTraslado(r) {
+  // CANCELADO/CANCELADA y el typo legado CANCELAD0 (con cero).
+  const st = trim(r.Status).toUpperCase();
+  if (st !== 'TRASLADO' && !st.startsWith('CANCELAD')) return;
+  const r2 = v => Math.round((Number(v) || 0) * 100) / 100;
+  r.Flete = 0; r.CostoRenta = 0; r.Kilometros = 0; r.CargoExtra = 0;
+  const subtotal = r2(['Maniobras', 'Casetas', 'Pension', 'Estadias', 'Demoras', 'Otros_Depo']
+    .reduce((a, k) => a + (Number(r[k]) || 0), 0));
+  r.SubTotalMX = subtotal;
+  r.IVAMX = r2(subtotal * 0.16);
+  r.RetenMX = 0;
+  r.TOTALMX = r2(subtotal + r.IVAMX);
+}
+
 router.get('/cartaporte/excel', requierePermiso('reportes.cartaporte.ver'), async (req, res) => {
   try {
     const fechaIni = trim(req.query.fechaIni);
@@ -210,6 +229,7 @@ router.get('/cartaporte/excel', requierePermiso('reportes.cartaporte.ver'), asyn
       ${where}
       ORDER BY fd.Serie, fd.CartaPorte`;
     const result = await request.query(query);
+    result.recordset.forEach(soloDepositosSiTraslado);
 
     const workbook = construirWorkbookReporte({
       nombreHoja: 'Cartas Porte',
