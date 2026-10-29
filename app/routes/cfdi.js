@@ -475,7 +475,7 @@ router.post('/cancelar-notacredito', requierePermiso('notacred.btn_cancelar'), a
     const tx = new sql.Transaction(pool);
     await tx.begin();
     try {
-      await revertirEfectoSaldo(tx, tipo, serieKey, idNotaCredito);
+      await revertirEfectoSaldo(tx, tipo, serieKey, idNotaCredito, true);
       await new sql.Request(tx)
         .input('tipo', sql.VarChar(3), tipo).input('serie', sql.VarChar(10), serieKey).input('id', sql.Decimal(7), idNotaCredito)
         .query(`UPDATE Empresa2.NotaCred SET Status='CANCELADO' WHERE Id_NotaCredito=@id AND ${NC_EQ}`);

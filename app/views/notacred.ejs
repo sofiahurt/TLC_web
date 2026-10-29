@@ -45,6 +45,7 @@
         <th class="text-end" style="width:90px">IVA</th>
         <th class="text-end" style="width:90px">Retención</th>
         <th class="text-end" style="width:110px">Total</th>
+        <th class="text-end" style="width:70px">Partidas</th>
         <th data-sort="Status" style="width:110px">Status <span class="sort-icon"></span></th>
         <th style="width:50px">XML</th>
         <th style="width:50px">PDF</th>
@@ -172,6 +173,7 @@
         </div>
 
         <!-- Detalle -->
+        <div class="d-flex align-items-center mb-1"><span class="badge bg-secondary" style="font-size:.8rem">Partidas: <span id="detCount">0</span></span></div>
         <div class="table-responsive">
           <table class="table table-sm table-bordered align-middle" id="tblDetalle" style="font-size:.78rem">
             <thead class="table-light">
@@ -507,7 +509,7 @@ function cargarNota(tipo, serie, id, omitidasCopia, conservarConfirmada){
     document.getElementById('f_ImporteLetras_disp').value=(c.ImporteLetras||'').trim();
     document.getElementById('f_WhoIs_disp').textContent=(c.WhoIs||'').trim();   // quien la realizó; no se sustituye por el usuario actual
     setSoloLectura(yaTimbrada);
-    if(omitidasCopia && omitidasCopia.length) showWarning('No se copiaron: '+omitidasCopia.join('; '));
+    if(omitidasCopia && omitidasCopia.length) showWarning('No se copiaron '+omitidasCopia.length+' partida(s): '+omitidasCopia.join('; '));
   });
 }
 
@@ -617,6 +619,7 @@ function filaDetalleHtml(l){
 }
 function pintarDetalle(lineas){
   document.getElementById('detBody').innerHTML=lineas.map(filaDetalleHtml).join('');
+  document.getElementById('detCount').textContent=lineas.length;
   pintarTotales(sumarLineas(lineas));
 }
 

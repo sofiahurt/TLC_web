@@ -858,7 +858,7 @@ function copiarPago(){
       document.getElementById('frmTitle').textContent='Cobro #'+d.idNoPago+' (copia de #'+r.Id_NoPago+')';
       cargarPago(d.idNoPago, ()=>{
         _pago.confirmada=false;   // borrador: si cierra sin grabar, se descarta
-        if(d.omitidas && d.omitidas.length) showWarning('No se copiaron: '+d.omitidas.join('; '));
+        if(d.ajustadas && d.ajustadas.length) showWarning('Se copiaron todas las partidas ('+d.ajustadas.length+' con importe ajustado): '+d.ajustadas.join('; '));
       });
       modal.show();
       browse.load();

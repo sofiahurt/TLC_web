@@ -28,10 +28,25 @@ function statusPorSaldo(total, pagosReal, notasCredito) {
   return 'EMITIDA';
 }
 
+// Cobros/notas del sistema anterior guardaron la línea con la serie vacía aunque la
+// factura tiene serie (p. ej. TLCEI): con la serie exacta no se encuentra y el saldo ni
+// se aplicaba ni se liberaba. Si no hay factura con esa serie y el folio existe una sola
+// vez, se usa la serie real de esa factura. Regresa la serie (o null) a usar.
+async function resolverSerieFac(tx, idNoFactura, serieFac) {
+  const key = serieKey(serieFac);
+  const exacta = await new sql.Request(tx).input('id', sql.Decimal(9), idNoFactura).input('serieFac', sql.VarChar(20), key)
+    .query(`SELECT TOP 1 1 x FROM Empresa2.Factura WHERE Id_NoFactura=@id AND ISNULL(LTRIM(RTRIM(SerieFac)),'')=ISNULL(@serieFac,'')`);
+  if (exacta.recordset[0]) return key;
+  const todas = await new sql.Request(tx).input('id', sql.Decimal(9), idNoFactura)
+    .query(`SELECT LTRIM(RTRIM(ISNULL(SerieFac,''))) s FROM Empresa2.Factura WHERE Id_NoFactura=@id`);
+  return todas.recordset.length === 1 ? serieKey(todas.recordset[0].s) : key;
+}
+
 // signo=+1 al aplicar (grabar), signo=-1 al revertir (cancelar). `anio` solo
 // se escribe al aplicar (signo>0) -- igual que ya hacía notacred.js, que
 // nunca toca AnioNotaCred al revertir.
-async function ajustarSaldoFactura(tx, tipo, { idNoFactura, serieFac, importe, signo, anio }) {
+async function ajustarSaldoFactura(tx, tipo, { idNoFactura, serieFac: serieFacIn, importe, signo, anio }) {
+  const serieFac = await resolverSerieFac(tx, idNoFactura, serieFacIn);
   const columna = COLUMNA_POR_TIPO[tipo];
   if (!columna) throw new Error(`tipo inválido para ajustarSaldoFactura: "${tipo}"`);
 
@@ -117,4 +132,4 @@ async function recalcularStatusND(tx, { idNotaDebito, serieND, extra = 0, exclui
   return { Status: nuevoStatus, aplicado };
 }
 
-module.exports = { statusPorSaldo, ajustarSaldoFactura, ajustarSaldoNotaDebito, aplicadoND, recalcularStatusND };
+module.exports = { resolverSerieFac, statusPorSaldo, ajustarSaldoFactura, ajustarSaldoNotaDebito, aplicadoND, recalcularStatusND };

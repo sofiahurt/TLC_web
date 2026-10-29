@@ -6,6 +6,7 @@ const { requierePermiso } = require('../middleware/permisos');
 const { importeALetras } = require('../services/importe-letras');
 const { ajustarSaldoFactura, recalcularStatusND } = require('../services/saldo-factura');
 const { quienAplica } = require('../services/docs-aplicados');
+const { ajustarFacturas } = require('../services/conciliacion-saldos');
 
 // La clave real de una Nota de Crédito/Débito es (Tipo, Serie, Id_NotaCredito)
 // -- NC y ND llevan numeración INDEPENDIENTE aunque compartan la misma tabla
@@ -193,8 +194,10 @@ router.get('/data', async (req, res) => {
   try {
     const tipo = req.query.tipo === 'ND' ? 'ND' : 'NC';
     const data = await browseQuery({
-      table: 'Empresa2.NotaCred',
-      columns: ['Serie', 'Id_NotaCredito', 'Fecha', 'Id_Cliente', 'NombreCom', 'Subtotal', 'IVA', 'Retencion', 'ImporteTotal', 'Status', 'FlagResNota', 'UUID'],
+      table: 'Empresa2.NotaCred nc',
+      columns: ['Serie', 'Id_NotaCredito', 'Fecha', 'Id_Cliente', 'NombreCom', 'Subtotal', 'IVA', 'Retencion', 'ImporteTotal', 'Status', 'FlagResNota', 'UUID',
+        `(SELECT COUNT(*) FROM Empresa2.NotaCredDeta x WHERE x.ID_NOTACREDITO=nc.Id_NotaCredito AND LTRIM(RTRIM(x.TIPO))=LTRIM(RTRIM(nc.Tipo))
+           AND ISNULL(LTRIM(RTRIM(x.SERIE)),'')=ISNULL(LTRIM(RTRIM(nc.Serie)),'')) AS Partidas`],
       searchableCols: ['Id_NotaCredito', 'NombreCom', 'Status'],
       req,
       baseWhere: `LTRIM(RTRIM(Tipo))=@tipoFiltro`,
@@ -222,6 +225,7 @@ router.get('/data', async (req, res) => {
       <td data-field="IVA" data-value="${r.IVA||0}" class="text-end">${fmtN(r.IVA)}</td>
       <td data-field="Retencion" data-value="${r.Retencion||0}" class="text-end">${fmtN(r.Retencion)}</td>
       <td data-field="ImporteTotal" data-value="${r.ImporteTotal||0}" class="text-end">${fmtN(r.ImporteTotal)}</td>
+      <td data-field="Partidas" data-value="${r.Partidas||0}" class="text-end">${r.Partidas||0}</td>
       <td data-field="Status" data-value="${fmt(r.Status)}">${fmt(r.Status)}</td>
       <td class="text-center">${fmt(r.UUID)
         ? `<a href="/cfdi/xml-notacredito?tipo=${tipo}&serie=${encodeURIComponent(fmt(r.Serie))}&idNotaCredito=${r.Id_NotaCredito}" class="btn btn-sm btn-primary py-0 px-1" title="Descargar XML" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-code"></i></a>`
@@ -845,7 +849,10 @@ router.post('/cabecera/cancelar-sin-confirmar', requierePermiso('notacred.editar
 // NOTA: la cancelación FISCAL ante el PAC (si la nota tiene UUID) se maneja
 // en app/routes/cfdi.js (POST /cancelar-notacredito), que llama a esta misma
 // reversión de saldo solo después de que el PAC confirma la cancelación.
-async function revertirEfectoSaldo(tx, tipo, serie, id) {
+// recalcularFacturas (solo cancelaciones): una ND no guarda su efecto sobre las facturas
+// contenidas en el importe de sus líneas, así que al cancelarla cada factura recalcula
+// su saldo y status desde los cobros y notas de crédito vigentes.
+async function revertirEfectoSaldo(tx, tipo, serie, id, recalcularFacturas = false) {
   const detRes = await reqNC(new sql.Request(tx), tipo, serie, id).query(`SELECT * FROM Empresa2.NotaCredDeta WHERE ID_NOTACREDITO=@id AND ${NC_EQ}`);
   for (const linea of detRes.recordset) {
     const importe = num(linea.IMPORTEAPLICA);
@@ -858,6 +865,15 @@ async function revertirEfectoSaldo(tx, tipo, serie, id) {
     } else if (Number(linea.Id_NotaDebito) > 0) {
       await recalcularStatusND(tx, { idNotaDebito: linea.Id_NotaDebito, serieND: linea.SerieND, excluirNota: { serie, id } });
     }
+  }
+  if (recalcularFacturas && trim(tipo) === 'ND') {
+    const vistas = new Set(), items = [];
+    for (const l of detRes.recordset) {
+      if (!(Number(l.ID_NOFACTURA) > 0)) continue;
+      const k = l.ID_NOFACTURA + '|' + trim(l.SerieFac);
+      if (!vistas.has(k)) { vistas.add(k); items.push({ id: l.ID_NOFACTURA, serie: trim(l.SerieFac) }); }
+    }
+    if (items.length) await ajustarFacturas(tx, items);
   }
 }
 
@@ -875,7 +891,7 @@ router.post('/cancelar', requierePermiso('notacred.btn_cancelar'), async (req, r
       return res.status(409).json({ error: 'Esta nota ya está timbrada; debe cancelarse fiscalmente primero (usar el flujo de Cancelar con PAC).', requiereFiscal: true });
     }
     await withTransaction(pool, async (tx) => {
-      await revertirEfectoSaldo(tx, tipo, serie, id);
+      await revertirEfectoSaldo(tx, tipo, serie, id, true);
       await reqNC(new sql.Request(tx), tipo, serie, id).query(`UPDATE Empresa2.NotaCred SET Status='CANCELADO' WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
     });
     res.json({ ok: true });
@@ -909,6 +925,9 @@ router.post('/copiar', requierePermiso('notacred.editar'), requierePermiso('nota
       if (!lineas.length) throw Object.assign(new Error('La nota no tiene líneas que copiar.'), { status: 400 });
 
       const r2 = v => Math.round(v * 100) / 100;
+      // Una ND no consume el saldo de las facturas que contiene (pueden estar ya
+      // cobradas): solo se omiten las canceladas/inexistentes. En NC sí se exige saldo.
+      const esND = trim(tipo) === 'ND';
       const nuevas = [], omitidas = [];
       for (const l of lineas) {
         const esFactura = Number(l.ID_NOFACTURA) > 0;
@@ -920,7 +939,7 @@ router.post('/copiar', requierePermiso('notacred.editar'), requierePermiso('nota
           const fac = (await new sql.Request(tx).input('id', sql.Decimal(9), l.ID_NOFACTURA).input('serieFac', sql.VarChar(20), serieKey(l.SerieFac))
             .query(`SELECT TOTAL, PagosReal, NotasCredito, Status, UUID FROM Empresa2.Factura WITH (UPDLOCK, ROWLOCK) WHERE Id_NoFactura=@id AND ISNULL(LTRIM(RTRIM(SerieFac)),'')=ISNULL(@serieFac,'')`)).recordset[0];
           const st = trim(fac && fac.Status).toUpperCase();
-          if (!fac || st === 'CANCELADA' || st === 'PAGADA') { omitidas.push(etiqueta + ': ' + await motivoOmision(tx, true, l.ID_NOFACTURA, l.SerieFac, !!fac && st === 'PAGADA')); continue; }
+          if (!fac || st === 'CANCELADA' || (!esND && st === 'PAGADA')) { omitidas.push(etiqueta + ': ' + await motivoOmision(tx, true, l.ID_NOFACTURA, l.SerieFac, !!fac && st === 'PAGADA')); continue; }
           t = { total: num(fac.TOTAL), pagosReal: num(fac.PagosReal), notasCredito: num(fac.NotasCredito), uuid: trim(fac.UUID) };
         } else {
           const nd = (await new sql.Request(tx).input('id', sql.Decimal(7), l.Id_NotaDebito).input('serie', sql.VarChar(10), serieKey(l.SerieND))
@@ -930,7 +949,7 @@ router.post('/copiar', requierePermiso('notacred.editar'), requierePermiso('nota
           t = { total: num(nd.ImporteTotal), pagosReal: 0, notasCredito: 0, uuid: trim(nd.UUID) };
         }
         const saldo = r2(Math.max(t.total - t.pagosReal - t.notasCredito, 0));
-        if (saldo <= 0.005) { omitidas.push(etiqueta + ': ' + await motivoOmision(tx, esFactura, esFactura ? l.ID_NOFACTURA : l.Id_NotaDebito, esFactura ? l.SerieFac : l.SerieND, true)); continue; }
+        if (saldo <= 0.005 && !(esND && esFactura)) { omitidas.push(etiqueta + ': ' + await motivoOmision(tx, esFactura, esFactura ? l.ID_NOFACTURA : l.Id_NotaDebito, esFactura ? l.SerieFac : l.SerieND, true)); continue; }
         const aplicaOrig = num(l.IMPORTEAPLICA);
         // Un Concepto: las partidas van en 0 (el importe vive en la cabecera).
         const aplica = esResumen ? 0 : r2(Math.min(aplicaOrig > 0.005 ? aplicaOrig : saldo, saldo));
@@ -966,7 +985,7 @@ router.post('/copiar', requierePermiso('notacred.editar'), requierePermiso('nota
             DROP TABLE #l;`);
       }
 
-      if (esResumen) {
+      if (esResumen && !esND) {
         // El concepto único no debe exceder el saldo de lo que sí se pudo copiar.
         const saldoDisp = r2(nuevas.reduce((a, x) => a + x.saldo, 0));
         const sub = r2(num(orig.Subtotal));
