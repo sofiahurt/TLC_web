@@ -176,6 +176,19 @@ const COLUMNAS_CARTAPORTE = [
   { header: 'Cancelo',     campo: 'WhoCancela',   tipo: 'texto' },
 ];
 
+// fn_CartaPorteDetalle divide Maniobras entre 1.16 como si llevara IVA incluido,
+// pero se captura en Depósitos ya como importe neto (solo Casetas lleva IVA
+// incluido). Se sustituye por el monto capturado y se ajustan Subtotal/IVA/Total.
+function maniobrasSinDividir(r) {
+  const neto = Math.round((Number(r.ManiobrasNeto) || 0) * 100) / 100;
+  const delta = neto - (Number(r.Maniobras) || 0);
+  if (Math.abs(delta) < 0.005) return;
+  r.Maniobras = neto;
+  r.SubTotalMX = (Number(r.SubTotalMX) || 0) + delta;
+  r.IVAMX = (Number(r.IVAMX) || 0) + delta * 0.16;
+  r.TOTALMX = (Number(r.TOTALMX) || 0) + delta * 1.16;
+}
+
 // Una Carta Porte de Traslado o Cancelada no se cobra: en el reporte se quitan sus costos y
 // solo queda la parte de Depósitos (maniobras, casetas, pensión, estadías,
 // demoras, otros y el monto de depósitos). Subtotal/IVA/Total se recalculan
@@ -223,12 +236,15 @@ router.get('/cartaporte/excel', requierePermiso('reportes.cartaporte.ver'), asyn
     }
 
     const query = `
-      SELECT fd.*, cp.CP_Rela
+      SELECT fd.*, cp.CP_Rela, mn.ManiobrasNeto
       FROM Empresa2.fn_CartaPorteDetalle(@fechaIni, @fechaFin) fd
       JOIN Empresa2.CartaPorte cp ON cp.Serie = fd.Serie AND cp.CartaPorte = fd.CartaPorte
+      OUTER APPLY (SELECT ISNULL(SUM(CASE WHEN d.FlagCobMan = 1 THEN d.Maniobra ELSE 0 END),0) AS ManiobrasNeto
+                   FROM Empresa2.DepoSolicitud d WHERE d.CARTAPORTE = fd.CartaPorte) mn
       ${where}
       ORDER BY fd.Serie, fd.CartaPorte`;
     const result = await request.query(query);
+    result.recordset.forEach(maniobrasSinDividir);
     result.recordset.forEach(soloDepositosSiTraslado);
 
     const workbook = construirWorkbookReporte({

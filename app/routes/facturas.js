@@ -206,15 +206,15 @@ async function cobrableDepositos(tx, serie, cartaporte) {
   const d = r.recordset[0];
   return {
     casetas:   Math.round((d.casetas   / 1.16) * 100) / 100,
-    // Maniobras se captura en Depósitos ya como importe neto (a diferencia
-    // de los demás conceptos, que se capturan con IVA incluido) -- pasa
-    // directo, sin dividir entre 1.16, y el IVA se calcula sobre ese neto
-    // igual que el resto de los conceptos "extra".
+    // Maniobras, pensión, estadías, otros y demoras se capturan en Depósitos
+    // ya como importe neto (solo casetas lleva IVA incluido) -- pasan directo,
+    // sin dividir entre 1.16, y el IVA se calcula sobre ese neto igual que el
+    // resto de los conceptos "extra".
     maniobras: Math.round(d.maniobras * 100) / 100,
-    pension:   Math.round((d.pension   / 1.16) * 100) / 100,
-    estadias:  Math.round((d.estadias  / 1.16) * 100) / 100,
-    otros:     Math.round((d.otros     / 1.16) * 100) / 100,
-    demoras:   Math.round((d.demoras   / 1.16) * 100) / 100,
+    pension:   Math.round(d.pension   * 100) / 100,
+    estadias:  Math.round(d.estadias  * 100) / 100,
+    otros:     Math.round(d.otros     * 100) / 100,
+    demoras:   Math.round(d.demoras   * 100) / 100,
   };
 }
 
