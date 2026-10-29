@@ -107,9 +107,12 @@ async function datosParaImpresionFactura(idNoFactura, serieFac, pool) {
 
   let xmlString;
   if (timbrada) {
-    const rutaTimbrada = path.join(RUTA_XML, `FAC_${serieFacKey || ''}${idNoFactura}_Timbrada.xml`);
-    const rutaPrueba   = path.join(RUTA_XML, `FAC_${serieFacKey || ''}${idNoFactura}_Prueba.xml`);
-    const rutaFinal = fs.existsSync(rutaTimbrada) ? rutaTimbrada : (fs.existsSync(rutaPrueba) ? rutaPrueba : null);
+    // Las facturas timbradas en el sistema anterior se guardaron sin la serie en el
+    // nombre (FAC_122428_Timbrada.xml); las nuevas la llevan (FAC_F122428_Timbrada.xml).
+    const prefijos = [`FAC_${serieFacKey || ''}${idNoFactura}`];
+    if (serieFacKey) prefijos.push(`FAC_${idNoFactura}`);
+    const candidatas = prefijos.flatMap(p => [`${p}_Timbrada.xml`, `${p}_Prueba.xml`]).map(n => path.join(RUTA_XML, n));
+    const rutaFinal = candidatas.find(r => fs.existsSync(r)) || null;
     if (!rutaFinal) throw new Error(`Esta Factura está marcada como timbrada pero no se encontró el XML en ${RUTA_XML}`);
     xmlString = fs.readFileSync(rutaFinal, 'utf8');
   } else {
