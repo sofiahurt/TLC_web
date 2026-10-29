@@ -15,6 +15,7 @@ const PERMISOS = [
   { clave: 'pagos.btn_copiar',          modulo: 'pagos',      descripcion: 'Botón Copiar cobro cancelado (Pagos)',                  orden: 6 },
   { clave: 'notacred.btn_copiar',       modulo: 'notacred',   descripcion: 'Botón Copiar nota cancelada (Notas de Crédito/Débito)', orden: 6 },
   { clave: 'tarifas.btn_exportar',      modulo: 'tarifas',    descripcion: 'Botón Exportar a Excel (Tarifas)',                      orden: 6 },
+  { clave: 'utilerias.importarfacturas', modulo: 'utilerias', descripcion: 'Importar facturas desde XML CFDI (Utilerías)', orden: 21 },
   { clave: 'utilerias.conciliar',        modulo: 'utilerias',  descripcion: 'Conciliar Facturas contra Cobros y Notas de Crédito (revisar y ajustar saldos)', orden: 20 },
 ];
 

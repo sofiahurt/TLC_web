@@ -6,6 +6,7 @@ const { requierePermiso } = require('../middleware/permisos');
 const { RUTA_XML } = require('../config/storage');
 const { getPool, sql } = require('../config/db');
 const conciliacion = require('../services/conciliacion-saldos');
+const importarFacturas = require('../services/importar-facturas-xml');
 
 router.get('/', requierePermiso('utilerias.ver'), (req, res) =>
   res.render('utilerias', { usuario: req.session.usuario, modulo: 'utilerias', rutaXml: RUTA_XML }));
@@ -122,6 +123,42 @@ router.post('/copiar-xml', requierePermiso('utilerias.copiarxml'), (req, res) =>
     porTipo: claves.map(k => ({ tipo: TIPOS_XML[k].etiqueta, encontrados: porTipo[k] })),
     copiados, omitidos, errores,
   });
+});
+
+// ── Importar facturas desde XML CFDI 4.0 (carpeta del servidor) ────────────
+// El lote corre en segundo plano; el navegador consulta el avance por id.
+const trabajosImportacion = new Map();
+
+router.post('/importar-facturas', requierePermiso('utilerias.importarfacturas'), async (req, res) => {
+  const carpeta = (req.body.carpetaOrigen || '').trim();
+  if (!carpeta) return res.status(400).json({ error: 'La carpeta origen es requerida.' });
+  let archivos;
+  try {
+    if (!fs.statSync(carpeta).isDirectory()) return res.status(400).json({ error: 'La carpeta origen no es una carpeta.' });
+    archivos = importarFacturas.listarXml(carpeta);
+  } catch (err) { return res.status(400).json({ error: `No se pudo leer la carpeta origen: ${err.message}` }); }
+  if (!archivos.length) return res.status(400).json({ error: 'La carpeta no contiene archivos .xml.' });
+  if ([...trabajosImportacion.values()].some(t => !t.terminado)) {
+    return res.status(409).json({ error: 'Ya hay una importación en curso; espere a que termine.' });
+  }
+
+  const id = String(Date.now());
+  const resumen = importarFacturas.resumenVacio(archivos.length);
+  trabajosImportacion.set(id, resumen);
+  for (const k of [...trabajosImportacion.keys()].slice(0, -5)) trabajosImportacion.delete(k);
+
+  const pool = await getPool();
+  const u = req.session.usuario || {};
+  importarFacturas.importarLote(pool, carpeta, archivos, { completarUuid: req.body.completarUuid === true }, resumen)
+    .then(r => console.log(`Importar facturas XML por ${(u.nombre || '').trim()}: ${r.importadas} importadas, ${r.existentes} existentes, ${r.omitidas} omitidas, ${r.errores} con error`))
+    .catch(err => { resumen.terminado = true; resumen.errorGeneral = err.message; });
+  res.json({ ok: true, id, total: archivos.length });
+});
+
+router.get('/importar-facturas/estado/:id', requierePermiso('utilerias.importarfacturas'), (req, res) => {
+  const t = trabajosImportacion.get(req.params.id);
+  if (!t) return res.status(404).json({ error: 'Importación no encontrada.' });
+  res.json(t);
 });
 
 // ── Conciliar Facturas contra Cobros y Notas de Crédito ────────────────────

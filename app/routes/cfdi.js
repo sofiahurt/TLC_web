@@ -834,9 +834,10 @@ router.get('/xml-factura', async (req, res) => {
     if (!(fac.UUID || '').trim()) return res.status(400).json({ error: 'Esta Factura todavía no está timbrada' });
 
     const nombreBase = `FAC_${serieFacKey || ''}${idNoFactura}`;
-    const rutaTimbrada = path.join(RUTA_XML, `${nombreBase}_Timbrada.xml`);
-    const rutaPrueba   = path.join(RUTA_XML, `${nombreBase}_Prueba.xml`);
-    const ruta = fs.existsSync(rutaTimbrada) ? rutaTimbrada : (fs.existsSync(rutaPrueba) ? rutaPrueba : null);
+    // Las facturas del sistema anterior se guardaron sin la serie en el nombre.
+    const bases = serieFacKey ? [nombreBase, `FAC_${idNoFactura}`] : [nombreBase];
+    const ruta = bases.flatMap(b => [`${b}_Timbrada.xml`, `${b}_Prueba.xml`])
+      .map(n => path.join(RUTA_XML, n)).find(r => fs.existsSync(r));
     if (!ruta) return res.status(404).json({ error: `No se encontró el archivo XML en ${RUTA_XML}` });
 
     res.setHeader('Content-Type', 'application/xml; charset=utf-8');
@@ -866,9 +867,10 @@ router.get('/xml-notacredito', async (req, res) => {
     if (!(nc.UUID || '').trim()) return res.status(400).json({ error: 'Esta nota todavía no está timbrada' });
 
     const nombreBase = `${tipo}_${serieKey || ''}${idNotaCredito}`;
-    const rutaTimbrada = path.join(RUTA_XML, `${nombreBase}_Timbrada.xml`);
-    const rutaPrueba   = path.join(RUTA_XML, `${nombreBase}_Prueba.xml`);
-    const ruta = fs.existsSync(rutaTimbrada) ? rutaTimbrada : (fs.existsSync(rutaPrueba) ? rutaPrueba : null);
+    // Las notas del sistema anterior se guardaron sin la serie en el nombre.
+    const bases = serieKey ? [nombreBase, `${tipo}_${idNotaCredito}`] : [nombreBase];
+    const ruta = bases.flatMap(b => [`${b}_Timbrada.xml`, `${b}_Prueba.xml`])
+      .map(n => path.join(RUTA_XML, n)).find(r => fs.existsSync(r));
     if (!ruta) return res.status(404).json({ error: `No se encontró el archivo XML en ${RUTA_XML}` });
 
     res.setHeader('Content-Type', 'application/xml; charset=utf-8');

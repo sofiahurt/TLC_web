@@ -168,7 +168,7 @@ async function buildCFDIPago(idNoPago, centralOperativo, pool) {
   // valores dependen de la suma de impuestos de ambos, así que se calcula
   // todo en JS puro primero y se construye el árbol ya en el orden correcto.
   function calcularDocsRelacionados(docs, campoMonto, campoSubtotal, campoIva, campoReten, esCompensacion) {
-    let totRetISR = 0, totBaseIVA16 = 0, totImpIVA16 = 0;
+    let totRetIVA = 0, totBaseIVA16 = 0, totImpIVA16 = 0;
     const relacionados = docs
       .filter(d => num(d.linea[campoMonto]) > 0.005)
       .map(d => {
@@ -209,8 +209,8 @@ async function buildCFDIPago(idNoPago, centralOperativo, pool) {
         if (d.objetoImpDR === '02' && (ivaLinea > 0.005 || retLinea > 0.005)) {
           impuestos = {};
           if (retLinea > 0.005) {
-            impuestos.retencion = { BaseDR: fmtDec(subtotalLinea, 2), ImpuestoDR: '001', TipoFactorDR: 'Tasa', TasaOCuotaDR: '0.040000', ImporteDR: fmtDec(retLinea, 2) };
-            totRetISR += retLinea;
+            impuestos.retencion = { BaseDR: fmtDec(subtotalLinea, 2), ImpuestoDR: '002', TipoFactorDR: 'Tasa', TasaOCuotaDR: '0.040000', ImporteDR: fmtDec(retLinea, 2) };
+            totRetIVA += retLinea;
           }
           if (ivaLinea > 0.005) {
             impuestos.traslado = { BaseDR: fmtDec(subtotalLinea, 2), ImpuestoDR: '002', TipoFactorDR: 'Tasa', TasaOCuotaDR: '0.160000', ImporteDR: fmtDec(ivaLinea, 2) };
@@ -219,7 +219,7 @@ async function buildCFDIPago(idNoPago, centralOperativo, pool) {
         }
         return { drAttrs, impuestos };
       });
-    return { relacionados, totRetISR, totBaseIVA16, totImpIVA16 };
+    return { relacionados, totRetIVA, totBaseIVA16, totImpIVA16 };
   }
 
   const montoReal = Math.round(lineas.reduce((acc, l) => acc + num(l.IMPRTE), 0) * 100) / 100;
@@ -236,7 +236,7 @@ async function buildCFDIPago(idNoPago, centralOperativo, pool) {
     : null;
 
   const montoTotalPagos = montoReal + (hayCompensacion ? montoComp : 0);
-  const totRetISR = (pagoReal?.totRetISR || 0) + (pagoComp?.totRetISR || 0);
+  const totRetIVA = (pagoReal?.totRetIVA || 0) + (pagoComp?.totRetIVA || 0);
   const totBaseIVA16 = (pagoReal?.totBaseIVA16 || 0) + (pagoComp?.totBaseIVA16 || 0);
   const totImpIVA16 = (pagoReal?.totImpIVA16 || 0) + (pagoComp?.totImpIVA16 || 0);
 
@@ -245,7 +245,7 @@ async function buildCFDIPago(idNoPago, centralOperativo, pool) {
   const pagosNode = complemento.ele('pago20:Pagos', { Version: '2.0' });
 
   const totalesAttrs = { MontoTotalPagos: fmtDec(montoTotalPagos, 2) };
-  if (totRetISR > 0.005) totalesAttrs.TotalRetencionesISR = fmtDec(totRetISR, 2);
+  if (totRetIVA > 0.005) totalesAttrs.TotalRetencionesIVA = fmtDec(totRetIVA, 2);
   if (totBaseIVA16 > 0.005) { totalesAttrs.TotalTrasladosBaseIVA16 = fmtDec(totBaseIVA16, 2); totalesAttrs.TotalTrasladosImpuestoIVA16 = fmtDec(totImpIVA16, 2); }
   pagosNode.ele('pago20:Totales', totalesAttrs).up();
 
@@ -265,12 +265,12 @@ async function buildCFDIPago(idNoPago, centralOperativo, pool) {
     // en los ImpuestosDR de este mismo pago20:Pago (rechazo real del PAC
     // cuando faltaba este nodo: "Diferencia en la cantidad de impuestos
     // declarados entre RetencionesDR y RetencionesP"). Con el esquema fiscal
-    // fijo de este proyecto (ISR 001 retención, IVA 002 traslado 16%) alcanza
+    // fijo de este proyecto (IVA 002 retención 4%, IVA 002 traslado 16%) alcanza
     // con un solo RetencionP/TrasladoP agregado.
-    if (calculo.totRetISR > 0.005 || calculo.totBaseIVA16 > 0.005) {
+    if (calculo.totRetIVA > 0.005 || calculo.totBaseIVA16 > 0.005) {
       const impP = pagoNode.ele('pago20:ImpuestosP');
-      if (calculo.totRetISR > 0.005) {
-        impP.ele('pago20:RetencionesP').ele('pago20:RetencionP', { ImpuestoP: '001', ImporteP: fmtDec(calculo.totRetISR, 2) }).up().up();
+      if (calculo.totRetIVA > 0.005) {
+        impP.ele('pago20:RetencionesP').ele('pago20:RetencionP', { ImpuestoP: '002', ImporteP: fmtDec(calculo.totRetIVA, 2) }).up().up();
       }
       if (calculo.totBaseIVA16 > 0.005) {
         impP.ele('pago20:TrasladosP').ele('pago20:TrasladoP', {

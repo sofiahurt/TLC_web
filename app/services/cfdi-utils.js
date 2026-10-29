@@ -2,7 +2,7 @@
 
 // Helpers compartidos para armar CFDI 4.0 (Facturas, Notas de Crédito/Débito).
 // Extraído de cfdi-factura.js para no duplicar la lógica de Impuestos por
-// concepto (IVA 16%/retención ISR 001 4%), incluido el Base obligatorio que
+// concepto (IVA 16%/retención IVA 002 4%), incluido el Base obligatorio que
 // costó un bug real de cadena original ya corregido una vez.
 
 const { getSatDb } = require('../config/sat-db');
@@ -38,7 +38,7 @@ function claveUnidadDescripcion(claveUnidad) {
   } catch (e) { return ''; }
 }
 
-// Arma un cfdi:Concepto con su Impuestos (IVA 16% + retención ISR 001 4% si
+// Arma un cfdi:Concepto con su Impuestos (IVA 16% + retención IVA 002 4% si
 // aplica) y regresa los importes para acumular a nivel comprobante.
 function agregarConcepto(conceptosNode, { claveProdServ, claveUnidad, descripcion, subtotal, iva, reten }) {
   const importe = fmtDec(subtotal, 2);
@@ -68,7 +68,7 @@ function agregarConcepto(conceptosNode, { claveProdServ, claveUnidad, descripcio
   }
   if (reten > 0.005) {
     impuestosNode.ele('cfdi:Retenciones').ele('cfdi:Retencion', {
-      Base: importe, Impuesto: '001', TipoFactor: 'Tasa', TasaOCuota: RET_TASA, Importe: fmtDec(reten, 2),
+      Base: importe, Impuesto: '002', TipoFactor: 'Tasa', TasaOCuota: RET_TASA, Importe: fmtDec(reten, 2),
     }).up().up();
   }
   impuestosNode.up();

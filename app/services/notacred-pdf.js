@@ -107,9 +107,10 @@ async function datosParaImpresionNotaCredito(tipo, serie, idNotaCredito, central
 
   let xmlString;
   if (timbrada) {
-    const rutaTimbrada = path.join(RUTA_XML, `${nombreBase}_Timbrada.xml`);
-    const rutaPrueba   = path.join(RUTA_XML, `${nombreBase}_Prueba.xml`);
-    const rutaFinal = fs.existsSync(rutaTimbrada) ? rutaTimbrada : (fs.existsSync(rutaPrueba) ? rutaPrueba : null);
+    // Las notas del sistema anterior se guardaron sin la serie en el nombre.
+    const bases = serieKey ? [nombreBase, `${tipo}_${idNotaCredito}`] : [nombreBase];
+    const rutaFinal = bases.flatMap(b => [`${b}_Timbrada.xml`, `${b}_Prueba.xml`])
+      .map(n => path.join(RUTA_XML, n)).find(r => fs.existsSync(r)) || null;
     if (!rutaFinal) throw new Error(`Esta Nota está marcada como timbrada pero no se encontró el XML en ${RUTA_XML}`);
     xmlString = fs.readFileSync(rutaFinal, 'utf8');
   } else {

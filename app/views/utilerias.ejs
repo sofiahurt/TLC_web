@@ -49,6 +49,45 @@
       </div>
     </div>
   </div>
+
+  <% if (tienePermiso('utilerias.importarfacturas')) { %>
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white">
+      <h6 class="mb-0 fw-bold"><i class="bi bi-receipt me-2 text-primary"></i>Importar facturas desde XML CFDI</h6>
+    </div>
+    <div class="card-body">
+      <p class="text-muted small">
+        Lee los XML CFDI 4.0 de una carpeta del servidor y da de alta las facturas de <strong>Ingreso</strong> con sus conceptos.
+        Los de otro tipo se omiten; si la Serie + Folio ya existe no se inserta. Cada XML importado se guarda en
+        <code><%= rutaXml %></code> como <code>FAC_{Serie}{Folio}_Timbrada.xml</code>. Nunca se modifica la carpeta origen.
+      </p>
+      <div id="impFacError" class="alert alert-danger d-none py-2 small"></div>
+      <div class="row g-3">
+        <div class="col-12">
+          <label class="form-label fw-semibold small mb-1">Carpeta origen</label>
+          <div class="input-group">
+            <input type="text" id="if_CarpetaOrigen" class="form-control" placeholder="Ej. E:\Exportados\XML">
+            <button class="btn btn-outline-secondary" type="button" onclick="openFsBrowser('if_CarpetaOrigen')"><i class="bi bi-search"></i></button>
+          </div>
+        </div>
+        <div class="col-12">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="if_Completar">
+            <label class="form-check-label small" for="if_Completar">Si la factura ya existe pero no tiene UUID, completar UUID / Fecha de timbrado / RFC del PAC</label>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <button class="btn btn-primary w-100" id="btnImportarFac" onclick="ejecutarImportarFacturas()"><i class="bi bi-box-arrow-in-down me-1"></i>Importar facturas</button>
+        </div>
+      </div>
+      <div id="impFacProgreso" class="mt-3 d-none">
+        <div class="progress" style="height:18px"><div id="impFacBarra" class="progress-bar" style="width:0%">0%</div></div>
+        <div id="impFacEstado" class="small text-muted mt-1"></div>
+      </div>
+      <div id="impFacResultado" class="mt-3 d-none"></div>
+    </div>
+  </div>
+  <% } %>
 </div>
 
 <!-- Explorador de carpetas del servidor -->
@@ -79,10 +118,12 @@
 <script>
 const fsBrowserModal = new bootstrap.Modal(document.getElementById('fsBrowserModal'));
 let _fsCurrentPath = '';
+let _fsTarget = 'cx_CarpetaOrigen';
 
-function openFsBrowser(){
+function openFsBrowser(target){
+  _fsTarget = target || 'cx_CarpetaOrigen';
   document.getElementById('fsBrowserError').classList.add('d-none');
-  const inicial = document.getElementById('cx_CarpetaOrigen').value.trim();
+  const inicial = document.getElementById(_fsTarget).value.trim();
   fsBrowserModal.show();
   fsLoad(inicial);
 }
@@ -112,7 +153,7 @@ function fsLoad(rutaPedida){
 
 function usarCarpetaActual(){
   if(!_fsCurrentPath) return;
-  document.getElementById('cx_CarpetaOrigen').value = _fsCurrentPath;
+  document.getElementById(_fsTarget).value = _fsCurrentPath;
   fsBrowserModal.hide();
 }
 
@@ -179,5 +220,55 @@ function pintarResultadoCopiarXml(d){
     tabla('Copiados', d.copiados, [{key:'tipo',label:'Tipo'},{key:'origen',label:'Archivo origen'},{key:'destino',label:'Archivo destino'}]) +
     tabla('Omitidos', d.omitidos, [{key:'tipo',label:'Tipo'},{key:'origen',label:'Archivo origen'},{key:'destino',label:'Archivo destino'},{key:'motivo',label:'Motivo'}]) +
     tabla('Errores', d.errores, [{key:'tipo',label:'Tipo'},{key:'origen',label:'Archivo origen'},{key:'motivo',label:'Motivo'}]);
+}
+
+const _esc = t => String(t==null?'':t).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function ejecutarImportarFacturas(){
+  const errEl=document.getElementById('impFacError'); errEl.classList.add('d-none');
+  const carpetaOrigen=document.getElementById('if_CarpetaOrigen').value.trim();
+  if(!carpetaOrigen){ errEl.textContent='La carpeta origen es requerida.'; errEl.classList.remove('d-none'); return; }
+  const btn=document.getElementById('btnImportarFac');
+  btn.disabled=true; btn.innerHTML='<span class="spinner-border spinner-border-sm me-1"></span>Importando...';
+  document.getElementById('impFacResultado').classList.add('d-none');
+  fetch('/utilerias/importar-facturas',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({carpetaOrigen,completarUuid:document.getElementById('if_Completar').checked})})
+    .then(r=>r.json()).then(d=>{
+      if(d.error){ throw new Error(d.error); }
+      document.getElementById('impFacProgreso').classList.remove('d-none');
+      sondearImportacion(d.id);
+    }).catch(e=>{ impFacFin(); errEl.textContent=e.message||'Error de comunicación con el servidor.'; errEl.classList.remove('d-none'); });
+}
+function impFacFin(){ const b=document.getElementById('btnImportarFac'); b.disabled=false; b.innerHTML='<i class="bi bi-box-arrow-in-down me-1"></i>Importar facturas'; }
+function sondearImportacion(id){
+  fetch('/utilerias/importar-facturas/estado/'+id).then(r=>r.json()).then(t=>{
+    if(t.error) throw new Error(t.error);
+    const pct=t.total?Math.round(t.procesados*100/t.total):100;
+    const barra=document.getElementById('impFacBarra'); barra.style.width=pct+'%'; barra.textContent=pct+'%';
+    document.getElementById('impFacEstado').textContent=`Procesados ${t.procesados} de ${t.total}`;
+    if(!t.terminado){ setTimeout(()=>sondearImportacion(id),700); return; }
+    impFacFin(); pintarImportacion(t);
+  }).catch(e=>{ impFacFin(); const el=document.getElementById('impFacError'); el.textContent=e.message||'Error de comunicación.'; el.classList.remove('d-none'); });
+}
+function pintarImportacion(t){
+  const box=document.getElementById('impFacResultado'); box.classList.remove('d-none');
+  const filas=(est,titulo,extra)=>{
+    const f=t.detalle.filter(x=>x.estado===est); if(!f.length) return '';
+    return `<div class="mb-3"><div class="fw-semibold small mb-1">${titulo}</div><table class="table table-sm table-bordered mb-0"><thead class="table-light"><tr><th>Archivo</th><th>Factura</th><th>Detalle</th></tr></thead><tbody>`+
+      f.map(x=>`<tr><td class="small">${_esc(x.archivo)}</td><td class="small">${_esc(x.factura||'')}</td><td class="small">${_esc(extra?extra(x):(x.motivo||''))}</td></tr>`).join('')+`</tbody></table></div>`;
+  };
+  const sinCli=t.detalle.filter(x=>x.clienteNoEncontrado);
+  const avisos=t.detalle.filter(x=>(x.advertencias||[]).length);
+  box.innerHTML=
+    `<div class="small mb-2">Total: <strong>${t.total}</strong> — <span class="text-success">${t.importadas} importadas</span>, `+
+    `<span class="text-primary">${t.completadas} completadas</span>, <span class="text-warning">${t.existentes} ya existían</span>, `+
+    `<span class="text-secondary">${t.omitidas} omitidas por tipo</span>, <span class="text-danger">${t.errores} con error</span>, `+
+    `${t.clientesNoEncontrados} clientes no encontrados.</div>`+
+    (t.errorGeneral?`<div class="alert alert-danger py-2 small">${_esc(t.errorGeneral)}</div>`:'')+
+    filas('importada','Importadas',x=>`${x.conceptos} concepto(s)`)+filas('completada','Completadas')+filas('existente','Ya existentes')+
+    filas('omitida','Omitidas')+filas('error','Con error')+
+    (sinCli.length?`<div class="mb-3"><div class="fw-semibold small mb-1">Clientes no encontrados (importadas con Id_Cliente = 0)</div><table class="table table-sm table-bordered mb-0"><tbody>`+
+      sinCli.map(x=>`<tr><td class="small">${_esc(x.factura||x.archivo)}</td><td class="small">${_esc(x.clienteNoEncontrado)}</td></tr>`).join('')+`</tbody></table></div>`:'')+
+    (avisos.length?`<div class="mb-3"><div class="fw-semibold small mb-1">Advertencias</div><ul class="small mb-0">`+
+      avisos.flatMap(x=>x.advertencias.map(a=>`<li>${_esc(x.factura||x.archivo)}: ${_esc(a)}</li>`)).join('')+`</ul></div>`:'');
 }
 </script>

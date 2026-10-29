@@ -161,7 +161,7 @@ async function buildCFDINotaCredito(tipo, serie, idNotaCredito, centralOperativo
     });
     if (totalRET > 0.005) {
       impuestosNode.ele('cfdi:Retenciones').ele('cfdi:Retencion', {
-        Impuesto: '001', Importe: fmtDec(totalRET, 2),
+        Impuesto: '002', Importe: fmtDec(totalRET, 2),
       }).up().up();
     }
     if (totalIVA > 0.005) {
