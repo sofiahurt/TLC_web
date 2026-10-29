@@ -19,6 +19,10 @@ const trim = v => (v == null ? '' : String(v).trim());
 const r2 = v => Math.round((num(v) + Number.EPSILON) * 100) / 100;
 const dif = (a, b) => Math.abs(num(a) - num(b)) > 0.005;
 const SK = c => `ISNULL(LTRIM(RTRIM(${c})),'')`;
+// Qué tan "cobrado" dice estar un status. Si el status registrado dice más de lo que
+// respaldan los documentos (ej. PAGADA sin cobro), ajustarlo lo degradaría sin evidencia:
+// puede ser un pago del sistema anterior, así que solo se hace si el usuario lo pide.
+const rangoStatus = st => st === 'PAGADA' ? 2 : (st === 'PAGO PARCIAL' ? 1 : 0);
 
 // ── Facturas ────────────────────────────────────────────────────────────────
 const sqlFacturas = (lock, where) => `
@@ -75,6 +79,7 @@ function evaluarFactura(f) {
   // puede incluir pagos del sistema anterior. Ajustar los borraría, así que solo se
   // ajusta si el usuario lo pide explícitamente.
   else if (pr > pe + 0.005 || nc > ne + 0.005) riesgo = 'sin_respaldo';
+  else if (!equivalente && rangoStatus(status) > rangoStatus(statusEsp)) riesgo = 'sin_respaldo';
 
   return { ...base(f, pe, ne, status), statusEsp, hallazgos, adjustable: hallazgos.length > 0, riesgo };
 }
@@ -142,7 +147,7 @@ async function analizarNotasDebito(pool, filtros) {
       Status: status, StatusEsp: esp, ImporteTotal: r2(n.ImporteTotal), Aplicado: r2(n.Aplicado),
       CobrosIds: n.CobrosIds || '', NotasIds: n.NotasIds || '', hallazgos, adjustable: hallazgos.length > 0,
       riesgo: num(n.Aplicado) > num(n.ImporteTotal) + 0.01 ? 'sobreaplicada'
-        : (hallazgos.length && status === 'PAGADA' && num(n.Aplicado) < 0.005 ? 'sin_respaldo' : null),
+        : (hallazgos.length && rangoStatus(status) > rangoStatus(esp) ? 'sin_respaldo' : null),
     };
   });
 }
@@ -188,7 +193,7 @@ async function ajustarNotasDebito(tx, items, { incluirSinRespaldo = false } = {}
     const status = trim(n.Status).toUpperCase();
     const esp = statusPorSaldo(n.ImporteTotal, 0, n.Aplicado);
     if (status === esp) { out.push({ id: it.id, serie: trim(n.Serie), ok: false, motivo: 'Ya está conciliada.' }); continue; }
-    if (status === 'PAGADA' && num(n.Aplicado) < 0.005 && !incluirSinRespaldo) { out.push({ id: it.id, serie: trim(n.Serie), ok: false, motivo: 'Sin documento de respaldo (posible dato del sistema anterior); no se ajustó.' }); continue; }
+    if (rangoStatus(status) > rangoStatus(esp) && !incluirSinRespaldo) { out.push({ id: it.id, serie: trim(n.Serie), ok: false, motivo: 'Sin documento de respaldo (posible dato del sistema anterior); no se ajustó.' }); continue; }
     await new sql.Request(tx)
       .input('fol', sql.Decimal(9), n.Id_NotaCredito).input('serie', sql.VarChar(20), trim(n.Serie) || null).input('st', sql.VarChar(20), esp)
       .query(`UPDATE Empresa2.NotaCred SET Status=@st WHERE Id_NotaCredito=@fol AND LTRIM(RTRIM(Tipo))='ND' AND ${SK('Serie')} = ISNULL(@serie,'')`);

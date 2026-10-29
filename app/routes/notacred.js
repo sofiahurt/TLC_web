@@ -194,10 +194,8 @@ router.get('/data', async (req, res) => {
   try {
     const tipo = req.query.tipo === 'ND' ? 'ND' : 'NC';
     const data = await browseQuery({
-      table: 'Empresa2.NotaCred nc',
-      columns: ['Serie', 'Id_NotaCredito', 'Fecha', 'Id_Cliente', 'NombreCom', 'Subtotal', 'IVA', 'Retencion', 'ImporteTotal', 'Status', 'FlagResNota', 'UUID',
-        `(SELECT COUNT(*) FROM Empresa2.NotaCredDeta x WHERE x.ID_NOTACREDITO=nc.Id_NotaCredito AND LTRIM(RTRIM(x.TIPO))=LTRIM(RTRIM(nc.Tipo))
-           AND ISNULL(LTRIM(RTRIM(x.SERIE)),'')=ISNULL(LTRIM(RTRIM(nc.Serie)),'')) AS Partidas`],
+      table: 'Empresa2.NotaCred',
+      columns: ['Serie', 'Id_NotaCredito', 'Fecha', 'Id_Cliente', 'NombreCom', 'Subtotal', 'IVA', 'Retencion', 'ImporteTotal', 'Status', 'FlagResNota', 'UUID'],
       searchableCols: ['Id_NotaCredito', 'NombreCom', 'Status'],
       req,
       baseWhere: `LTRIM(RTRIM(Tipo))=@tipoFiltro`,
@@ -225,7 +223,6 @@ router.get('/data', async (req, res) => {
       <td data-field="IVA" data-value="${r.IVA||0}" class="text-end">${fmtN(r.IVA)}</td>
       <td data-field="Retencion" data-value="${r.Retencion||0}" class="text-end">${fmtN(r.Retencion)}</td>
       <td data-field="ImporteTotal" data-value="${r.ImporteTotal||0}" class="text-end">${fmtN(r.ImporteTotal)}</td>
-      <td data-field="Partidas" data-value="${r.Partidas||0}" class="text-end">${r.Partidas||0}</td>
       <td data-field="Status" data-value="${fmt(r.Status)}">${fmt(r.Status)}</td>
       <td class="text-center">${fmt(r.UUID)
         ? `<a href="/cfdi/xml-notacredito?tipo=${tipo}&serie=${encodeURIComponent(fmt(r.Serie))}&idNotaCredito=${r.Id_NotaCredito}" class="btn btn-sm btn-primary py-0 px-1" title="Descargar XML" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-code"></i></a>`
@@ -952,8 +949,10 @@ router.post('/copiar', requierePermiso('notacred.editar'), requierePermiso('nota
         if (saldo <= 0.005 && !(esND && esFactura)) { omitidas.push(etiqueta + ': ' + await motivoOmision(tx, esFactura, esFactura ? l.ID_NOFACTURA : l.Id_NotaDebito, esFactura ? l.SerieFac : l.SerieND, true)); continue; }
         const aplicaOrig = num(l.IMPORTEAPLICA);
         // Un Concepto: las partidas van en 0 (el importe vive en la cabecera).
-        const aplica = esResumen ? 0 : r2(Math.min(aplicaOrig > 0.005 ? aplicaOrig : saldo, saldo));
-        nuevas.push({ l, t, saldo, aplica, f: esResumen ? 0 : (aplicaOrig > 0.005 ? aplica / aplicaOrig : 1) });
+        // ND: se copia el importe aplicado tal cual (no se topa al saldo de las facturas, que pueden estar cobradas).
+        // (también en Un Concepto: las ND del sistema anterior traen su importe aplicado por línea).
+        const aplica = esND ? r2(aplicaOrig) : (esResumen ? 0 : r2(Math.min(aplicaOrig > 0.005 ? aplicaOrig : saldo, saldo)));
+        nuevas.push({ l, t, saldo, aplica, f: esND ? 1 : (esResumen ? 0 : (aplicaOrig > 0.005 ? aplica / aplicaOrig : 1)) });
       }
       if (!nuevas.length) {
         throw Object.assign(new Error('Ninguna línea de la nota se puede copiar (ya están pagadas, canceladas o sin saldo): ' + omitidas.join('; ')), { status: 400 });
