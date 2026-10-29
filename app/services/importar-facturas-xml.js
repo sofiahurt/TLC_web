@@ -267,4 +267,64 @@ async function importarLote(pool, carpeta, archivos, opts, resumen) {
   return resumen;
 }
 
-module.exports = { parsearFacturaXml, importarXml, importarLote, listarXml, resumenVacio, acumular, nombreXml };
+// Nombre con el que debe quedar un XML de factura timbrada: FAC_{Serie}{Folio}_Timbrada.xml,
+// tomando Serie y Folio del propio comprobante. null si no se pueden leer (el
+// llamador usa entonces el nombre derivado del archivo).
+function nombreDestinoDesdeXml(xmlString) {
+  try {
+    const doc = new DOMParser({ onError: () => {} }).parseFromString(xmlString, 'text/xml');
+    const comp = doc.documentElement;
+    if (!comp || (comp.localName || comp.nodeName.split(':').pop()) !== 'Comprobante') return null;
+    const folio = attr(comp, 'Folio');
+    if (!/^\d+$/.test(folio)) return null;
+    return `FAC_${attr(comp, 'Serie')}${folio}_Timbrada.xml`;
+  } catch (_) { return null; }
+}
+
+// ── Revisión de nombres de XML ───────────────────────────────────────────────
+// Facturas con serie cuyo XML se copió sin la serie (FAC_122428_... en vez de
+// FAC_F122428_...). El archivo solo se considera suyo si el UUID del XML coincide
+// con el de la factura: un FAC_71794 puede ser de otra factura sin serie.
+const SUFIJOS_XML = ['_Timbrada.xml', '_Prueba.xml'];
+
+async function revisarNombresXml(pool) {
+  const facs = (await pool.request().query(
+    `SELECT LTRIM(RTRIM(SerieFac)) serie, Id_NoFactura id, LTRIM(RTRIM(UUID)) uuid FROM Empresa2.Factura
+     WHERE LTRIM(RTRIM(ISNULL(SerieFac,''))) <> '' AND LTRIM(RTRIM(ISNULL(UUID,''))) <> '' ORDER BY SerieFac, Id_NoFactura`)).recordset;
+  const archivos = new Set(fs.existsSync(RUTA_XML) ? fs.readdirSync(RUTA_XML) : []);
+  const plan = { revisadas: facs.length, correctos: 0, porRenombrar: [], otraFactura: [], sinArchivo: [] };
+
+  for (const f of facs) {
+    const base = `FAC_${f.serie}${f.id}`;
+    if (SUFIJOS_XML.some(s => archivos.has(base + s))) { plan.correctos++; continue; }
+    const suf = SUFIJOS_XML.find(s => archivos.has(`FAC_${f.id}${s}`));
+    const factura = `${f.serie}-${f.id}`;
+    if (!suf) { plan.sinArchivo.push({ factura }); continue; }
+    const actual = `FAC_${f.id}${suf}`;
+    let uuidXml = '';
+    try {
+      const doc = new DOMParser({ onError: () => {} }).parseFromString(fs.readFileSync(path.join(RUTA_XML, actual), 'utf8'), 'text/xml');
+      uuidXml = attr(porLocalName(doc, 'TimbreFiscalDigital'), 'UUID');
+    } catch (_) { /* XML ilegible: se trata como de otra factura */ }
+    if (uuidXml.toUpperCase() !== f.uuid.toUpperCase()) { plan.otraFactura.push({ factura, actual, motivo: 'el UUID del XML no coincide (es de otra factura)' }); continue; }
+    plan.porRenombrar.push({ factura, actual, nuevo: base + suf });
+  }
+  return plan;
+}
+
+// Aplica el plan recalculado al momento: renombra solo lo que sigue siendo válido.
+async function renombrarNombresXml(pool) {
+  const plan = await revisarNombresXml(pool);
+  const renombrados = [], errores = [];
+  for (const r of plan.porRenombrar) {
+    try {
+      const destino = path.join(RUTA_XML, r.nuevo);
+      if (fs.existsSync(destino)) throw new Error('ya existe un archivo con el nombre nuevo');
+      fs.renameSync(path.join(RUTA_XML, r.actual), destino);
+      renombrados.push(r);
+    } catch (err) { errores.push({ ...r, motivo: err.message }); }
+  }
+  return { renombrados, errores };
+}
+
+module.exports = { nombreDestinoDesdeXml, revisarNombresXml, renombrarNombresXml, parsearFacturaXml, importarXml, importarLote, listarXml, resumenVacio, acumular, nombreXml };

@@ -79,12 +79,16 @@
         <div class="col-md-4">
           <button class="btn btn-primary w-100" id="btnImportarFac" onclick="ejecutarImportarFacturas()"><i class="bi bi-box-arrow-in-down me-1"></i>Importar facturas</button>
         </div>
+        <div class="col-md-5">
+          <button class="btn btn-outline-secondary w-100" id="btnRevisarNombres" onclick="revisarNombresXml()"><i class="bi bi-spellcheck me-1"></i>Revisar nombres de XML (serie)</button>
+        </div>
       </div>
       <div id="impFacProgreso" class="mt-3 d-none">
         <div class="progress" style="height:18px"><div id="impFacBarra" class="progress-bar" style="width:0%">0%</div></div>
         <div id="impFacEstado" class="small text-muted mt-1"></div>
       </div>
       <div id="impFacResultado" class="mt-3 d-none"></div>
+      <div id="nomXmlResultado" class="mt-3 d-none"></div>
     </div>
   </div>
   <% } %>
@@ -270,5 +274,34 @@ function pintarImportacion(t){
       sinCli.map(x=>`<tr><td class="small">${_esc(x.factura||x.archivo)}</td><td class="small">${_esc(x.clienteNoEncontrado)}</td></tr>`).join('')+`</tbody></table></div>`:'')+
     (avisos.length?`<div class="mb-3"><div class="fw-semibold small mb-1">Advertencias</div><ul class="small mb-0">`+
       avisos.flatMap(x=>x.advertencias.map(a=>`<li>${_esc(x.factura||x.archivo)}: ${_esc(a)}</li>`)).join('')+`</ul></div>`:'');
+}
+
+function revisarNombresXml(){
+  const errEl=document.getElementById('impFacError'); errEl.classList.add('d-none');
+  const btn=document.getElementById('btnRevisarNombres'); btn.disabled=true;
+  fetch('/utilerias/importar-facturas/revisar-nombres').then(r=>r.json()).then(p=>{
+    btn.disabled=false; if(p.error) throw new Error(p.error); pintarNombresXml(p);
+  }).catch(e=>{ btn.disabled=false; errEl.textContent=e.message||'Error de comunicación.'; errEl.classList.remove('d-none'); });
+}
+function pintarNombresXml(p){
+  const box=document.getElementById('nomXmlResultado'); box.classList.remove('d-none');
+  const tabla=(titulo,filas,cols)=>!filas.length?'':`<div class="mb-3"><div class="fw-semibold small mb-1">${titulo}</div><table class="table table-sm table-bordered mb-0"><thead class="table-light"><tr>${cols.map(c=>`<th>${c[1]}</th>`).join('')}</tr></thead><tbody>`+
+    filas.slice(0,200).map(f=>`<tr>${cols.map(c=>`<td class="small">${_esc(f[c[0]]||'')}</td>`).join('')}</tr>`).join('')+`</tbody></table>${filas.length>200?`<div class="small text-muted">...y ${filas.length-200} más</div>`:''}</div>`;
+  box.innerHTML=`<hr><div class="small mb-2"><strong>Revisión de nombres</strong> — facturas con serie timbradas: <strong>${p.revisadas}</strong> — `+
+    `<span class="text-success">${p.correctos} con nombre correcto</span>, <span class="text-primary">${p.porRenombrar.length} por renombrar</span>, `+
+    `<span class="text-warning">${p.otraFactura.length} con archivo de otra factura</span>, <span class="text-secondary">${p.sinArchivo.length} sin archivo XML</span>.</div>`+
+    (p.porRenombrar.length?`<button class="btn btn-sm btn-primary mb-3" id="btnRenombrarXml" onclick="renombrarNombresXml()"><i class="bi bi-pencil-square me-1"></i>Renombrar ${p.porRenombrar.length} archivo(s)</button>`:'')+
+    tabla('Por renombrar (el UUID del XML coincide con la factura)',p.porRenombrar,[['factura','Factura'],['actual','Nombre actual'],['nuevo','Nombre nuevo']])+
+    tabla('Archivo de otra factura (no se tocan)',p.otraFactura,[['factura','Factura'],['actual','Archivo'],['motivo','Motivo']])+
+    tabla('Sin archivo XML en la carpeta',p.sinArchivo,[['factura','Factura']]);
+}
+function renombrarNombresXml(){
+  if(!confirm('Se renombrarán los archivos listados en la carpeta de XML. ¿Continuar?')) return;
+  const btn=document.getElementById('btnRenombrarXml'); btn.disabled=true;
+  fetch('/utilerias/importar-facturas/renombrar-nombres',{method:'POST'}).then(r=>r.json()).then(r=>{
+    if(r.error) throw new Error(r.error);
+    alert(`Renombrados: ${r.renombrados.length}. Con error: ${r.errores.length}.`+(r.errores.length?'\n'+r.errores.slice(0,5).map(e=>`${e.actual}: ${e.motivo}`).join('\n'):''));
+    revisarNombresXml();
+  }).catch(e=>{ btn.disabled=false; alert(e.message||'Error de comunicación.'); });
 }
 </script>

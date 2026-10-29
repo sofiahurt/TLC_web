@@ -100,7 +100,14 @@ router.post('/copiar-xml', requierePermiso('utilerias.copiarxml'), (req, res) =>
       // (ej. PAGO_3498_TIMBRADO.xml), no se duplica el guion bajo.
       const folio = t.destinoPrefijo.endsWith('_') ? m[1].replace(/^_+/, '') : m[1];
       if (!folio) continue;
-      const nombreDestino = `${t.destinoPrefijo}${folio}${t.destinoSufijo}`;
+      let nombreDestino = `${t.destinoPrefijo}${folio}${t.destinoSufijo}`;
+      // Facturas: el nombre origen no siempre trae la serie (FACTURA122428 de la serie F);
+      // Serie y Folio se toman del propio XML para que PDF y descarga lo encuentren.
+      if (clave === 'FAC') {
+        try {
+          nombreDestino = importarFacturas.nombreDestinoDesdeXml(fs.readFileSync(path.join(carpetaOrigen, nombre), 'utf8').replace(/^\uFEFF/, '')) || nombreDestino;
+        } catch (_) { /* se queda con el nombre derivado del archivo */ }
+      }
       const rutaDestino = path.join(RUTA_XML, nombreDestino);
       porTipo[clave]++;
       if (fs.existsSync(rutaDestino)) {
@@ -159,6 +166,19 @@ router.get('/importar-facturas/estado/:id', requierePermiso('utilerias.importarf
   const t = trabajosImportacion.get(req.params.id);
   if (!t) return res.status(404).json({ error: 'Importación no encontrada.' });
   res.json(t);
+});
+
+// Revisión/corrección de nombres: XML de facturas con serie guardados sin la serie.
+router.get('/importar-facturas/revisar-nombres', requierePermiso('utilerias.importarfacturas'), async (req, res) => {
+  try { res.json(await importarFacturas.revisarNombresXml(await getPool())); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+router.post('/importar-facturas/renombrar-nombres', requierePermiso('utilerias.importarfacturas'), async (req, res) => {
+  try {
+    const r = await importarFacturas.renombrarNombresXml(await getPool());
+    console.log(`Renombrar XML de facturas con serie por ${((req.session.usuario || {}).nombre || '').trim()}: ${r.renombrados.length} renombrados, ${r.errores.length} con error`);
+    res.json(r);
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // ── Conciliar Facturas contra Cobros y Notas de Crédito ────────────────────
