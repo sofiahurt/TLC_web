@@ -3,6 +3,7 @@ const router = express.Router();
 const { getPool, sql } = require('../config/db');
 const { getSatDb } = require('../config/sat-db');
 const { requierePermiso } = require('../middleware/permisos');
+const bloqueos = require('../services/bloqueos');
 
 const SEARCH_COLS = new Set(['CartaPorte','NombreComunCli','Status','DesFlete','RealizoPedido']);
 const SORT_COLS   = new Set(['CartaPorte','FechaPedido','FehcaCarga','NombreComunCli','DesFlete','Status','RealizoPedido']);
@@ -422,6 +423,8 @@ router.get('/mercancias', async (req, res) => {
 router.post('/mercancias/guardar', requierePermiso('cartaporte.editar'), async (req, res) => {
   const f = req.body;
   try {
+    const bl = bloqueos.conflicto(bloqueos.claveCP(f.Serie, f.CartaPorte), bloqueos.dueno(req));
+    if (bl) return res.status(409).json({ error: bl });
     const pool = await getPool();
     if (f._mode === 'add') {
       const maxRes = await pool.request()
@@ -479,6 +482,8 @@ router.post('/mercancias/guardar', requierePermiso('cartaporte.editar'), async (
 
 router.post('/mercancias/eliminar', requierePermiso('cartaporte.editar'), async (req, res) => {
   try {
+    const bl = bloqueos.conflicto(bloqueos.claveCP(req.body.Serie, req.body.CartaPorte), bloqueos.dueno(req));
+    if (bl) return res.status(409).json({ error: bl });
     const pool = await getPool();
     await pool.request()
       .input('serie', sql.VarChar(3), req.body.Serie)
@@ -507,6 +512,8 @@ router.get('/depositos', async (req, res) => {
 router.post('/depositos/guardar', requierePermiso('cartaporte.editar'), async (req, res) => {
   const f = req.body;
   try {
+    const bl = bloqueos.conflicto(bloqueos.claveCP(f.Serie, f.CartaPorte), bloqueos.dueno(req));
+    if (bl) return res.status(409).json({ error: bl });
     const pool = await getPool();
     const hoy = new Date().toISOString().slice(0,10);
     const num  = v => (v === '' || v == null) ? 0 : parseFloat(v);
@@ -636,12 +643,32 @@ router.post('/depositos/guardar', requierePermiso('cartaporte.editar'), async (r
 router.post('/depositos/eliminar', requierePermiso('cartaporte.editar'), async (req, res) => {
   try {
     const pool = await getPool();
+    const dep = (await pool.request().input('id', sql.Decimal(9), req.body.Id_DepoSol)
+      .query(`SELECT Serie, CartaPorte FROM Empresa2.DepoSolicitud WHERE Id_DepoSol=@id`)).recordset[0];
+    const bl = dep && bloqueos.conflicto(bloqueos.claveCP(dep.Serie, dep.CartaPorte), bloqueos.dueno(req));
+    if (bl) return res.status(409).json({ error: bl });
     await pool.request()
       .input('id', sql.Decimal(9), req.body.Id_DepoSol)
       .query(`DELETE FROM Empresa2.DepoSolicitud WHERE Id_DepoSol=@id`);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
+// ── BLOQUEO de edición: una Carta Porte la edita un solo usuario a la vez ──────
+const bloqueoCP = fn => (req, res) => {
+  const serie = String(req.body.serie || '').trim(), cp = String(req.body.cartaporte || '').trim();
+  if (!serie || !cp) return res.status(400).json({ error: 'Faltan parámetros.' });
+  fn(bloqueos.claveCP(serie, cp), bloqueos.dueno(req), res);
+};
+router.post('/bloqueo/adquirir', requierePermiso('cartaporte.editar'), bloqueoCP((k, d, res) => {
+  const r = bloqueos.adquirir(k, d);
+  r.ok ? res.json({ ok: true }) : res.status(409).json({ error: r.error, quien: r.quien });
+}));
+router.post('/bloqueo/renovar', requierePermiso('cartaporte.editar'), bloqueoCP((k, d, res) => {
+  const r = bloqueos.renovar(k, d);
+  r.ok ? res.json({ ok: true }) : res.status(409).json({ error: r.error, quien: r.quien });
+}));
+router.post('/bloqueo/liberar', bloqueoCP((k, d, res) => { bloqueos.liberar(k, d); res.json({ ok: true }); }));
 
 // ── GUARDAR CartaPorte ────────────────────────────────────────────────────────
 router.post('/guardar', requierePermiso('cartaporte.editar'), async (req, res) => {
@@ -652,6 +679,10 @@ router.post('/guardar', requierePermiso('cartaporte.editar'), async (req, res) =
   try {
     const pool = await getPool();
     const serie = req.session.central;
+    if (f._mode !== 'add') {
+      const bl = bloqueos.conflicto(bloqueos.claveCP(f.Serie, f.CartaPorte), bloqueos.dueno(req));
+      if (bl) return res.status(409).json({ error: bl });
+    }
 
     if (f._mode === 'add') {
       const maxRes = await pool.request()
@@ -902,6 +933,8 @@ router.post('/guardar', requierePermiso('cartaporte.editar'), async (req, res) =
 // ── ELIMINAR CartaPorte ───────────────────────────────────────────────────────
 router.post('/eliminar', requierePermiso('cartaporte.editar'), async (req, res) => {
   try {
+    const bl = bloqueos.conflicto(bloqueos.claveCP(req.body.Serie, req.body.CartaPorte), bloqueos.dueno(req));
+    if (bl) return res.status(409).json({ error: bl });
     const pool = await getPool();
     await pool.request()
       .input('serie', sql.VarChar(3), req.body.Serie)

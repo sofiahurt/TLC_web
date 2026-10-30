@@ -1,0 +1,231 @@
+<%- include('partials/header', { titulo: 'Depósitos' }) %>
+<%- include('partials/sidebar') %>
+<% const puedeVerificar = typeof tienePermiso === 'function' && tienePermiso('depositos.verificar'); %>
+<div id="page-content">
+  <div class="d-flex align-items-center mb-3">
+    <button class="btn btn-sm btn-outline-secondary me-3 d-md-none" id="sidebarToggle"><i class="bi bi-list fs-5"></i></button>
+    <h4 class="mb-0 fw-bold flex-grow-1">Depósitos</h4>
+  </div>
+
+  <div class="card border-0 shadow-sm mb-3"><div class="card-body py-2">
+    <div class="row align-items-center g-2">
+      <div class="col-auto">
+        <div class="input-group input-group-sm">
+          <button class="btn btn-outline-secondary" type="button" onclick="cambiarDia(-1)" title="Día anterior"><i class="bi bi-chevron-left"></i></button>
+          <input type="date" id="fFecha" class="form-control text-center" style="max-width:150px" value="<%= hoy %>" onchange="cargar()">
+          <button class="btn btn-outline-secondary" type="button" onclick="cambiarDia(1)" title="Día siguiente"><i class="bi bi-chevron-right"></i></button>
+          <button class="btn btn-outline-primary" type="button" onclick="irHoy()">Hoy</button>
+        </div>
+      </div>
+      <div class="col-auto">
+        <div class="dropdown">
+          <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside"><i class="bi bi-layout-three-columns"></i> Columnas</button>
+          <div class="dropdown-menu p-2" style="min-width:210px" id="menuCols">
+            <div class="d-flex gap-1 mb-2">
+              <button class="btn btn-sm btn-outline-primary flex-fill" type="button" onclick="todasCols(true)">Mostrar todas</button>
+              <button class="btn btn-sm btn-outline-secondary flex-fill" type="button" onclick="todasCols(false)">Ocultar</button>
+            </div>
+            <% conceptos.forEach(c => { %><div class="form-check"><input class="form-check-input chkCol" type="checkbox" id="col_<%= c %>" data-col="<%= c %>" onchange="aplicarCols()"><label class="form-check-label small" for="col_<%= c %>"><%= c %></label></div><% }) %>
+          </div>
+        </div>
+      </div>
+      <div class="col-auto">
+        <select id="fEstado" class="form-select form-select-sm" onchange="pintar()">
+          <option value="">Todas</option>
+          <option value="pend">Pendientes de validar</option>
+          <option value="val">Validadas</option>
+          <option value="dif">Con diferencia</option>
+          <option value="aut">Solo autorizadas</option>
+          <option value="noaut">Sin autorizar</option>
+        </select>
+      </div>
+      <div class="col-md-4">
+        <div class="input-group input-group-sm">
+          <span class="input-group-text"><i class="bi bi-search"></i></span>
+          <input type="text" id="fBuscar" class="form-control" placeholder="Buscar por Id operador, nombre de operador o Carta Porte..." oninput="pintar()" autocomplete="off">
+          <button class="btn btn-outline-secondary" type="button" onclick="fBuscar.value='';pintar();fBuscar.focus()" title="Limpiar"><i class="bi bi-x-lg"></i></button>
+        </div>
+      </div>
+      <div class="col-auto small text-muted" id="lblResumen"></div>
+    </div>
+    <div id="msgError" class="alert alert-danger d-none py-2 small mt-2 mb-0"></div>
+  </div></div>
+
+  <style>
+    #scrollTop{overflow-x:auto;overflow-y:hidden;height:16px}
+    #scrollTop div{height:1px}
+    #tblVerif td.nw,#tblVerif th.nw{white-space:nowrap}
+    #tblVerif input.form-control-sm{padding:.15rem .35rem}
+    .dif-pos{color:#b02a37;font-weight:600}   /* se depositó menos de lo solicitado */
+    .dif-neg{color:#0a58ca;font-weight:600}   /* se depositó de más */
+  </style>
+  <style id="colStyle"></style>
+  <div class="card border-0 shadow-sm"><div class="card-body p-0">
+    <div id="scrollTop"><div></div></div>
+    <div class="table-responsive" id="scrollMain"><table class="table table-hover table-sm mb-0 align-middle" id="tblVerif">
+      <thead class="thead-tlc"><tr>
+        <th>No</th><th>TC</th><th class="nw" style="min-width:230px">Operador</th><th class="nw" style="min-width:140px">Carta Porte</th>
+        <% conceptos.forEach(c => { %><th class="text-end c-<%= c %>"><%= c %></th><% }) %>
+        <th class="text-end">Solicitado</th><th class="text-center" style="width:70px">Autorizada</th>
+        <th style="min-width:120px">Depositado</th><th class="text-end">Diferencia</th><th style="min-width:120px">Cuenta</th>
+        <th class="text-center" style="width:90px">Validada</th><th style="width:50px"></th>
+      </tr></thead>
+      <tbody id="bodyVerif"><tr><td colspan="<%= conceptos.length + 11 %>" class="text-center text-muted py-3">Cargando...</td></tr></tbody>
+      <tfoot id="footVerif" class="fw-bold"></tfoot>
+    </table></div>
+  </div></div>
+</div>
+
+<%- include('partials/footer') %>
+<script>
+const PUEDE = <%- JSON.stringify(puedeVerificar) %>;
+const CONCEPTOS = <%- JSON.stringify(conceptos) %>;
+const COLS_DEFAULT = ['Diesel', 'Casetas', 'Maniobra', 'Otros', 'Estadias', 'Demoras'];
+const NCOLS = CONCEPTOS.length + 11;
+const esc = v => String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const money = v => Number(v || 0).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
+const el = id => document.getElementById(id);
+const fechaActual = () => el('fFecha').value;
+const r2 = v => Math.round(Number(v || 0) * 100) / 100;
+function verError(m) { const e = el('msgError'); e.textContent = m || ''; e.classList.toggle('d-none', !m); }
+
+function cambiarDia(n) {
+  const [y, m, d] = fechaActual().split('-').map(Number);
+  const f = new Date(y, m - 1, d + n);
+  el('fFecha').value = f.getFullYear() + '-' + String(f.getMonth() + 1).padStart(2, '0') + '-' + String(f.getDate()).padStart(2, '0');
+  cargar();
+}
+function irHoy() { el('fFecha').value = '<%= hoy %>'; cargar(); }
+
+let _filas = [];
+const quitaAcentos = t => String(t == null ? '' : t).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const tieneDif = f => f.MontoDepositado != null && Math.abs(Number(f.Diferencia || 0)) > 0.005;
+
+function filtradas() {
+  const q = quitaAcentos(el('fBuscar').value).trim(), est = el('fEstado').value;
+  return _filas.filter(f => {
+    if (q && !quitaAcentos([f.ID_OPERADOR, f.OPERADOR, f.Serie + '-' + f.CartaPorte, f.CartaPorte].join(' ')).includes(q)) return false;
+    if (est === 'pend') return !f.Validado;
+    if (est === 'val') return !!f.Validado;
+    if (est === 'dif') return tieneDif(f);
+    if (est === 'aut') return !!f.FlagDeposito;
+    if (est === 'noaut') return !f.FlagDeposito;
+    return true;
+  });
+}
+
+function difHtml(f) {
+  if (f.MontoDepositado == null) return '<span class="text-muted">—</span>';
+  const d = Number(f.Diferencia || 0);
+  return `<span class="${d > 0.005 ? 'dif-pos' : d < -0.005 ? 'dif-neg' : 'text-success'}">${money(d)}</span>`;
+}
+
+function pintar() {
+  const vista = filtradas();
+  el('bodyVerif').innerHTML = vista.length ? vista.map(f => {
+    const bloqueada = !PUEDE || f.Validado;
+    const dis = bloqueada ? 'disabled' : '';
+    const enter = `onkeydown="if(event.key==='Enter')guardar(${f.Id_DepoSol})"`;
+    return `<tr id="r${f.Id_DepoSol}"${f.Validado ? ' class="table-success"' : tieneDif(f) ? ' class="table-warning"' : ''}>
+      <td>${f.Id_DepoSol}</td><td>${esc(f.TC)}</td>
+      <td class="nw">${f.ID_OPERADOR == null ? '' : esc(f.ID_OPERADOR) + ' - '}${esc(f.OPERADOR)}</td>
+      <td class="nw">${esc(f.Serie)}-${esc(f.CartaPorte)}</td>
+      ${CONCEPTOS.map(c => `<td class="text-end c-${c}">${f[c] ? money(f[c]) : ''}</td>`).join('')}
+      <td class="text-end fw-semibold">${money(f.Solicitado)}</td>
+      <td class="text-center">${f.FlagDeposito ? '<i class="bi bi-check-circle-fill text-success" title="Autorizada"></i>' : '<i class="bi bi-dash-circle text-muted" title="Sin autorizar"></i>'}</td>
+      <td><input type="text" inputmode="decimal" class="form-control form-control-sm text-end" id="m${f.Id_DepoSol}" value="${f.MontoDepositado == null ? '' : r2(f.MontoDepositado).toFixed(2)}" ${dis} ${enter}></td>
+      <td class="text-end" id="d${f.Id_DepoSol}">${difHtml(f)}</td>
+      <td><input type="text" class="form-control form-control-sm" id="c${f.Id_DepoSol}" maxlength="20" value="${esc(f.NoCuenta)}" ${dis} ${enter}></td>
+      <td class="text-center">
+        <input type="checkbox" class="form-check-input" ${f.Validado ? 'checked' : ''} ${PUEDE ? '' : 'disabled'} onchange="validar(${f.Id_DepoSol}, this)"
+          title="${f.Validado ? esc(f.WhoValida) + ' · ' + esc(f.FechaValida) : 'Marcar como verificada'}">
+        ${f.Validado ? `<div class="small text-muted">${esc(f.FechaValida)}</div>` : ''}</td>
+      <td class="text-center">${bloqueada ? '' : `<button class="btn btn-sm btn-outline-primary py-0 px-1" title="Guardar" onclick="guardar(${f.Id_DepoSol})"><i class="bi bi-save"></i></button>`}</td>
+    </tr>`;
+  }).join('')
+    : `<tr><td colspan="${NCOLS}" class="text-center text-muted py-3">${_filas.length ? 'Ninguna solicitud coincide con el filtro.' : 'Sin solicitudes para este día.'}</td></tr>`;
+
+  const suma = (arr, k) => arr.reduce((s, f) => s + Number(f[k] || 0), 0);
+  const capt = vista.filter(f => f.MontoDepositado != null);
+  el('footVerif').innerHTML = vista.length
+    ? `<tr class="table-light"><td colspan="4" class="text-end">Totales (${vista.length}):</td>
+        ${CONCEPTOS.map(c => `<td class="text-end c-${c}">${money(suma(vista, c))}</td>`).join('')}
+        <td class="text-end">${money(suma(vista, 'Solicitado'))}</td><td></td>
+        <td class="text-end">${money(suma(capt, 'MontoDepositado'))}</td><td class="text-end">${money(suma(capt, 'Diferencia'))}</td><td colspan="3"></td></tr>` : '';
+  const val = _filas.filter(f => f.Validado).length;
+  el('lblResumen').textContent = _filas.length ? `${_filas.length} solicitud(es) · ${_filas.filter(f => f.FlagDeposito).length} autorizada(s) · ${val} validada(s) · ${_filas.filter(tieneDif).length} con diferencia` : '';
+  ajustarBarra();
+}
+
+async function cargar() {
+  verError('');
+  try {
+    const d = await fetch('/depositos/verificar/data?fecha=' + encodeURIComponent(fechaActual())).then(r => r.json());
+    if (d.error) throw new Error(d.error);
+    _filas = d.filas;
+    pintar();
+  } catch (e) {
+    el('bodyVerif').innerHTML = `<tr><td colspan="${NCOLS}" class="text-center text-danger py-3">${esc(e.message)}</td></tr>`;
+    el('footVerif').innerHTML = '';
+  }
+}
+
+async function post(url, body) {
+  const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const d = await r.json();
+  if (!r.ok || d.error) throw new Error(d.error || 'No se pudo guardar.');
+  return d;
+}
+
+// Guarda monto y cuenta de una fila y actualiza su diferencia en pantalla.
+async function guardar(id) {
+  verError('');
+  const f = _filas.find(x => x.Id_DepoSol === id);
+  try {
+    const d = await post('/depositos/verificar/guardar', { Id_DepoSol: id, MontoDepositado: el('m' + id).value, NoCuenta: el('c' + id).value });
+    Object.assign(f, { MontoDepositado: d.MontoDepositado, Diferencia: d.Diferencia, NoCuenta: el('c' + id).value.trim() });
+    pintar();
+    return true;
+  } catch (e) { verError(e.message); if (/actualiza/.test(e.message)) cargar(); return false; }
+}
+
+async function validar(id, chk) {
+  verError('');
+  const marcar = chk.checked;
+  chk.disabled = true;
+  try {
+    if (marcar && !(await guardar(id))) throw new Error('');   // guarda lo capturado antes de validar
+    const d = await post('/depositos/verificar/validar', { Id_DepoSol: id, Validado: marcar });
+    Object.assign(_filas.find(x => x.Id_DepoSol === id), { Validado: d.Validado, WhoValida: d.WhoValida, FechaValida: d.FechaValida, Diferencia: d.Diferencia });
+    pintar();
+  } catch (e) {
+    chk.checked = !marcar; chk.disabled = false;
+    if (e.message) verError(e.message);
+  }
+}
+
+// ── Columnas visibles (se recuerdan en el navegador) ──
+function aplicarCols(guardarSel = true) {
+  const vis = [...document.querySelectorAll('.chkCol')].filter(c => c.checked).map(c => c.dataset.col);
+  el('colStyle').textContent = CONCEPTOS.filter(c => !vis.includes(c)).map(c => '.c-' + c).join(',') + '{display:none}';
+  if (!CONCEPTOS.length || vis.length === CONCEPTOS.length) el('colStyle').textContent = '';
+  if (guardarSel) { try { localStorage.setItem('depos_ver_cols', JSON.stringify(vis)); } catch (_) {} }
+  ajustarBarra();
+}
+function todasCols(v) { document.querySelectorAll('.chkCol').forEach(c => { c.checked = v; }); aplicarCols(); }
+function iniciarCols() {
+  let vis = COLS_DEFAULT;
+  try { const g = localStorage.getItem('depos_ver_cols'); if (g) vis = JSON.parse(g); } catch (_) {}
+  document.querySelectorAll('.chkCol').forEach(c => { c.checked = vis.includes(c.dataset.col); });
+  aplicarCols(false);
+}
+
+// ── Barra de desplazamiento superior sincronizada con la inferior ──
+function ajustarBarra() { el('scrollTop').firstElementChild.style.width = el('tblVerif').scrollWidth + 'px'; }
+el('scrollTop').addEventListener('scroll', () => { if (el('scrollMain').scrollLeft !== el('scrollTop').scrollLeft) el('scrollMain').scrollLeft = el('scrollTop').scrollLeft; });
+el('scrollMain').addEventListener('scroll', () => { if (el('scrollTop').scrollLeft !== el('scrollMain').scrollLeft) el('scrollTop').scrollLeft = el('scrollMain').scrollLeft; });
+window.addEventListener('resize', ajustarBarra);
+
+iniciarCols();
+cargar();
+</script>

@@ -31,6 +31,7 @@ const { generarPDFBufferAcuse } = require('../services/cfdi-acuse-pdf');
 const { generarPDFBufferPago } = require('../services/pago-pdf');
 const { revertirEfectoSaldo } = require('../routes/notacred');
 const { revertirEfectoSaldoPago } = require('../routes/pagos');
+const bloqueos = require('../services/bloqueos');
 const { recalcularImporteFacCP } = require('../routes/facturas');
 const { requierePermiso } = require('../middleware/permisos');
 const { RUTA_XML } = require('../config/storage');
@@ -166,6 +167,8 @@ router.post('/timbrar', requierePermiso('cartaporte.btn_timbrar'), async (req, r
     const serie      = (req.body.serie      || '').trim();
     const cartaporte = (req.body.cartaporte || '').trim();
     if (!serie || !cartaporte) return res.status(400).json({ ok: false, error: 'Faltan parámetros' });
+    const bl = bloqueos.conflicto(bloqueos.claveCP(serie, cartaporte), bloqueos.dueno(req));
+    if (bl) return res.status(409).json({ ok: false, error: bl });
 
     const pool = await getPool();
 
@@ -510,6 +513,8 @@ router.post('/cancelar-cartaporte', requierePermiso('cartaporte.btn_cancelar'), 
     const serie      = (req.body.serie || '').trim();
     const cartaporte = (req.body.cartaporte || '').trim();
     if (!serie || !cartaporte) return res.status(400).json({ ok: false, error: 'Faltan parámetros: serie y cartaporte' });
+    const bl = bloqueos.conflicto(bloqueos.claveCP(serie, cartaporte), bloqueos.dueno(req));
+    if (bl) return res.status(409).json({ ok: false, error: bl });
     const motivo = (req.body.motivo || '').trim();
     const folioSustitucion = (req.body.folioSustitucion || '').trim();
     const nota = (req.body.nota || '').trim();

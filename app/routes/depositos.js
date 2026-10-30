@@ -59,6 +59,87 @@ router.post('/autorizar', requierePermiso('depositos.autorizar'), async (req, re
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ── Verificación de depósitos ────────────────────────────────────────────────
+// Sobre TODAS las solicitudes del día (estén o no autorizadas): se captura lo que realmente
+// se depositó (total por Carta Porte), la diferencia contra lo solicitado se calcula aquí
+// (solicitado - depositado) y la verificación se cierra con Validado. Una solicitud
+// validada ya no se edita hasta que se quita la validación.
+const SELECT_VERIF = `
+  SELECT Id_DepoSol, TC, ID_OPERADOR, OPERADOR, Serie, CartaPorte,
+         ${CONCEPTOS.map(c => `ISNULL(${c},0) AS ${c}`).join(', ')}, ${SUMA_SQL} AS Solicitado,
+         ISNULL(FlagDeposito,0) AS FlagDeposito, MontoDepositado, Diferencia, ISNULL(Validado,0) AS Validado, WhoValida, FechaValida,
+         NoCuenta, ISNULL(FlagEnDeposito,0) AS FlagEnDeposito
+    FROM Empresa2.DepoSolicitud`;
+
+router.get('/verificar', requierePermiso('depositos.ver'), (req, res) =>
+  res.render('depositos-verificar', { usuario: req.session.usuario, modulo: 'depositos-verificar', conceptos: CONCEPTOS, hoy: hoyISO() }));
+
+router.get('/verificar/data', requierePermiso('depositos.ver'), async (req, res) => {
+  try {
+    const pool = await getPool();
+    const r = await pool.request().input('f', sql.Date, fechaDe(req.query.fecha)).query(`
+      ${SELECT_VERIF}
+      WHERE Fecha=@f
+      ORDER BY Id_DepoSol`);
+    const fechaTxt = v => (v instanceof Date ? v.toISOString().slice(0, 10) : trim(v));
+    res.json({ filas: r.recordset.map(x => ({
+      ...x, TC: trim(x.TC), OPERADOR: trim(x.OPERADOR), Serie: trim(x.Serie), CartaPorte: trim(x.CartaPorte),
+      WhoValida: trim(x.WhoValida), FechaValida: fechaTxt(x.FechaValida),
+      NoCuenta: trim(x.NoCuenta),
+    })) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Guarda lo depositado y la cuenta; recalcula la diferencia con lo solicitado.
+router.post('/verificar/guardar', requierePermiso('depositos.verificar'), async (req, res) => {
+  try {
+    const id = parseInt(req.body.Id_DepoSol);
+    if (!id) return res.status(400).json({ error: 'Solicitud inválida.' });
+    const txt = trim(req.body.MontoDepositado).replace(/[$,\s]/g, '');
+    let monto = null;
+    if (txt !== '') {
+      monto = Math.round(Number(txt) * 100) / 100;
+      if (!Number.isFinite(monto) || monto < 0 || monto > 999999999) return res.status(400).json({ error: 'El monto depositado no es válido.' });
+    }
+    const pool = await getPool();
+    const r = await pool.request()
+      .input('id', sql.Decimal(9), id).input('monto', sql.Decimal(11, 2), monto)
+      .input('cuenta', sql.VarChar(20), trim(req.body.NoCuenta).slice(0, 20) || null)
+      .query(`UPDATE Empresa2.DepoSolicitud
+                 SET MontoDepositado=@monto,
+                     Diferencia=CASE WHEN @monto IS NULL THEN NULL ELSE ROUND((${SUMA_SQL}) - @monto, 2) END,
+                     NoCuenta=@cuenta
+               WHERE Id_DepoSol=@id AND ISNULL(Validado,0)=0`);
+    if (!r.rowsAffected[0]) return res.status(409).json({ error: 'La solicitud ya está validada o no existe; actualiza la lista.' });
+    const f = (await pool.request().input('id', sql.Decimal(9), id).query(`${SELECT_VERIF} WHERE Id_DepoSol=@id`)).recordset[0];
+    res.json({ ok: true, Solicitado: f.Solicitado, MontoDepositado: f.MontoDepositado, Diferencia: f.Diferencia });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Valida / quita la validación. Para validar ya debe haber un monto depositado.
+router.post('/verificar/validar', requierePermiso('depositos.verificar'), async (req, res) => {
+  try {
+    const id = parseInt(req.body.Id_DepoSol);
+    if (!id) return res.status(400).json({ error: 'Solicitud inválida.' });
+    const validar = req.body.Validado === true || req.body.Validado === 1 || req.body.Validado === '1' || req.body.Validado === 'true';
+    const quien = [req.session.usuario.nombre, req.session.usuario.apellido].filter(Boolean).map(trim).join(' ').slice(0, 40);
+    const pool = await getPool();
+    const r = await pool.request()
+      .input('id', sql.Decimal(9), id).input('v', sql.TinyInt, validar ? 1 : 0)
+      .input('quien', sql.VarChar(40), validar ? quien : null).input('hoy', sql.Date, validar ? hoyISO() : null)
+      .query(`UPDATE Empresa2.DepoSolicitud
+                 SET Validado=@v, WhoValida=@quien, FechaValida=@hoy,
+                     Diferencia=CASE WHEN @v=1 THEN ROUND((${SUMA_SQL}) - MontoDepositado, 2) ELSE Diferencia END
+               WHERE Id_DepoSol=@id AND (@v=0 OR MontoDepositado IS NOT NULL)`);
+    if (!r.rowsAffected[0]) {
+      return res.status(409).json({ error: validar ? 'Captura primero el monto depositado.' : 'La solicitud no existe; actualiza la lista.' });
+    }
+    const f = (await pool.request().input('id', sql.Decimal(9), id).query(`${SELECT_VERIF} WHERE Id_DepoSol=@id`)).recordset[0];
+    res.json({ ok: true, Diferencia: f.Diferencia, Validado: f.Validado, WhoValida: trim(f.WhoValida),
+      FechaValida: f.FechaValida instanceof Date ? f.FechaValida.toISOString().slice(0, 10) : '' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // Excel de las solicitudes marcadas (FlagDeposito=1) del día.
 router.get('/excel', requierePermiso('depositos.ver'), async (req, res) => {
   try {

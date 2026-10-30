@@ -729,7 +729,55 @@ let _depoMode = 'add';
 let _depoEditId = null;
 const today = new Date().toISOString().slice(0, 10);
 
+// ── Bloqueo de edición: una Carta Porte la edita un solo usuario a la vez ─────
+// Cada pestaña lleva su id; se manda en un encabezado a las rutas de Carta Porte/CFDI para
+// que el servidor sepa quién es el dueño del bloqueo (ver app/services/bloqueos.js).
+const TAB_ID = Math.random().toString(36).slice(2) + Date.now().toString(36);
+const _fetchOriginal = window.fetch.bind(window);
+window.fetch = (url, opts = {}) => {
+  if (typeof url === 'string' && (url.startsWith('/cartaporte/') || url.startsWith('/cfdi/'))) {
+    opts = { ...opts, headers: { ...(opts.headers || {}), 'X-Tab-Id': TAB_ID } };
+  }
+  return _fetchOriginal(url, opts);
+};
+let _lockCP = null, _lockTimer = null;
+const _postJSON = (url, body) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
+// Toma el bloqueo; si otro usuario ya la edita, avisa quién y no deja abrirla.
+async function tomarBloqueoCP(serie, cp) {
+  try {
+    const r = await _postJSON('/cartaporte/bloqueo/adquirir', { serie, cartaporte: cp });
+    const d = await r.json();
+    if (r.status === 409) { alert(d.error); return false; }
+    if (!r.ok) return true;          // fallo ajeno al bloqueo: no se impide trabajar
+  } catch (_) { return true; }
+  _lockCP = { serie, cp };
+  clearInterval(_lockTimer);
+  _lockTimer = setInterval(async () => {
+    if (!_lockCP) return;
+    try {
+      const r = await _postJSON('/cartaporte/bloqueo/renovar', { serie: _lockCP.serie, cartaporte: _lockCP.cp });
+      if (r.status === 409) {
+        const d = await r.json();
+        liberarBloqueoCP(false);
+        alert('Perdió el bloqueo de la Carta Porte. ' + d.error + '\nSus cambios sin guardar no se pueden guardar.');
+        modal.hide();
+      }
+    } catch (_) { /* sin red: se reintenta en el siguiente latido */ }
+  }, 30000);
+  return true;
+}
+function liberarBloqueoCP(avisar = true) {
+  clearInterval(_lockTimer); _lockTimer = null;
+  const l = _lockCP; _lockCP = null;
+  if (l && avisar) _postJSON('/cartaporte/bloqueo/liberar', { serie: l.serie, cartaporte: l.cp }).catch(() => {});
+}
+window.addEventListener('pagehide', () => {
+  if (_lockCP) navigator.sendBeacon('/cartaporte/bloqueo/liberar', new Blob([JSON.stringify({ serie: _lockCP.serie, cartaporte: _lockCP.cp, tab: TAB_ID })], { type: 'application/json' }));
+});
+
 const modal       = new bootstrap.Modal(document.getElementById('frmModal'));
+document.getElementById('frmModal').addEventListener('hidden.bs.modal', () => liberarBloqueoCP());
 const mercModal   = new bootstrap.Modal(document.getElementById('mercModal'));
 const depoModal   = new bootstrap.Modal(document.getElementById('depoModal'));
 const lkModal     = new bootstrap.Modal(document.getElementById('lkModal'));
@@ -826,11 +874,12 @@ document.addEventListener('click', function(e) {
 });
 
 // ── OPEN MODAL ────────────────────────────────────────────────────────────────
-function openEdit() {
+async function openEdit() {
   if (!window._selectedRow) return;
   if ((window._selectedRow.Status || '').trim().toLowerCase() === 'facturado') {
     openVisualizar(); return;
   }
+  if (!(await tomarBloqueoCP(window._selectedRow.Serie, window._selectedRow.CartaPorte))) return;
   _mode = 'edit'; _readOnly = false;
   document.getElementById('frmTitle').textContent = 'Editar Carta Porte';
   document.getElementById('btnGuardar').style.display = '';
