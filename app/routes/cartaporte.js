@@ -179,7 +179,7 @@ router.get('/get', async (req, res) => {
     const noPlacas = fmt(r.NoPlacas) || fmt(r.CamionPlaca);
     res.json({
       Serie: fmt(r.Serie), CartaPorte: fmt(r.CartaPorte), Id_Pedido: r.Id_Pedido||'',
-      FechaPedido: fmt(r.FechaPedido), HoraPedido: hhmmUTC(r.HoraPedido), HoraServidor: hhmmUTC(ahoraComoHoraLocal()), FehcaCarga: fmt(r.FehcaCarga),
+      FechaPedido: fmt(r.FechaPedido), HoraPedido: hhmmUTC(r.HoraPedido), HoraServidor: hhmmUTC(ahoraComoHoraLocal()), FechaServidor: fechaLocalISO(), FehcaCarga: fmt(r.FehcaCarga),
       HoraCarga: fmtDT(r.HoraCarga), FechaDesCarta: fmt(r.FechaDesCarta),
       HorarioDesCarta: fmtDT(r.HorarioDesCarta),
       Id_Cliente: r.Id_Cliente||'', NombreComunCli: fmt(r.NombreComunCli),
@@ -827,6 +827,7 @@ router.post('/guardar', requierePermiso('cartaporte.editar'), async (req, res) =
         .input('cp',       sql.VarChar(30),  f.CartaPorte)
         .input('fechaPed', sql.Date,         f.FechaPedido || hoy)
         .input('horaPed',  sql.DateTime,     ahoraComoHoraLocal())
+        .input('hoyLocal', sql.Date,         hoy)
         .input('fehcaCar', sql.Date,         f.FehcaCarga||null)
         .input('horaCar',  sql.DateTime,     f.FehcaCarga && f.HoraCarga ? new Date(`${f.FehcaCarga}T${f.HoraCarga}`) : null)
         .input('fechaDes', sql.Date,         f.FechaDesCarta||null)
@@ -911,7 +912,8 @@ router.post('/guardar', requierePermiso('cartaporte.editar'), async (req, res) =
         .input('realizo',  sql.VarChar(60),  [req.session.usuario.nombre, req.session.usuario.apellido].filter(Boolean).join(' '))
         .input('motCam',   sql.VarChar(255), f.MotCamPrecio||null)
         .query(`UPDATE Empresa2.CartaPorte SET
-          FechaPedido=@fechaPed,HoraPedido=ISNULL(HoraPedido,@horaPed),RealizoPedido=@realizo,
+          HoraPedido=CASE WHEN HoraPedido IS NULL OR FechaPedido>@hoyLocal THEN @horaPed ELSE HoraPedido END,
+          FechaPedido=CASE WHEN @fechaPed>@hoyLocal THEN @hoyLocal ELSE @fechaPed END,RealizoPedido=@realizo,
           FehcaCarga=@fehcaCar,HoraCarga=@horaCar,FechaDesCarta=@fechaDes,HorarioDesCarta=@horaDes,
           Id_Cliente=@idCli,NombreComunCli=@nCli,Id_ClienteEnt=@idCliEnt,ClienteEnt=@cliEnt,
           Id_ClienteCarga=@idCliCar,ClienteCarga=@cliCar,

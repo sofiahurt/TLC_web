@@ -731,7 +731,7 @@ let _mercMode = 'add';
 let _mercEditId = null;
 let _depoMode = 'add';
 let _depoEditId = null;
-const today = new Date().toISOString().slice(0, 10);
+const today = (() => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`; })();
 
 // ── Bloqueo de edición: una Carta Porte la edita un solo usuario a la vez ─────
 // Cada pestaña lleva su id; se manda en un encabezado a las rutas de Carta Porte/CFDI para
@@ -1028,7 +1028,9 @@ function loadForm(cp, serie, ro) {
       if (d.error) { alert(d.error); return; }
       populateForm(d);
       if (_mode === 'edit') {
-        if (!document.getElementById('f_FechaPedido').value) document.getElementById('f_FechaPedido').value = today;
+        // Fecha/hora del servidor. Una fecha de pedido futura es un dato mal guardado (UTC): se corrige con la del servidor.
+        const fp = document.getElementById('f_FechaPedido'), hp = document.getElementById('f_HoraPedido');
+        if (!fp.value || fp.value > (d.FechaServidor || today)) { fp.value = d.FechaServidor || today; hp.value = ''; }
         // Si la CP no tiene hora se muestra la del servidor (la que se guardará); si ya la tiene, se respeta.
         if (!document.getElementById('f_HoraPedido').value) document.getElementById('f_HoraPedido').value = d.HoraServidor || '';
         if (!document.getElementById('f_Status').value)      document.getElementById('f_Status').value = 'EMITIDO';
