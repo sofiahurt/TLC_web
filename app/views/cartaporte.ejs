@@ -713,6 +713,7 @@ let _statusLocked = false;
 // true solo mientras el botón "Desbloquear edición (CP Emitida)" está activo
 // en esta sesión de edición -- exige Motivo de cambio de precio al guardar.
 let _costosDesbloqueados = false;
+let _horaPedidoOrig = '';   // hora de pedido tal como estaba guardada (para enviar solo si cambia)
 let _currentSerie = '';
 let _currentCP = '';
 let _currentIdCliente = '';
@@ -1028,11 +1029,11 @@ function loadForm(cp, serie, ro) {
       if (d.error) { alert(d.error); return; }
       populateForm(d);
       if (_mode === 'edit') {
-        // Fecha/hora del servidor. Una fecha de pedido futura es un dato mal guardado (UTC): se corrige con la del servidor.
+        // Fecha y hora de pedido: solo se llenan (con las del servidor) cuando están vacías; si ya existen se respetan.
+        _horaPedidoOrig = d.HoraPedido || '';
         const fp = document.getElementById('f_FechaPedido'), hp = document.getElementById('f_HoraPedido');
-        if (!fp.value || fp.value > (d.FechaServidor || today)) { fp.value = d.FechaServidor || today; hp.value = ''; }
-        // Si la CP no tiene hora se muestra la del servidor (la que se guardará); si ya la tiene, se respeta.
-        if (!document.getElementById('f_HoraPedido').value) document.getElementById('f_HoraPedido').value = d.HoraServidor || '';
+        if (!fp.value) fp.value = d.FechaServidor || today;
+        if (!hp.value) hp.value = d.HoraServidor || '';
         if (!document.getElementById('f_Status').value)      document.getElementById('f_Status').value = 'EMITIDO';
         document.getElementById('f_RealizoPedido').value = _usuarioNombre;
       }
@@ -1211,7 +1212,8 @@ function desbloquearEdicionEmitido() {
   syncFlagsImpuestos();
 
   // Revierte lockEmitidoFields()
-  ['f_FehcaCarga','f_HoraCarga','f_FechaDesCarta','f_HorarioDesCarta',
+  // (incluye Fecha y Hora de pedido, que fuera del desbloqueo son de solo lectura)
+  ['f_FehcaCarga','f_HoraCarga','f_FechaDesCarta','f_HorarioDesCarta','f_FechaPedido','f_HoraPedido',
    'f_NombreComunCli','f_ClienteEnt','f_ClienteCarga','f_DesFlete'].forEach(id => {
     const el = document.getElementById(id);
     if (el) { el.readOnly = false; el.style.backgroundColor = ''; }
@@ -1334,6 +1336,7 @@ function guardar() {
     _mode,
     Serie: v('f_Serie'), CartaPorte: v('f_CartaPorte'),
     FechaPedido: v('f_FechaPedido'),
+    HoraPedido: v('f_HoraPedido') !== _horaPedidoOrig ? v('f_HoraPedido') : '',   // solo si se llenó o cambió
     FehcaCarga: v('f_FehcaCarga'), HoraCarga: v('f_HoraCarga'),
     FechaDesCarta: v('f_FechaDesCarta'), HorarioDesCarta: v('f_HorarioDesCarta'),
     Id_Cliente: v('f_Id_Cliente'), NombreComunCli: v('f_NombreComunCli'),

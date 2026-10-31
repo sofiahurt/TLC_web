@@ -826,8 +826,9 @@ router.post('/guardar', requierePermiso('cartaporte.editar'), async (req, res) =
         .input('serie',    sql.VarChar(3),   f.Serie||serie)
         .input('cp',       sql.VarChar(30),  f.CartaPorte)
         .input('fechaPed', sql.Date,         f.FechaPedido || hoy)
-        .input('horaPed',  sql.DateTime,     ahoraComoHoraLocal())
-        .input('hoyLocal', sql.Date,         hoy)
+        // Hora capturada/cambiada en pantalla (hora de pared, guardada como el sistema legado); si no, la del servidor
+        .input('horaForzada', sql.Bit,       /^\d{2}:\d{2}$/.test(f.HoraPedido || '') ? 1 : 0)
+        .input('horaPed',  sql.DateTime,     /^\d{2}:\d{2}$/.test(f.HoraPedido || '') ? new Date(`${f.FechaPedido || hoy}T${f.HoraPedido}:00.000Z`) : ahoraComoHoraLocal())
         .input('fehcaCar', sql.Date,         f.FehcaCarga||null)
         .input('horaCar',  sql.DateTime,     f.FehcaCarga && f.HoraCarga ? new Date(`${f.FehcaCarga}T${f.HoraCarga}`) : null)
         .input('fechaDes', sql.Date,         f.FechaDesCarta||null)
@@ -912,8 +913,7 @@ router.post('/guardar', requierePermiso('cartaporte.editar'), async (req, res) =
         .input('realizo',  sql.VarChar(60),  [req.session.usuario.nombre, req.session.usuario.apellido].filter(Boolean).join(' '))
         .input('motCam',   sql.VarChar(255), f.MotCamPrecio||null)
         .query(`UPDATE Empresa2.CartaPorte SET
-          HoraPedido=CASE WHEN HoraPedido IS NULL OR FechaPedido>@hoyLocal THEN @horaPed ELSE HoraPedido END,
-          FechaPedido=CASE WHEN @fechaPed>@hoyLocal THEN @hoyLocal ELSE @fechaPed END,RealizoPedido=@realizo,
+          FechaPedido=@fechaPed,HoraPedido=CASE WHEN @horaForzada=1 THEN @horaPed ELSE ISNULL(HoraPedido,@horaPed) END,RealizoPedido=@realizo,
           FehcaCarga=@fehcaCar,HoraCarga=@horaCar,FechaDesCarta=@fechaDes,HorarioDesCarta=@horaDes,
           Id_Cliente=@idCli,NombreComunCli=@nCli,Id_ClienteEnt=@idCliEnt,ClienteEnt=@cliEnt,
           Id_ClienteCarga=@idCliCar,ClienteCarga=@cliCar,
