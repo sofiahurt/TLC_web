@@ -14,6 +14,13 @@ function generarIdCCP() {
   return `CCC${seg(5)}-${seg(4)}-${seg(4)}-${seg(4)}-${seg(12)}`;
 }
 
+// Hora de pared del servidor (México) como Date UTC: isoFecha(new Date()) daría la hora UTC,
+// 6 h adelantada, y el PAC rechaza la emisión por fuera del rango permitido.
+function ahoraLocalComoUTC() {
+  const n = new Date();
+  return new Date(Date.UTC(n.getFullYear(), n.getMonth(), n.getDate(), n.getHours(), n.getMinutes(), n.getSeconds()));
+}
+
 function isoFecha(d) {
   if (!d) return '';
   const dt = d instanceof Date ? d : new Date(d);
@@ -339,7 +346,7 @@ async function buildCFDITraslado(serie, cartaporte, pool) {
 
   // FechaPedido es `date` puro; la hora de generación vive aparte en HoraPedido.
   // Sin HoraPedido (CP anteriores a ese campo) la fecha queda a las 00:00:00.
-  const fechaEmision = cp.FechaPedido ? isoFechaHora(cp.FechaPedido, cp.HoraPedido) : isoFecha(new Date());
+  const fechaEmision = cp.FechaPedido ? isoFechaHora(cp.FechaPedido, cp.HoraPedido) : isoFecha(ahoraLocalComoUTC());
 
   // Emisor y Receptor son la misma empresa (autotraslado)
   const emisorRFC    = fmt(emp.RFC);

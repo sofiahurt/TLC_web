@@ -6,6 +6,14 @@ const { requierePermiso } = require('../middleware/permisos');
 const bloqueos = require('../services/bloqueos');
 
 const SEARCH_COLS = new Set(['CartaPorte','NombreComunCli','Status','DesFlete','RealizoPedido']);
+// El driver mssql trabaja en UTC: toISOString() del servidor (hora de México) da el día/hora
+// equivocados por la tarde-noche. Estos helpers usan la hora local del servidor y la guardan
+// "tal cual" (los componentes UTC del Date son la hora de pared), como la lee el timbrado.
+const p2 = n => String(n).padStart(2, '0');
+const fechaLocalISO = () => { const d = new Date(); return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`; };
+const ahoraComoHoraLocal = () => { const d = new Date(); return new Date(Date.UTC(1900, 0, 1, d.getHours(), d.getMinutes(), d.getSeconds())); };
+const hhmmUTC = v => v ? `${p2(new Date(v).getUTCHours())}:${p2(new Date(v).getUTCMinutes())}` : '';
+
 const SORT_COLS   = new Set(['CartaPorte','FechaPedido','FehcaCarga','NombreComunCli','DesFlete','Status','RealizoPedido']);
 
 router.get('/', (req, res) => res.render('cartaporte', { usuario: req.session.usuario, modulo: 'cartaporte' }));
@@ -171,7 +179,7 @@ router.get('/get', async (req, res) => {
     const noPlacas = fmt(r.NoPlacas) || fmt(r.CamionPlaca);
     res.json({
       Serie: fmt(r.Serie), CartaPorte: fmt(r.CartaPorte), Id_Pedido: r.Id_Pedido||'',
-      FechaPedido: fmt(r.FechaPedido), HoraPedido: fmtDT(r.HoraPedido), HoraServidor: fmtDT(new Date()), FehcaCarga: fmt(r.FehcaCarga),
+      FechaPedido: fmt(r.FechaPedido), HoraPedido: hhmmUTC(r.HoraPedido), HoraServidor: hhmmUTC(ahoraComoHoraLocal()), FehcaCarga: fmt(r.FehcaCarga),
       HoraCarga: fmtDT(r.HoraCarga), FechaDesCarta: fmt(r.FechaDesCarta),
       HorarioDesCarta: fmtDT(r.HorarioDesCarta),
       Id_Cliente: r.Id_Cliente||'', NombreComunCli: fmt(r.NombreComunCli),
@@ -515,7 +523,7 @@ router.post('/depositos/guardar', requierePermiso('cartaporte.editar'), async (r
     const bl = bloqueos.conflicto(bloqueos.claveCP(f.Serie, f.CartaPorte), bloqueos.dueno(req));
     if (bl) return res.status(409).json({ error: bl });
     const pool = await getPool();
-    const hoy = new Date().toISOString().slice(0,10);
+    const hoy = fechaLocalISO();
     const num  = v => (v === '' || v == null) ? 0 : parseFloat(v);
     const flag = v => (v === true || v === 'true' || v === 1 || v === '1') ? 1 : 0;
 
@@ -673,7 +681,7 @@ router.post('/bloqueo/liberar', bloqueoCP((k, d, res) => { bloqueos.liberar(k, d
 // ── GUARDAR CartaPorte ────────────────────────────────────────────────────────
 router.post('/guardar', requierePermiso('cartaporte.editar'), async (req, res) => {
   const f = req.body;
-  const hoy = new Date().toISOString().slice(0,10);
+  const hoy = fechaLocalISO();
   const num  = v => (v === '' || v == null) ? null : parseFloat(v);
   const flag = v => (v === true || v === 'true' || v === 1 || v === '1') ? 1 : 0;
   try {
@@ -697,7 +705,7 @@ router.post('/guardar', requierePermiso('cartaporte.editar'), async (req, res) =
         .input('cp',       sql.VarChar(30),  cartaPorte)
         .input('fechaPed', sql.Date,         f.FechaPedido || hoy)
         .input('fechaCap', sql.Date,         hoy)
-        .input('horaPed',  sql.DateTime,     new Date())
+        .input('horaPed',  sql.DateTime,     ahoraComoHoraLocal())
         .input('realizo',  sql.VarChar(60),  [req.session.usuario.nombre, req.session.usuario.apellido].filter(Boolean).join(' '))
         .input('anio',     sql.Decimal(4),   req.session.anio)
         .input('fehcaCar', sql.Date,         f.FehcaCarga||null)
@@ -818,7 +826,7 @@ router.post('/guardar', requierePermiso('cartaporte.editar'), async (req, res) =
         .input('serie',    sql.VarChar(3),   f.Serie||serie)
         .input('cp',       sql.VarChar(30),  f.CartaPorte)
         .input('fechaPed', sql.Date,         f.FechaPedido || hoy)
-        .input('horaPed',  sql.DateTime,     new Date())
+        .input('horaPed',  sql.DateTime,     ahoraComoHoraLocal())
         .input('fehcaCar', sql.Date,         f.FehcaCarga||null)
         .input('horaCar',  sql.DateTime,     f.FehcaCarga && f.HoraCarga ? new Date(`${f.FehcaCarga}T${f.HoraCarga}`) : null)
         .input('fechaDes', sql.Date,         f.FechaDesCarta||null)
