@@ -337,7 +337,9 @@ async function buildCFDITraslado(serie, cartaporte, pool) {
 
   // ── build XML ───────────────────────────────────────────────────────────────
 
-  const fechaEmision = isoFecha(cp.FechaPedido || new Date());
+  // FechaPedido es `date` puro; la hora de generación vive aparte en HoraPedido.
+  // Sin HoraPedido (CP anteriores a ese campo) la fecha queda a las 00:00:00.
+  const fechaEmision = cp.FechaPedido ? isoFechaHora(cp.FechaPedido, cp.HoraPedido) : isoFecha(new Date());
 
   // Emisor y Receptor son la misma empresa (autotraslado)
   const emisorRFC    = fmt(emp.RFC);
