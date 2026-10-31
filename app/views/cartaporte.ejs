@@ -99,13 +99,17 @@
                 <label class="form-label fw-semibold small mb-1">Serie</label>
                 <input type="text" id="f_Serie" class="form-control form-control-sm" readonly>
               </div>
-              <div class="col-md-3">
+              <div class="col-md-2">
                 <label class="form-label fw-semibold small mb-1">Carta Porte</label>
                 <input type="text" id="f_CartaPorte" class="form-control form-control-sm" readonly>
               </div>
-              <div class="col-md-3">
+              <div class="col-md-2">
                 <label class="form-label fw-semibold small mb-1">Fecha pedido</label>
                 <input type="date" id="f_FechaPedido" class="form-control form-control-sm" readonly>
+              </div>
+              <div class="col-md-2">
+                <label class="form-label fw-semibold small mb-1">Hora pedido</label>
+                <input type="time" id="f_HoraPedido" class="form-control form-control-sm" readonly>
               </div>
               <div class="col-md-2">
                 <label class="form-label fw-semibold small mb-1">Status</label>
@@ -1025,6 +1029,8 @@ function loadForm(cp, serie, ro) {
       populateForm(d);
       if (_mode === 'edit') {
         if (!document.getElementById('f_FechaPedido').value) document.getElementById('f_FechaPedido').value = today;
+        // Si la CP no tiene hora se muestra la del servidor (la que se guardará); si ya la tiene, se respeta.
+        if (!document.getElementById('f_HoraPedido').value) document.getElementById('f_HoraPedido').value = d.HoraServidor || '';
         if (!document.getElementById('f_Status').value)      document.getElementById('f_Status').value = 'EMITIDO';
         document.getElementById('f_RealizoPedido').value = _usuarioNombre;
       }
@@ -1073,7 +1079,7 @@ function populateForm(d) {
   const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val ?? ''; };
   const chk = (id, val) => { const el = document.getElementById(id); if (el) el.checked = !!parseInt(val); };
   set('f_Serie', d.Serie); set('f_CartaPorte', d.CartaPorte);
-  set('f_FechaPedido', d.FechaPedido); set('f_FehcaCarga', d.FehcaCarga);
+  set('f_FechaPedido', d.FechaPedido); set('f_HoraPedido', d.HoraPedido); set('f_FehcaCarga', d.FehcaCarga);
   set('f_HoraCarga', d.HoraCarga); set('f_FechaDesCarta', d.FechaDesCarta);
   set('f_HorarioDesCarta', d.HorarioDesCarta);
   document.getElementById('f_Id_Cliente').value = d.Id_Cliente;
@@ -1144,7 +1150,7 @@ function setReadOnly(ro) {
   });
   document.querySelectorAll('#frmModal button:not([data-bs-dismiss])').forEach(b => b.disabled = ro);
   // Serie y CartaPorte siempre readonly
-  ['f_Serie','f_CartaPorte','f_FechaPedido','f_RealizoPedido',
+  ['f_Serie','f_CartaPorte','f_FechaPedido','f_HoraPedido','f_RealizoPedido',
    'f_TotalMercancias','f_PesoBrutoTotal'].forEach(id => {
     const el = document.getElementById(id);
     if (el) { el.readOnly = true; el.disabled = false; }

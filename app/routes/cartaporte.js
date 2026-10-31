@@ -171,7 +171,7 @@ router.get('/get', async (req, res) => {
     const noPlacas = fmt(r.NoPlacas) || fmt(r.CamionPlaca);
     res.json({
       Serie: fmt(r.Serie), CartaPorte: fmt(r.CartaPorte), Id_Pedido: r.Id_Pedido||'',
-      FechaPedido: fmt(r.FechaPedido), FehcaCarga: fmt(r.FehcaCarga),
+      FechaPedido: fmt(r.FechaPedido), HoraPedido: fmtDT(r.HoraPedido), HoraServidor: fmtDT(new Date()), FehcaCarga: fmt(r.FehcaCarga),
       HoraCarga: fmtDT(r.HoraCarga), FechaDesCarta: fmt(r.FechaDesCarta),
       HorarioDesCarta: fmtDT(r.HorarioDesCarta),
       Id_Cliente: r.Id_Cliente||'', NombreComunCli: fmt(r.NombreComunCli),
@@ -697,6 +697,7 @@ router.post('/guardar', requierePermiso('cartaporte.editar'), async (req, res) =
         .input('cp',       sql.VarChar(30),  cartaPorte)
         .input('fechaPed', sql.Date,         f.FechaPedido || hoy)
         .input('fechaCap', sql.Date,         hoy)
+        .input('horaPed',  sql.DateTime,     new Date())
         .input('realizo',  sql.VarChar(60),  [req.session.usuario.nombre, req.session.usuario.apellido].filter(Boolean).join(' '))
         .input('anio',     sql.Decimal(4),   req.session.anio)
         .input('fehcaCar', sql.Date,         f.FehcaCarga||null)
@@ -780,7 +781,7 @@ router.post('/guardar', requierePermiso('cartaporte.editar'), async (req, res) =
         .input('pesoBruto',sql.Decimal(12,3),num(f.PesoBrutoTotal))
         .input('unidPeso', sql.VarChar(10),  f.UnidadPeso||null)
         .query(`INSERT INTO Empresa2.CartaPorte(
-          Serie,Id_Pedido,CartaPorte,FechaPedido,FechaCaptura,RealizoPedido,AnioFactura,
+          Serie,Id_Pedido,CartaPorte,FechaPedido,HoraPedido,FechaCaptura,RealizoPedido,AnioFactura,
           FehcaCarga,HoraCarga,FechaDesCarta,HorarioDesCarta,
           Id_Cliente,NombreComunCli,Id_ClienteEnt,ClienteEnt,Id_ClienteCarga,ClienteCarga,
           NoPedidoCliente,NoRainde,CP_Rela,Id_Tarifa,DesFlete,
@@ -796,7 +797,7 @@ router.post('/guardar', requierePermiso('cartaporte.editar'), async (req, res) =
           CostoManiobrasExt,CostoBascula,CostoPension,CostoRefacciones,CostoOtros,
           Status,Observaciones,Booking,Contenedor,TotalMercancias,PesoBrutoTotal,UnidadPeso
         ) VALUES(
-          @serie,@idPed,@cp,@fechaPed,@fechaCap,@realizo,@anio,
+          @serie,@idPed,@cp,@fechaPed,@horaPed,@fechaCap,@realizo,@anio,
           @fehcaCar,@horaCar,@fechaDes,@horaDes,
           @idCli,@nCli,@idCliEnt,@cliEnt,@idCliCar,@cliCar,
           @booking,@noRainde,@cpRela,@idTar,@desFlete,
@@ -817,6 +818,7 @@ router.post('/guardar', requierePermiso('cartaporte.editar'), async (req, res) =
         .input('serie',    sql.VarChar(3),   f.Serie||serie)
         .input('cp',       sql.VarChar(30),  f.CartaPorte)
         .input('fechaPed', sql.Date,         f.FechaPedido || hoy)
+        .input('horaPed',  sql.DateTime,     new Date())
         .input('fehcaCar', sql.Date,         f.FehcaCarga||null)
         .input('horaCar',  sql.DateTime,     f.FehcaCarga && f.HoraCarga ? new Date(`${f.FehcaCarga}T${f.HoraCarga}`) : null)
         .input('fechaDes', sql.Date,         f.FechaDesCarta||null)
@@ -901,7 +903,7 @@ router.post('/guardar', requierePermiso('cartaporte.editar'), async (req, res) =
         .input('realizo',  sql.VarChar(60),  [req.session.usuario.nombre, req.session.usuario.apellido].filter(Boolean).join(' '))
         .input('motCam',   sql.VarChar(255), f.MotCamPrecio||null)
         .query(`UPDATE Empresa2.CartaPorte SET
-          FechaPedido=@fechaPed,RealizoPedido=@realizo,
+          FechaPedido=@fechaPed,HoraPedido=ISNULL(HoraPedido,@horaPed),RealizoPedido=@realizo,
           FehcaCarga=@fehcaCar,HoraCarga=@horaCar,FechaDesCarta=@fechaDes,HorarioDesCarta=@horaDes,
           Id_Cliente=@idCli,NombreComunCli=@nCli,Id_ClienteEnt=@idCliEnt,ClienteEnt=@cliEnt,
           Id_ClienteCarga=@idCliCar,ClienteCarga=@cliCar,
