@@ -138,9 +138,15 @@
 
           <!-- Columna fiscal: Fecha + catálogos SAT (lupa), alineados en una sola columna -->
           <div class="col-md-3">
-            <label class="form-label fw-semibold small mb-1">Fecha</label>
-            <div class="input-group input-group-sm mb-2">
-              <input type="date" id="f_Fecha" class="form-control form-control-sm" onchange="onCabeceraFieldChange()">
+            <div class="d-flex gap-2 mb-2">
+              <div style="flex:1 1 0;min-width:0">
+                <label class="form-label fw-semibold small mb-1">Fecha</label>
+                <input type="date" id="f_Fecha" class="form-control form-control-sm" onchange="onCabeceraFieldChange()">
+              </div>
+              <div style="flex:0 0 96px">
+                <label class="form-label fw-semibold small mb-1">Hora</label>
+                <input type="time" id="f_Hora" class="form-control form-control-sm" onchange="onCabeceraFieldChange()">
+              </div>
             </div>
             <label class="form-label small mb-1">Forma de pago</label>
             <div class="input-group input-group-sm mb-2">
@@ -533,6 +539,7 @@ function clearForm(){
   document.getElementById('f_RFC').value='';
   document.getElementById('f_Fecha').value=hoyISO();
   document.getElementById('f_Fecha').readOnly=false;
+  document.getElementById('f_Hora').value=''; _horaOrig=''; document.getElementById('f_Hora').readOnly=false;
   document.querySelectorAll('.sat-lupa-btn').forEach(b=>b.disabled=false);
   document.getElementById('f_MonFactura').value='';
   document.getElementById('f_MonFactura_disp').value='';
@@ -603,6 +610,11 @@ function cargarFactura(idNoFactura, serieFac){
     _factura.soloLectura=yaTimbrada;
     document.getElementById('f_Fecha').value=(c.FechaFactura||'').toString().slice(0,10);
     document.getElementById('f_Fecha').readOnly=yaTimbrada;
+    // La hora se puede modificar mientras la factura no esté timbrada, cancelada ni (parcialmente) pagada.
+    _horaOrig=String(c.Hora||'').trim().slice(0,5);
+    document.getElementById('f_Hora').value=_horaOrig;
+    const stFac=(c.Status||'').trim().toUpperCase();
+    document.getElementById('f_Hora').readOnly=yaTimbrada||['CANCELADA','PAGADA','PAGO PARCIAL'].includes(stFac);
     document.querySelectorAll('.sat-lupa-btn').forEach(b=>b.disabled=yaTimbrada);
     setSatField('f_MonFactura','f_MonFactura_disp','moneda',(c.MonFactura||'').trim());
     document.getElementById('f_TipoCambio').value=c.TipoCambio||0;
@@ -633,6 +645,7 @@ function onToggleResumen(){
 
 // Persiste IncluirCP/Descripción/Observaciones/Un-Concepto si la factura ya existe;
 // si aún no existe, los valores viajan con la primera partida (ver agregarPartida).
+let _horaOrig='';   // hora tal como estaba guardada (solo se envía si cambia, para no perder los segundos)
 function onCabeceraFieldChange(){
   if(!_factura.idNoFactura || _factura.soloLectura) return;
   const body={
@@ -642,6 +655,7 @@ function onCabeceraFieldChange(){
     descripcion:document.getElementById('f_Descripcion').value.trim(),
     observaciones:document.getElementById('f_Observaciones').value.trim(),
     fecha:document.getElementById('f_Fecha').value,
+    hora:document.getElementById('f_Hora').value!==_horaOrig ? document.getElementById('f_Hora').value : '',
     monFactura:document.getElementById('f_MonFactura').value.trim(),
     tipoCambio:document.getElementById('f_TipoCambio').value,
     c_FormaPago:document.getElementById('f_c_FormaPago').value.trim(),
@@ -867,6 +881,7 @@ function agregarPartida(serie, cp){
     serie, cartaporte:cp,
     serieFac:document.getElementById('f_SerieFac').value.trim(),
     fecha:document.getElementById('f_Fecha').value,
+    hora:document.getElementById('f_Hora').value,
     flagResFac:document.getElementById('f_FlagResFac').checked?1:0,
     incluirCP:document.getElementById('f_IncluirCP').checked?1:0,
     descripcion:document.getElementById('f_Descripcion').value.trim(),

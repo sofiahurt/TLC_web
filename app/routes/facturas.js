@@ -327,6 +327,9 @@ router.get('/data', async (req, res) => {
 });
 
 // ── CABECERA + LÍNEAS ─────────────────────────────────────────────────────────
+// Hora capturada en pantalla (HH:MM o HH:MM:SS) -> 'HH:MM:SS'; '' si no es válida.
+const horaValida = h => { const m = /^([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/.exec(String(h || '').trim()); return m ? `${m[1]}:${m[2]}:${m[3] || '00'}` : ''; };
+
 router.get('/get', async (req, res) => {
   try {
     const pool = await getPool();
@@ -336,6 +339,8 @@ router.get('/get', async (req, res) => {
       .query(`SELECT * FROM Empresa2.Factura WHERE Id_NoFactura=@id AND ${SERIEFAC_EQ}`);
     if (!cabRes.recordset[0]) return res.status(404).json({ error: 'No encontrada' });
     const cab = cabRes.recordset[0];
+    // Hora es columna `time`: el driver la entrega como Date (1970-01-01THH:MM:SSZ); a pantalla va como HH:MM:SS.
+    if (cab.Hora instanceof Date) cab.Hora = cab.Hora.toISOString().slice(11, 19);
 
     // RFC: facturas migradas del sistema anterior nunca guardaron esta
     // columna -- se completa desde el cliente (siempre vigente).
@@ -519,7 +524,7 @@ router.post('/partida/agregar', requierePermiso('facturas.editar'), async (req, 
         await reqSerieFac(new sql.Request(tx), serieFac)
           .input('id', sql.Decimal(9), idNoFactura)
           .input('fecha', sql.Date, trim(f.fecha) || hoy())
-          .input('hora', sql.VarChar(8), new Date().toTimeString().slice(0,8))
+          .input('hora', sql.VarChar(8), horaValida(f.hora) || new Date().toTimeString().slice(0,8))
           .input('idCli', sql.Decimal(7), idCliente)
           .input('nombreCom', sql.VarChar(150), trim(cli.NOMBRECOMUN) || trim(cli.NOMBRECOM))
           .input('rfc', sql.VarChar(15), trim(cli.RFC))
@@ -654,7 +659,7 @@ router.post('/cabecera/actualizar', requierePermiso('facturas.editar'), async (r
     const pool = await getPool();
     const result = await withTransaction(pool, async (tx) => {
       const facRes = await reqSerieFac(new sql.Request(tx), serieFac).input('id', sql.Decimal(9), idNoFactura)
-        .query(`SELECT Id_NoFactura, UUID FROM Empresa2.Factura WHERE Id_NoFactura=@id AND ${SERIEFAC_EQ}`);
+        .query(`SELECT Id_NoFactura, UUID, Status FROM Empresa2.Factura WHERE Id_NoFactura=@id AND ${SERIEFAC_EQ}`);
       if (!facRes.recordset[0]) throw Object.assign(new Error('Factura no encontrada.'), { status: 404 });
       // La fecha y los catálogos fiscales solo se pueden corregir mientras la
       // factura no esté timbrada; una vez con UUID deben coincidir siempre
@@ -671,6 +676,15 @@ router.post('/cabecera/actualizar', requierePermiso('facturas.editar'), async (r
         .input('observaciones', sql.VarChar(1000), trim(req.body.observaciones) || null)
         .input('fecha', sql.Date, nuevaFecha || null);
       if (nuevaFecha) extraSet += ', FechaFactura=@fecha';
+      // La hora solo cambia si llega una nueva y la factura no está cancelada ni (parcialmente) pagada.
+      const nuevaHora = horaValida(req.body.hora);
+      if (nuevaHora) {
+        if (['CANCELADA', 'PAGADA', 'PAGO PARCIAL'].includes(trim(facRes.recordset[0].Status).toUpperCase())) {
+          throw Object.assign(new Error('La hora ya no se puede modificar: la factura está cancelada o con pagos.'), { status: 409 });
+        }
+        r2.input('hora', sql.VarChar(8), nuevaHora);
+        extraSet += ', Hora=@hora';
+      }
       if (!yaTimbrada) {
         const tieneTipoCambio = trim(req.body.tipoCambio) !== '';
         r2.input('mon', sql.VarChar(4), trim(req.body.monFactura) || null)
