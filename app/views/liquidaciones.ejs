@@ -1,0 +1,272 @@
+<%- include('partials/header', { titulo: 'Liquidaciones' }) %>
+<%- include('partials/sidebar') %>
+<%
+  const can = c => typeof tienePermiso === 'function' && tienePermiso(c);
+  const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+%>
+<div id="page-content">
+  <div class="d-flex align-items-center mb-3">
+    <button class="btn btn-sm btn-outline-secondary me-3 d-md-none" id="sidebarToggle"><i class="bi bi-list fs-5"></i></button>
+    <h4 class="mb-0 fw-bold flex-grow-1">Liquidaciones de operadores</h4>
+  </div>
+
+  <div class="card border-0 shadow-sm mb-3"><div class="card-body py-2">
+    <div class="row g-2 align-items-end">
+      <div class="col-auto"><label class="form-label small mb-0">Mes</label>
+        <select id="fMes" class="form-select form-select-sm" onchange="cargar(1)">
+          <option value="todos">Todos</option>
+          <% MESES.forEach((m, i) => { %><option value="<%= i + 1 %>"<%= (i + 1) === mesActivo ? ' selected' : '' %>><%= m %></option><% }) %>
+        </select></div>
+      <div class="col-md-3"><label class="form-label small mb-0">Operador (id o nombre)</label>
+        <input type="text" id="fOperador" class="form-control form-control-sm" oninput="clearTimeout(window._t);window._t=setTimeout(()=>cargar(1),300)" autocomplete="off"></div>
+      <div class="col-auto"><label class="form-label small mb-0">Estatus</label>
+        <select id="fStatus" class="form-select form-select-sm" onchange="cargar(1)"><option value="">Todos</option><option>GENERADA</option><option>PAGADA</option><option>CANCELADA</option></select></div>
+      <div class="col-auto"><label class="form-label small mb-0">Del</label><input type="date" id="fIni" class="form-control form-control-sm" onchange="cargar(1)"></div>
+      <div class="col-auto"><label class="form-label small mb-0">Al</label><input type="date" id="fFin" class="form-control form-control-sm" onchange="cargar(1)"></div>
+      <div class="col-auto small text-muted" id="lblTotal"></div>
+      <div class="col-auto ms-auto btn-action-group">
+        <% if (can('liquidaciones.crear')) { %><button class="btn btn-sm btn-success" onclick="abrirNueva()"><i class="bi bi-plus-lg"></i> Nueva</button><% } %>
+        <button class="btn btn-sm btn-primary" data-requires-selection disabled onclick="openEdit()"><i class="bi bi-pencil"></i> Editar</button>
+        <% if (can('liquidaciones.pagar')) { %><button class="btn btn-sm btn-warning" data-requires-selection disabled onclick="pagarSeleccionada()"><i class="bi bi-cash-coin"></i> Pagar</button><% } %>
+        <% if (can('liquidaciones.cancelar')) { %><button class="btn btn-sm btn-danger" data-requires-selection disabled onclick="cancelarSeleccionada()" title="Pasa la liquidación a CANCELADA (solo lectura) y libera sus cartas porte"><i class="bi bi-x-circle"></i> Cancelar</button><% } %>
+      </div>
+    </div>
+    <div id="msgError" class="alert alert-danger d-none py-2 small mt-2 mb-0"></div>
+  </div></div>
+
+  <div class="card border-0 shadow-sm"><div class="card-body p-0"><div class="table-responsive">
+    <table class="table table-hover table-sm mb-0 align-middle">
+      <thead class="thead-tlc"><tr><th>Mes - No.</th><th>Fecha</th><th>Operador</th><th>Realizó</th><th class="text-end">Total liquidación</th><th>Estatus</th><th style="width:50px"></th></tr></thead>
+      <tbody id="bodyLiq"><tr><td colspan="7" class="text-center text-muted py-3">Cargando...</td></tr></tbody>
+    </table></div></div>
+    <div class="card-footer bg-white d-flex justify-content-between align-items-center">
+      <span class="small text-muted" id="lblPag"></span>
+      <div><button class="btn btn-sm btn-outline-secondary" id="btnPrev" onclick="cargar(_pag-1)">‹</button> <button class="btn btn-sm btn-outline-secondary" id="btnNext" onclick="cargar(_pag+1)">›</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- Nueva liquidación -->
+<div class="modal fade" id="mdlNueva" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+  <div class="modal-header py-2"><h6 class="modal-title">Nueva liquidación</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <input type="text" id="nuevaQ" class="form-control form-control-sm mb-2" placeholder="Buscar operador activo por id o nombre..." oninput="clearTimeout(window._t2);window._t2=setTimeout(buscarOperadores,250)" autocomplete="off">
+    <div class="list-group" id="nuevaLista" style="max-height:320px;overflow:auto"></div>
+    <div id="nuevaMsg" class="small text-danger mt-2"></div>
+  </div>
+</div></div></div>
+
+<!-- Detalle de la liquidación -->
+<div class="modal fade" id="mdlLiq" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-xl modal-dialog-scrollable"><div class="modal-content">
+  <div class="modal-header py-2"><h6 class="modal-title" id="liqTitulo">Liquidación</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <div id="liqAviso" class="alert alert-warning py-2 small d-none"></div>
+    <div id="liqError" class="alert alert-danger py-2 small d-none"></div>
+    <div class="row g-2 mb-2">
+      <div class="col-md-2"><label class="form-label small mb-0">Sueldo base</label><input type="number" step="0.01" min="0" id="e_sueldoBase" class="form-control form-control-sm ed"></div>
+      <div class="col-md-2"><label class="form-label small mb-0">IMSS</label><input type="number" step="0.01" min="0" id="e_imss" class="form-control form-control-sm ed"></div>
+      <div class="col-md-2"><label class="form-label small mb-0">Infonavit</label><input type="number" step="0.01" min="0" id="e_infonavit" class="form-control form-control-sm ed"></div>
+      <div class="col-md-2"><label class="form-label small mb-0">Extra comisión</label><input type="number" step="0.01" min="0" id="e_extraComision" class="form-control form-control-sm ed"></div>
+      <div class="col-md-2"><label class="form-label small mb-0">Extra descuento</label><input type="number" step="0.01" min="0" id="e_extraDescuento" class="form-control form-control-sm ed"></div>
+      <div class="col-md-2"><label class="form-label small mb-0">Adelanto</label><input type="number" step="0.01" min="0" id="e_totalAdelanto" class="form-control form-control-sm ed"></div>
+    </div>
+
+    <div class="d-flex align-items-center mb-1"><h6 class="mb-0 flex-grow-1">Cartas Porte (<span id="nViajes">0</span>)</h6>
+      <% if (can('liquidaciones.editar')) { %><button class="btn btn-sm btn-outline-primary ed" id="btnAddViaje" onclick="abrirCandidatas()"><i class="bi bi-plus-lg"></i> Agregar Carta Porte</button><% } %></div>
+    <div class="table-responsive mb-3"><table class="table table-sm table-hover mb-0">
+      <thead class="table-light"><tr><th>Carta Porte</th><th>Fecha</th><th>Cliente</th><th>Flete</th><th class="text-end">Costo flete</th><th class="text-end">Costo renta</th><th class="text-end">Costo kilómetros</th><th class="text-end">Km</th><th></th></tr></thead>
+      <tbody id="bodyViajes"></tbody></table></div>
+
+    <div class="row g-3">
+      <div class="col-lg-7">
+        <h6 class="mb-1">Costos por concepto</h6>
+        <table class="table table-sm mb-0">
+          <thead class="table-light"><tr><th>Concepto</th><th class="text-end">Estimado</th><th style="width:130px" class="text-end">Real</th><th class="text-end">Diferencia</th></tr></thead>
+          <tbody id="bodyConceptos"></tbody>
+          <tfoot><tr class="fw-semibold"><td colspan="3" class="text-end">Total diferencias</td><td class="text-end" id="t_totalDif"></td></tr></tfoot>
+        </table>
+        <div class="mt-2 d-flex gap-2 flex-wrap">
+          <% if (can('liquidaciones.editar')) { %>
+          <button class="btn btn-sm btn-outline-secondary ed" onclick="accion('recalcular-diferencias')">Recalcular diferencias</button>
+          <button class="btn btn-sm btn-outline-warning ed" onclick="if(confirm('Se sumará el total de diferencias al Extra descuento (una sola vez). ¿Continuar?'))accion('aplicar-diferencias')">Aplicar diferencias</button>
+          <% } %>
+        </div>
+      </div>
+      <div class="col-lg-5">
+        <h6 class="mb-1">Totales</h6>
+        <table class="table table-sm mb-0"><tbody id="bodyTotales"></tbody></table>
+      </div>
+    </div>
+  </div>
+  <div class="modal-footer py-2">
+    <button class="btn btn-sm btn-outline-secondary me-auto" onclick="verRecibo()"><i class="bi bi-printer"></i> Recibo</button>
+    <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal"><i class="bi bi-x-lg"></i> Cancelar</button>
+    <% if (can('liquidaciones.editar')) { %><button class="btn btn-sm btn-primary ed" onclick="guardarCambios()"><i class="bi bi-floppy"></i> Guardar cambios</button><% } %>
+    <% if (can('liquidaciones.reabrir')) { %><button class="btn btn-sm btn-warning d-none" id="btnReabrir" onclick="if(confirm('¿Reabrir la liquidación PAGADA?'))accion('reabrir')"><i class="bi bi-unlock"></i> Reabrir</button><% } %>
+  </div>
+</div></div></div>
+
+<!-- Cartas porte candidatas -->
+<div class="modal fade" id="mdlCand" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable"><div class="modal-content">
+  <div class="modal-header py-2"><h6 class="modal-title">Cartas porte del operador sin liquidar</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <input type="text" id="candQ" class="form-control form-control-sm mb-2" placeholder="Filtrar por carta porte, cliente o flete..." oninput="pintarCandidatas()" autocomplete="off">
+    <table class="table table-sm table-hover"><thead class="table-light"><tr><th>Año</th><th>Carta Porte</th><th>Fecha</th><th>Cliente</th><th>Flete</th><th></th></tr></thead><tbody id="bodyCand"></tbody></table>
+  </div>
+</div></div></div>
+
+<%- include('partials/footer') %>
+<script>
+const el = id => document.getElementById(id);
+const esc = v => String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const money = v => Number(v || 0).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
+const fechaMx = iso => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || '')); return m ? `${m[3]}/${m[2]}/${m[1]}` : ''; };
+const CONCEPTOS = [['maniobras', 'Maniobras'], ['prestamo', 'Préstamo'], ['talacha', 'Talacha'], ['compllanta', 'Llanta'], ['comidas', 'Comidas'],
+  ['caseta', 'Casetas (con IVA)'], ['maniobrasExt', 'Maniobras extra / báscula'], ['pension', 'Pensión'], ['refacciones', 'Refacciones'], ['diesel', 'Diesel'], ['estadias', 'Estadías'], ['demoras', 'Demoras'], ['otros', 'Otros']];
+// ESC cierra solo el modal de más arriba (las cartas porte, luego "nueva", luego la liquidación).
+const mdlNueva = new bootstrap.Modal(el('mdlNueva'), { keyboard: false }), mdlLiq = new bootstrap.Modal(el('mdlLiq'), { keyboard: false }), mdlCand = new bootstrap.Modal(el('mdlCand'), { keyboard: false });
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  const abierto = [['mdlCand', mdlCand], ['mdlNueva', mdlNueva], ['mdlLiq', mdlLiq]].find(([id]) => el(id).classList.contains('show'));
+  if (abierto) { e.preventDefault(); e.stopPropagation(); abierto[1].hide(); }
+}, true);
+let _pag = 1, _liq = null, _cand = [];
+
+async function api(url, opts = {}) {
+  const r = await fetch(url, { ...opts, headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) }, body: opts.body ? JSON.stringify(opts.body) : undefined });
+  const d = await r.json();
+  if (!r.ok || d.error) throw new Error(d.error || 'Error inesperado.');
+  return d;
+}
+const verError = m => { el('msgError').textContent = m || ''; el('msgError').classList.toggle('d-none', !m); };
+const verErrorLiq = m => { el('liqError').textContent = m || ''; el('liqError').classList.toggle('d-none', !m); };
+
+// ── Listado ──
+async function cargar(p) {
+  _pag = Math.max(1, p || 1);
+  verError('');
+  const qs = new URLSearchParams({ mes: el('fMes').value, operador: el('fOperador').value, status: el('fStatus').value, fechaIni: el('fIni').value, fechaFin: el('fFin').value, page: _pag });
+  try {
+    const d = await api('/liquidaciones?' + qs);
+    // tr[data-id] + td[data-field]: el script global guarda la fila seleccionada en window._selectedRow y el doble clic llama a openEdit()
+    el('bodyLiq').innerHTML = d.rows.length ? d.rows.map(r => `<tr data-id="${esc(r.id)}">
+      <td data-field="id" data-value="${esc(r.id)}" class="fw-semibold">${esc(r.id)}</td><td>${fechaMx(r.fecha)}</td>
+      <td data-field="operador" data-value="${esc(r.operador)}">${esc(r.idOperador)} - ${esc(r.operador)}</td>
+      <td>${esc(r.realizo)}</td><td class="text-end">${money(r.totalLiquidacion)}</td>
+      <td data-field="status" data-value="${esc(r.status)}"><span class="badge ${{ PAGADA: 'bg-success', CANCELADA: 'bg-danger' }[r.status.toUpperCase()] || 'bg-secondary'}">${esc(r.status)}</span></td>
+      <td class="text-end"><a class="btn btn-sm btn-outline-secondary py-0" target="_blank" href="/liquidaciones/${esc(r.id)}/recibo" title="Recibo"><i class="bi bi-printer"></i></a></td></tr>`).join('')
+      : '<tr><td colspan="7" class="text-center text-muted py-3">Sin liquidaciones.</td></tr>';
+    window._selectedRow = null; window._selectedId = null;
+    document.querySelectorAll('[data-requires-selection]').forEach(b => { b.disabled = true; });
+    el('lblTotal').textContent = `${d.total} liquidación(es)`;
+    el('lblPag').textContent = `Página ${d.page} de ${d.totalPages}`;
+    el('btnPrev').disabled = d.page <= 1; el('btnNext').disabled = d.page >= d.totalPages;
+  } catch (e) { verError(e.message); }
+}
+
+// ── Nueva ──
+function abrirNueva() { el('nuevaQ').value = ''; el('nuevaMsg').textContent = ''; mdlNueva.show(); buscarOperadores(); }
+async function buscarOperadores() {
+  const d = await api('/liquidaciones/operadores?q=' + encodeURIComponent(el('nuevaQ').value.trim())).catch(e => ({ rows: [], error: e.message }));
+  el('nuevaLista').innerHTML = d.rows.map(o => `<button type="button" class="list-group-item list-group-item-action py-1" onclick="crear(${o.idOperador})">${esc(o.idOperador)} - ${esc(o.operador)}</button>`).join('')
+    || '<div class="text-muted small p-2">Sin operadores activos.</div>';
+}
+async function crear(idOperador) {
+  try {
+    const d = await api('/liquidaciones', { method: 'POST', body: { idOperador } });
+    mdlNueva.hide();
+    await cargar(1);
+    pintarLiq(d.liquidacion, d.advertencias);
+    mdlLiq.show();
+  } catch (e) { el('nuevaMsg').textContent = e.message; }
+}
+
+// ── Detalle ──
+function openEdit() { if (window._selectedRow && window._selectedRow.id) abrir(window._selectedRow.id); }
+async function pagarSeleccionada() {
+  const s = window._selectedRow; if (!s) return;
+  if (!confirm(`¿Marcar la liquidación ${s.id} (${s.operador}) como PAGADA? Quedará de solo lectura.`)) return;
+  verError('');
+  try { await api(`/liquidaciones/${s.id}/pagar`, { method: 'POST' }); cargar(_pag); } catch (e) { verError(e.message); }
+}
+function cancelarSeleccionada() { if (window._selectedRow) cancelarLiq(window._selectedRow.id); }
+async function abrir(id) { verErrorLiq(''); try { pintarLiq(await api('/liquidaciones/' + id)); mdlLiq.show(); } catch (e) { verError(e.message); } }
+
+function pintarLiq(l, avisos) {
+  _liq = l;
+  const pagada = l.status.toUpperCase() !== 'GENERADA';   // PAGADA o CANCELADA: solo lectura
+  el('liqTitulo').textContent = `Liquidación ${l.id} · ${l.idOperador} - ${l.operador} · ${fechaMx(l.fecha)} · ${l.status}`;
+  el('liqAviso').classList.toggle('d-none', !(avisos && avisos.length));
+  el('liqAviso').innerHTML = (avisos || []).map(esc).join('<br>');
+  ['sueldoBase', 'imss', 'infonavit', 'extraComision', 'extraDescuento', 'totalAdelanto'].forEach(k => { el('e_' + k).value = Number(l[k]).toFixed(2); });
+  el('nViajes').textContent = l.viajes.length;
+  el('bodyViajes').innerHTML = l.viajes.map(v => `<tr>
+    <td class="text-nowrap">${esc(v.serie)}-${esc(v.cartaPorte)}</td><td>${fechaMx(v.fechaViaje)}</td><td>${esc(v.cliente)}</td><td>${esc(v.desFlete)}</td>
+    <td class="text-end">${money(v.costoFlete)}</td><td class="text-end">${money(v.costoRenta)}</td><td class="text-end">${money(v.costoKilometros)}</td><td class="text-end">${v.kilometros}</td>
+    <td class="text-end">${pagada ? '' : `<button class="btn btn-sm btn-outline-danger py-0 ed" title="Quitar viaje" onclick="quitarViaje(${v.idDeta})"><i class="bi bi-x-lg"></i></button>`}</td></tr>`).join('')
+    || '<tr><td colspan="9" class="text-center text-muted">Sin cartas porte.</td></tr>';
+  el('bodyConceptos').innerHTML = CONCEPTOS.map(([k, n]) => `<tr><td>${n}${k === 'caseta' ? ` <span class="small text-muted">(sin IVA: ${money(l.caseta.sinIva)})</span>` : ''}</td>
+    <td class="text-end">${money(l[k].estimado)}</td>
+    <td><input type="number" step="0.01" min="0" class="form-control form-control-sm text-end ed real" data-k="${k}" value="${Number(l[k].real).toFixed(2)}"></td>
+    <td class="text-end ${l[k].dif > 0.005 ? 'text-success' : l[k].dif < -0.005 ? 'text-danger' : ''}">${money(l[k].dif)}</td></tr>`).join('')
+    + `<tr><td class="small text-muted">Descripción de Otros</td><td colspan="3"><input type="text" id="e_descripcionOtros" maxlength="299" class="form-control form-control-sm ed" value="${esc(l.descripcionOtros || '')}"></td></tr>`;
+  el('t_totalDif').textContent = money(l.totalDif);
+  const fila = (n, v, neg, fuerte) => `<tr class="${fuerte ? 'fw-bold table-light' : ''}"><td>${n}</td><td class="text-end">${neg ? '−' : ''}${money(v)}</td></tr>`;
+  el('bodyTotales').innerHTML = fila('Comisión de viajes', l.totalComision) + fila('Extra comisión', l.extraComision) + fila('Sueldo base', l.sueldoBase)
+    + fila('Adelanto', l.totalAdelanto, true) + fila('Extra descuento', l.extraDescuento, true)
+    + fila('IMSS', l.imss, true) + fila('Infonavit', l.infonavit, true) + fila('Total a liquidar', l.totalLiquidacion, false, true)
+    + fila('Gastos del viaje', l.totalViaje) + fila('Gran total', l.granTotalLiq, false, true) + fila('Total flete', l.totalFlete) + fila('Utilidad', l.totalUtilidad, false, true);
+  document.querySelectorAll('#mdlLiq .ed').forEach(e => { if (e.tagName === 'INPUT') e.readOnly = pagada; else e.disabled = pagada; e.classList.toggle('d-none', pagada && e.tagName === 'BUTTON'); });
+  const re = el('btnReabrir'); if (re) re.classList.toggle('d-none', l.status.toUpperCase() !== 'PAGADA');
+}
+
+async function guardarCambios() {   // guarda y cierra la forma
+  verErrorLiq('');
+  const body = { descripcionOtros: el('e_descripcionOtros').value, real: {} };
+  ['sueldoBase', 'imss', 'infonavit', 'extraComision', 'extraDescuento', 'totalAdelanto'].forEach(k => { body[k] = el('e_' + k).value; });
+  document.querySelectorAll('#bodyConceptos .real').forEach(i => { body.real[i.dataset.k] = i.value; });
+  try { await api('/liquidaciones/' + _liq.id, { method: 'PATCH', body }); mdlLiq.hide(); cargar(_pag); } catch (e) { verErrorLiq(e.message); }
+}
+async function accion(nombre) {
+  verErrorLiq('');
+  try { pintarLiq(await api(`/liquidaciones/${_liq.id}/${nombre}`, { method: 'POST' })); cargar(_pag); } catch (e) { verErrorLiq(e.message); }
+}
+async function quitarViaje(idDeta) {
+  if (!confirm('¿Quitar el viaje de la liquidación? La carta porte quedará disponible otra vez.')) return;
+  verErrorLiq('');
+  try { pintarLiq(await api(`/liquidaciones/${_liq.id}/viajes/${idDeta}`, { method: 'DELETE' })); cargar(_pag); } catch (e) { verErrorLiq(e.message); }
+}
+// Cancelar (browse): la liquidación NO se borra; pasa a CANCELADA (solo lectura) y libera sus cartas porte.
+async function cancelarLiq(id) {
+  if (!confirm(`¿Cancelar la liquidación ${id}?\nQuedará CANCELADA (solo lectura) y sus cartas porte volverán a estar disponibles.`)) return;
+  verError('');
+  try { await api(`/liquidaciones/${id}/cancelar`, { method: 'POST' }); cargar(_pag); }
+  catch (e) { verError(e.message); }
+}
+function verRecibo() { window.open(`/liquidaciones/${_liq.id}/recibo`, '_blank'); }
+
+// ── Candidatas ──
+async function abrirCandidatas() {
+  verErrorLiq('');
+  el('candQ').value = ''; el('bodyCand').innerHTML = '<tr><td colspan="6" class="text-muted text-center">Buscando...</td></tr>';
+  mdlCand.show();
+  try { _cand = (await api('/liquidaciones/candidatas?idOperador=' + _liq.idOperador)).rows; pintarCandidatas(); }
+  catch (e) { el('bodyCand').innerHTML = `<tr><td colspan="6" class="text-danger">${esc(e.message)}</td></tr>`; }
+}
+function pintarCandidatas() {
+  const q = el('candQ').value.trim().toLowerCase();
+  const v = _cand.filter(c => !q || [c.cartaPorte, c.cliente, c.desFlete].join(' ').toLowerCase().includes(q));
+  el('bodyCand').innerHTML = v.map((c, i) => `<tr><td>${c.anioCP}</td><td class="text-nowrap">${esc(c.serie)}-${esc(c.cartaPorte)}</td><td>${fechaMx(c.fechaViaje)}</td>
+    <td>${esc(c.cliente)}</td><td>${esc(c.desFlete)}</td><td><button class="btn btn-sm btn-outline-primary py-0" onclick="agregarViaje(${_cand.indexOf(c)})">Agregar</button></td></tr>`).join('')
+    || '<tr><td colspan="6" class="text-center text-muted">Sin cartas porte pendientes de liquidar.</td></tr>';
+}
+async function agregarViaje(i) {
+  const c = _cand[i];
+  try {
+    pintarLiq(await api(`/liquidaciones/${_liq.id}/viajes`, { method: 'POST', body: { serie: c.serie, cartaPorte: c.cartaPorte, anioCP: c.anioCP } }));
+    _cand.splice(i, 1); pintarCandidatas(); cargar(_pag);
+  } catch (e) { verErrorLiq(e.message); mdlCand.hide(); }
+}
+
+cargar(1);
+</script>

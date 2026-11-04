@@ -54,6 +54,7 @@ app.use('/facturas',    requierePermiso('facturas.ver'),   require('./app/routes
 app.use('/notacred',    requierePermiso('notacred.ver'),   require('./app/routes/notacred'));
 app.use('/pagos',       requierePermiso('pagos.ver'),      require('./app/routes/pagos'));
 app.use('/depositos',   require('./app/routes/depositos'));   // permisos depositos.* por ruta
+app.use('/liquidaciones', require('./app/routes/liquidaciones')); // permisos liquidaciones.* por ruta
 app.use('/seguridad',   requierePermiso('seguridad.administrar'), require('./app/routes/seguridad'));
 app.use('/usuarios',    requierePermiso('usuarios.ver'),     require('./app/routes/usuarios'));
 app.use('/centrales',   requierePermiso('centrales.ver'),  require('./app/routes/centrales'));
