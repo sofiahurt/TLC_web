@@ -11,7 +11,7 @@ router.get('/data', async (req, res) => {
     const data = await browseQuery({
       table: 'Empresa2.Operadores',
       columns: ['ID_OPERADOR','OPERADOR','RFC','CURP','NSS','NOLICENCIA','TELEFONO','CELULAR','STATUS',
-        'CALLE','NOEXT','NOINT','COLONIA','CIUDAD','MUNICIPIO','ESTADO','PAIS','CP','NEXTEL','INFONAVIT','TIPODESINFONAVIT','FECHABAJA'],
+        'CALLE','NOEXT','NOINT','COLONIA','CIUDAD','MUNICIPIO','ESTADO','PAIS','CP','NEXTEL','INFONAVIT','TIPODESINFONAVIT','FECHABAJA','BANCO','NoCUENTA'],
       searchableCols: ['ID_OPERADOR','OPERADOR','RFC','CURP','NSS','NOLICENCIA','TELEFONO','STATUS'],
       req
     });
@@ -25,15 +25,31 @@ router.get('/data', async (req, res) => {
         ${td('ID_OPERADOR', r.ID_OPERADOR)}${td('OPERADOR', r.OPERADOR)}${td('RFC', r.RFC)}${td('CURP', r.CURP)}${td('NSS', r.NSS)}${td('NOLICENCIA', r.NOLICENCIA)}
         <td data-field="TELEFONOS" data-value="${tels}">${tels}</td>${td('STATUS', r.STATUS)}
         ${['TELEFONO','CELULAR','CALLE','NOEXT','NOINT','COLONIA','CIUDAD','MUNICIPIO','ESTADO','PAIS','CP','NEXTEL','INFONAVIT','TIPODESINFONAVIT'].map(f => td(f, r[f], oculto)).join('')}
-        ${td('FECHABAJA', fbaja, oculto)}
+        ${td('FECHABAJA', fbaja, oculto)}${td('BANCO', r.BANCO, oculto)}${td('NOCUENTA', r.NoCUENTA, oculto)}
       </tr>`;
     }).join('');
     res.json({ rows, page: data.page, totalPages: data.totalPages, total: data.total });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Catálogo SAT de bancos (sat_bancos): Clave, Nombre corto, Nombre o razón social. En Operadores.BANCO se guarda el nombre corto.
+router.get('/lookup/bancos', (req, res) => {
+  try {
+    const q = (req.query.q || '').trim();
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const { getSatDb } = require('../config/sat-db');
+    const db = getSatDb();
+    const where = q ? `WHERE "Clave" LIKE ? OR "Nombre corto" LIKE ? OR "Nombre o razón social" LIKE ?` : '';
+    const params = q ? [`${q}%`, `%${q}%`, `%${q}%`] : [];
+    const total = db.prepare(`SELECT COUNT(*) n FROM sat_bancos ${where}`).get(...params).n;
+    const rows = db.prepare(`SELECT "Clave" AS clave, "Nombre corto" AS corto, REPLACE("Nombre o razón social", char(10), ' ') AS razon
+                             FROM sat_bancos ${where} ORDER BY "Nombre corto" LIMIT 10 OFFSET ?`).all(...params, (page - 1) * 10);
+    res.json({ rows, total, totalPages: Math.max(1, Math.ceil(total / 10)), page });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.post('/guardar', requierePermiso('operadores.editar'), async (req, res) => {
-  const { ID_OPERADOR, OPERADOR, RFC, NOLICENCIA, CALLE, NOEXT, NOINT, COLONIA, CIUDAD, MUNICIPIO, ESTADO, PAIS, CP, TELEFONO, NEXTEL, CELULAR, INFONAVIT, TIPODESINFONAVIT, FECHABAJA, STATUS, CURP, NSS, _mode } = req.body;
+  const { ID_OPERADOR, OPERADOR, RFC, NOLICENCIA, CALLE, NOEXT, NOINT, COLONIA, CIUDAD, MUNICIPIO, ESTADO, PAIS, CP, TELEFONO, NEXTEL, CELULAR, INFONAVIT, TIPODESINFONAVIT, FECHABAJA, STATUS, CURP, NSS, BANCO, NOCUENTA, _mode } = req.body;
   try {
     const pool = await getPool();
     const r = pool.request()
@@ -58,12 +74,14 @@ router.post('/guardar', requierePermiso('operadores.editar'), async (req, res) =
       .input('fbaja', sql.Date, FECHABAJA || null)
       .input('status', sql.Char(20), STATUS)
       .input('curp', sql.VarChar(20), (CURP || '').trim() || null)
-      .input('nss', sql.VarChar(20), (NSS || '').trim() || null);
+      .input('nss', sql.VarChar(20), (NSS || '').trim() || null)
+      .input('banco', sql.VarChar(100), (BANCO || '').trim() || null)
+      .input('cuenta', sql.VarChar(80), (NOCUENTA || '').trim() || null);
     if (_mode === 'add') {
-      await r.query(`INSERT INTO Empresa2.Operadores(ID_OPERADOR,OPERADOR,RFC,NOLICENCIA,CALLE,NOEXT,NOINT,COLONIA,CIUDAD,MUNICIPIO,ESTADO,PAIS,CP,TELEFONO,NEXTEL,CELULAR,INFONAVIT,TIPODESINFONAVIT,FECHABAJA,STATUS,CURP,NSS)
-        VALUES(@id,@ope,@rfc,@lic,@calle,@noext,@noint,@col,@ciu,@mun,@est,@pais,@cp,@tel,@nex,@cel,@info,@tinfo,@fbaja,@status,@curp,@nss)`);
+      await r.query(`INSERT INTO Empresa2.Operadores(ID_OPERADOR,OPERADOR,RFC,NOLICENCIA,CALLE,NOEXT,NOINT,COLONIA,CIUDAD,MUNICIPIO,ESTADO,PAIS,CP,TELEFONO,NEXTEL,CELULAR,INFONAVIT,TIPODESINFONAVIT,FECHABAJA,STATUS,CURP,NSS,BANCO,NoCUENTA)
+        VALUES(@id,@ope,@rfc,@lic,@calle,@noext,@noint,@col,@ciu,@mun,@est,@pais,@cp,@tel,@nex,@cel,@info,@tinfo,@fbaja,@status,@curp,@nss,@banco,@cuenta)`);
     } else {
-      await r.query(`UPDATE Empresa2.Operadores SET OPERADOR=@ope,RFC=@rfc,NOLICENCIA=@lic,CALLE=@calle,NOEXT=@noext,NOINT=@noint,COLONIA=@col,CIUDAD=@ciu,MUNICIPIO=@mun,ESTADO=@est,PAIS=@pais,CP=@cp,TELEFONO=@tel,NEXTEL=@nex,CELULAR=@cel,INFONAVIT=@info,TIPODESINFONAVIT=@tinfo,FECHABAJA=@fbaja,STATUS=@status,CURP=@curp,NSS=@nss WHERE ID_OPERADOR=@id`);
+      await r.query(`UPDATE Empresa2.Operadores SET OPERADOR=@ope,RFC=@rfc,NOLICENCIA=@lic,CALLE=@calle,NOEXT=@noext,NOINT=@noint,COLONIA=@col,CIUDAD=@ciu,MUNICIPIO=@mun,ESTADO=@est,PAIS=@pais,CP=@cp,TELEFONO=@tel,NEXTEL=@nex,CELULAR=@cel,INFONAVIT=@info,TIPODESINFONAVIT=@tinfo,FECHABAJA=@fbaja,STATUS=@status,CURP=@curp,NSS=@nss,BANCO=@banco,NoCUENTA=@cuenta WHERE ID_OPERADOR=@id`);
     }
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: err.message }); }

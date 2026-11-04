@@ -16,21 +16,35 @@ const FECHA_RE = /^\d{4}-\d{2}-\d{2}$/;
 const hoyISO = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
 const fechaDe = v => (FECHA_RE.test(trim(v)) ? trim(v) : hoyISO());
 
+// Las solicitudes de Cartas Porte canceladas (CANCELADO/CANCELADA/CANCELAD0) no se ofrecen ni se verifican.
+const CP_NO_CANCELADA = `NOT EXISTS (SELECT 1 FROM Empresa2.CartaPorte cpc
+    WHERE cpc.Serie = ds.Serie AND cpc.CartaPorte = ds.CartaPorte AND UPPER(LTRIM(RTRIM(cpc.Status))) LIKE 'CANCELAD%')`;
+
 const SELECT_BASE = `
   SELECT Id_DepoSol, TC, ID_OPERADOR, OPERADOR, Serie, CartaPorte,
          ${CONCEPTOS.map(c => `ISNULL(${c},0) AS ${c}`).join(', ')},
          ${SUMA_SQL} AS Total, ISNULL(FlagDeposito,0) AS FlagDeposito, ISNULL(FlagEnDeposito,0) AS FlagEnDeposito
-    FROM Empresa2.DepoSolicitud`;
+    FROM Empresa2.DepoSolicitud ds`;
 
-router.get('/', requierePermiso('depositos.ver'), (req, res) =>
-  res.render('depositos', { usuario: req.session.usuario, modulo: 'depositos', conceptos: CONCEPTOS, hoy: hoyISO() }));
+router.get('/', requierePermiso('depositos.ver'), async (req, res) => {
+  let centrales = [];
+  try {
+    const pool = await getPool();
+    centrales = (await pool.request().query(`SELECT Central, Descripcion FROM Empresa2.Centrales ORDER BY Descripcion`)).recordset
+      .map(c => ({ serie: trim(c.Central), descripcion: trim(c.Descripcion) }));
+  } catch (err) { console.error('Centrales (depositos):', err.message); /* sin catálogo: el filtro queda solo en "Todas" */ }
+  res.render('depositos', {
+    usuario: req.session.usuario, modulo: 'depositos', conceptos: CONCEPTOS, hoy: hoyISO(),
+    centrales, centralUsuario: trim(req.session.central).toUpperCase(),
+  });
+});
 
 router.get('/data', requierePermiso('depositos.ver'), async (req, res) => {
   try {
     const pool = await getPool();
     const r = await pool.request().input('f', sql.Date, fechaDe(req.query.fecha)).query(`
       ${SELECT_BASE}
-      WHERE Fecha=@f AND ISNULL(FlagEnDeposito,0)=0
+      WHERE Fecha=@f AND ISNULL(FlagEnDeposito,0)=0 AND ${CP_NO_CANCELADA}
       ORDER BY Id_DepoSol`);
     res.json({ filas: r.recordset.map(x => ({
       ...x, TC: trim(x.TC), OPERADOR: trim(x.OPERADOR), Serie: trim(x.Serie), CartaPorte: trim(x.CartaPorte),
@@ -68,8 +82,9 @@ const SELECT_VERIF = `
   SELECT Id_DepoSol, TC, ID_OPERADOR, OPERADOR, Serie, CartaPorte,
          ${CONCEPTOS.map(c => `ISNULL(${c},0) AS ${c}`).join(', ')}, ${SUMA_SQL} AS Solicitado,
          ISNULL(FlagDeposito,0) AS FlagDeposito, MontoDepositado, Diferencia, ISNULL(Validado,0) AS Validado, WhoValida, FechaValida,
-         NoCuenta, ISNULL(FlagEnDeposito,0) AS FlagEnDeposito
-    FROM Empresa2.DepoSolicitud`;
+         NoCuenta, ISNULL(FlagEnDeposito,0) AS FlagEnDeposito,
+         (SELECT TOP 1 LTRIM(RTRIM(o.NoCUENTA)) FROM Empresa2.Operadores o WHERE o.ID_OPERADOR = ds.ID_OPERADOR) AS CuentaOperador
+    FROM Empresa2.DepoSolicitud ds`;
 
 router.get('/verificar', requierePermiso('depositos.ver'), (req, res) =>
   res.render('depositos-verificar', { usuario: req.session.usuario, modulo: 'depositos-verificar', conceptos: CONCEPTOS, hoy: hoyISO() }));
@@ -79,13 +94,13 @@ router.get('/verificar/data', requierePermiso('depositos.ver'), async (req, res)
     const pool = await getPool();
     const r = await pool.request().input('f', sql.Date, fechaDe(req.query.fecha)).query(`
       ${SELECT_VERIF}
-      WHERE Fecha=@f
+      WHERE Fecha=@f AND ${CP_NO_CANCELADA}
       ORDER BY Id_DepoSol`);
     const fechaTxt = v => (v instanceof Date ? v.toISOString().slice(0, 10) : trim(v));
     res.json({ filas: r.recordset.map(x => ({
       ...x, TC: trim(x.TC), OPERADOR: trim(x.OPERADOR), Serie: trim(x.Serie), CartaPorte: trim(x.CartaPorte),
       WhoValida: trim(x.WhoValida), FechaValida: fechaTxt(x.FechaValida),
-      NoCuenta: trim(x.NoCuenta),
+      NoCuenta: trim(x.NoCuenta), CuentaOperador: trim(x.CuentaOperador),
     })) });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -144,10 +159,11 @@ router.post('/verificar/validar', requierePermiso('depositos.verificar'), async 
 router.get('/excel', requierePermiso('depositos.ver'), async (req, res) => {
   try {
     const fecha = fechaDe(req.query.fecha);
+    const central = trim(req.query.central).toUpperCase();   // '' = todas las centrales
     const pool = await getPool();
-    const r = await pool.request().input('f', sql.Date, fecha).query(`
+    const r = await pool.request().input('f', sql.Date, fecha).input('c', sql.VarChar(3), central).query(`
       ${SELECT_BASE}
-      WHERE Fecha=@f AND ISNULL(FlagDeposito,0)=1
+      WHERE Fecha=@f AND ISNULL(FlagDeposito,0)=1 AND ${CP_NO_CANCELADA} AND (@c='' OR UPPER(LTRIM(RTRIM(Serie)))=@c)
       ORDER BY Id_DepoSol`);
 
     const wb = new ExcelJS.Workbook();

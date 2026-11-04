@@ -1810,10 +1810,13 @@ function openLkTarifa() {
       let cFlete = 0, cRenta = 0, kmTar = 0, kmVal = 0, autoVal = 0;
       let valid = false;
 
-      if ((flete === 'flete' || flete === 'caseta') && renta !== 0) {
-        cFlete = renta; _tarifaTipo = 'flete'; kmTar = km; kmVal = cKm; autoVal = cAuto; valid = true;
-      } else if (flete === 'renta' && renta !== 0) {
-        cRenta = renta; _tarifaTipo = 'renta'; kmTar = km; kmVal = cKm; autoVal = cAuto; valid = true;
+      // El importe va a UNA sola columna según el tipo de tarifa: Flete -> Costo Flete (Costo Renta en 0),
+      // Renta -> Costo Renta (Costo Flete en 0). Si la tarifa no trae RENTA se usa VENTA.
+      const importe = renta !== 0 ? renta : venta;
+      if ((flete === 'flete' || flete === 'caseta') && importe !== 0) {
+        cFlete = importe; cRenta = 0; _tarifaTipo = 'flete'; kmTar = km; kmVal = cKm; autoVal = cAuto; valid = true;
+      } else if (flete === 'renta' && importe !== 0) {
+        cRenta = importe; cFlete = 0; _tarifaTipo = 'renta'; kmTar = km; kmVal = cKm; autoVal = cAuto; valid = true;
       } else if (cKm !== 0 || cAuto !== 0) {
         _tarifaTipo = 'km'; kmTar = km; kmVal = cKm; autoVal = cAuto; valid = true;
       } else if (venta !== 0) {

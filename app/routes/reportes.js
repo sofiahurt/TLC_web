@@ -189,15 +189,22 @@ function maniobrasSinDividir(r) {
   r.TOTALMX = (Number(r.TOTALMX) || 0) + delta * 1.16;
 }
 
-// Una Carta Porte de Traslado o Cancelada no se cobra: en el reporte se quitan sus costos y
-// solo queda la parte de Depósitos (maniobras, casetas, pensión, estadías,
-// demoras, otros y el monto de depósitos). Subtotal/IVA/Total se recalculan
-// únicamente con esos extras (IVA 16%, sin retención), igual que fn_CartaPorteDetalle.
-// Aplica también a los traslados anteriores, que conservan sus costos en la BD.
+// Una Carta Porte Cancelada sale con TODOS los importes en 0, incluidos los que vienen de
+// Depósitos (DepoSolicitud).
+// Una de Traslado no se cobra: se quitan sus costos y solo queda la parte de Depósitos
+// (maniobras, casetas, pensión, estadías, demoras, otros y el monto de depósitos).
+// Subtotal/IVA/Total se recalculan únicamente con esos extras (IVA 16%, sin retención),
+// igual que fn_CartaPorteDetalle. Aplica también a los traslados anteriores, que conservan
+// sus costos en la BD.
 function soloDepositosSiTraslado(r) {
   // CANCELADO/CANCELADA y el typo legado CANCELAD0 (con cero).
   const st = trim(r.Status).toUpperCase();
-  if (st !== 'TRASLADO' && !st.startsWith('CANCELAD')) return;
+  if (st.startsWith('CANCELAD')) {
+    ['Flete', 'CostoRenta', 'Kilometros', 'CargoExtra', 'Maniobras', 'Casetas', 'Pension', 'Estadias', 'Demoras',
+      'Otros_Depo', 'Depositos', 'SubTotalMX', 'IVAMX', 'RetenMX', 'TOTALMX'].forEach(k => { r[k] = 0; });
+    return;
+  }
+  if (st !== 'TRASLADO') return;
   const r2 = v => Math.round((Number(v) || 0) * 100) / 100;
   r.Flete = 0; r.CostoRenta = 0; r.Kilometros = 0; r.CargoExtra = 0;
   const subtotal = r2(['Maniobras', 'Casetas', 'Pension', 'Estadias', 'Demoras', 'Otros_Depo']

@@ -28,6 +28,12 @@
           </div>
         </div>
       </div>
+      <div class="col-auto">
+        <select id="fCentral" class="form-select form-select-sm" onchange="pintar()" title="Central">
+          <option value="">Todas las centrales</option>
+          <% centrales.forEach(c => { %><option value="<%= c.serie %>"<%= c.serie.toUpperCase() === centralUsuario ? ' selected' : '' %>><%= c.serie %><%= c.descripcion ? ' - ' + c.descripcion : '' %></option><% }) %>
+        </select>
+      </div>
       <div class="col-auto small text-muted" id="lblResumen"></div>
       <div class="col-auto ms-auto">
         <button class="btn btn-sm btn-success" type="button" onclick="exportar()"><i class="bi bi-file-earmark-excel"></i> Exportar autorizados a Excel</button>
@@ -87,9 +93,9 @@ let _filas = [];
 
 const quitaAcentos = t => String(t == null ? '' : t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 function filtradas() {
-  const q = quitaAcentos(el('fBuscar').value).trim();
-  if (!q) return _filas;
-  return _filas.filter(f => quitaAcentos([f.ID_OPERADOR, f.OPERADOR, f.Serie + '-' + f.CartaPorte, f.CartaPorte].join(' ')).includes(q));
+  const q = quitaAcentos(el('fBuscar').value).trim(), central = el('fCentral').value.trim().toUpperCase();
+  return _filas.filter(f => (!central || String(f.Serie).trim().toUpperCase() === central)
+    && (!q || quitaAcentos([f.ID_OPERADOR, f.OPERADOR, f.Serie + '-' + f.CartaPorte, f.CartaPorte].join(' ')).includes(q)));
 }
 
 function pintar() {
@@ -175,7 +181,7 @@ el('scrollTop').addEventListener('scroll', () => { if (el('scrollMain').scrollLe
 el('scrollMain').addEventListener('scroll', () => { if (el('scrollTop').scrollLeft !== el('scrollMain').scrollLeft) el('scrollTop').scrollLeft = el('scrollMain').scrollLeft; });
 window.addEventListener('resize', ajustarBarra);
 
-function exportar() { window.location = '/depositos/excel?fecha=' + encodeURIComponent(fechaActual()); }
+function exportar() { window.location = '/depositos/excel?fecha=' + encodeURIComponent(fechaActual()) + '&central=' + encodeURIComponent(el('fCentral').value); }
 
 iniciarCols();
 cargar();

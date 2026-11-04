@@ -133,9 +133,10 @@ function pintar() {
       ${CONCEPTOS.map(c => `<td class="text-end c-${c}">${f[c] ? money(f[c]) : ''}</td>`).join('')}
       <td class="text-end fw-semibold">${money(f.Solicitado)}</td>
       <td class="text-center">${f.FlagDeposito ? '<i class="bi bi-check-circle-fill text-success" title="Autorizada"></i>' : '<i class="bi bi-dash-circle text-muted" title="Sin autorizar"></i>'}</td>
-      <td><input type="text" inputmode="decimal" class="form-control form-control-sm text-end" id="m${f.Id_DepoSol}" value="${f.MontoDepositado == null ? '' : r2(f.MontoDepositado).toFixed(2)}" ${dis} ${enter}></td>
+      <td><input type="text" inputmode="decimal" class="form-control form-control-sm text-end" id="m${f.Id_DepoSol}" value="${f.MontoDepositado == null ? '' : money(f.MontoDepositado)}" ${dis} ${enter}
+        onfocus="llenarMonto(${f.Id_DepoSol}, this)" onblur="formatearMonto(this)"></td>
       <td class="text-end" id="d${f.Id_DepoSol}">${difHtml(f)}</td>
-      <td><input type="text" class="form-control form-control-sm" id="c${f.Id_DepoSol}" maxlength="20" value="${esc(f.NoCuenta)}" ${dis} ${enter}></td>
+      <td><input type="text" class="form-control form-control-sm" id="c${f.Id_DepoSol}" maxlength="20" value="${esc(f.NoCuenta)}" ${dis} ${enter} onfocus="llenarCuenta(${f.Id_DepoSol}, this)"></td>
       <td class="text-center">
         <input type="checkbox" class="form-check-input" ${f.Validado ? 'checked' : ''} ${PUEDE ? '' : 'disabled'} onchange="validar(${f.Id_DepoSol}, this)"
           title="${f.Validado ? esc(f.WhoValida) + ' · ' + esc(f.FechaValida) : 'Marcar como verificada'}">
@@ -175,6 +176,23 @@ async function post(url, body) {
   const d = await r.json();
   if (!r.ok || d.error) throw new Error(d.error || 'No se pudo guardar.');
   return d;
+}
+
+// Al entrar a Depositado vacío se propone lo Solicitado (con formato de moneda); al salir se da formato al monto.
+function llenarMonto(id, inp) {
+  if (inp.readOnly || inp.disabled) return;
+  if (!inp.value.trim()) { const f = _filas.find(x => x.Id_DepoSol === id); if (f) inp.value = money(f.Solicitado); }
+  inp.select();
+}
+function formatearMonto(inp) {
+  const n = parseFloat(String(inp.value).replace(/[$,\s]/g, ''));
+  if (!isNaN(n)) inp.value = money(n);
+}
+// Al entrar a Cuenta vacía se copia el NoCuenta del operador (catálogo de Operadores).
+function llenarCuenta(id, inp) {
+  if (inp.readOnly || inp.disabled || inp.value.trim()) return;
+  const f = _filas.find(x => x.Id_DepoSol === id);
+  if (f && f.CuentaOperador) { inp.value = f.CuentaOperador.slice(0, 20); inp.select(); }
 }
 
 // Guarda monto y cuenta de una fila y actualiza su diferencia en pantalla.
