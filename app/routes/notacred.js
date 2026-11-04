@@ -3,6 +3,7 @@ const router = express.Router();
 const { getPool, sql } = require('../config/db');
 const { browseQuery } = require('../config/browse');
 const { requierePermiso } = require('../middleware/permisos');
+const { badgeStatus } = require('../services/status-badge');
 const { importeALetras } = require('../services/importe-letras');
 const { ajustarSaldoFactura, recalcularStatusND } = require('../services/saldo-factura');
 const { quienAplica } = require('../services/docs-aplicados');
@@ -223,7 +224,7 @@ router.get('/data', async (req, res) => {
       <td data-field="IVA" data-value="${r.IVA||0}" class="text-end">${fmtN(r.IVA)}</td>
       <td data-field="Retencion" data-value="${r.Retencion||0}" class="text-end">${fmtN(r.Retencion)}</td>
       <td data-field="ImporteTotal" data-value="${r.ImporteTotal||0}" class="text-end">${fmtN(r.ImporteTotal)}</td>
-      <td data-field="Status" data-value="${fmt(r.Status)}">${fmt(r.Status)}</td>
+      <td data-field="Status" data-value="${fmt(r.Status)}">${badgeStatus(r.Status)}</td>
       <td class="text-center">${fmt(r.UUID)
         ? `<a href="/cfdi/xml-notacredito?tipo=${tipo}&serie=${encodeURIComponent(fmt(r.Serie))}&idNotaCredito=${r.Id_NotaCredito}" class="btn btn-sm btn-primary py-0 px-1" title="Descargar XML" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-code"></i></a>`
         : `<button class="btn btn-sm btn-outline-secondary py-0 px-1" disabled title="Solo disponible una vez timbrada"><i class="bi bi-file-earmark-code"></i></button>`}</td>

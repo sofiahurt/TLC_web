@@ -3,6 +3,7 @@ const router = express.Router();
 const { getPool, sql } = require('../config/db');
 const { browseQuery } = require('../config/browse');
 const { requierePermiso } = require('../middleware/permisos');
+const { badgeStatus } = require('../services/status-badge');
 const { importeALetras } = require('../services/importe-letras');
 const { getSatDb } = require('../config/sat-db');
 
@@ -309,7 +310,7 @@ router.get('/data', async (req, res) => {
       <td data-field="MonFactura" data-value="${fmt(r.MonFactura)}">${fmt(r.MonFactura)}</td>
       <td data-field="SubTotal" data-value="${r.SubTotal||0}" class="text-end">${fmtN(r.SubTotal)}</td>
       <td data-field="TOTAL" data-value="${r.TOTAL||0}" class="text-end">${fmtN(r.TOTAL)}</td>
-      <td data-field="Status" data-value="${fmt(r.Status)}">${fmt(r.Status)}</td>
+      <td data-field="Status" data-value="${fmt(r.Status)}">${badgeStatus(r.Status)}</td>
       <td data-field="Facturo" data-value="${fmt(r.Facturo)}">${fmt(r.Facturo)}</td>
       <td class="text-center">${fmt(r.UUID)
         ? `<a href="/cfdi/xml-factura?idNoFactura=${r.Id_NoFactura}&serieFac=${encodeURIComponent(fmt(r.SerieFac))}" class="btn btn-sm btn-primary py-0 px-1" title="Descargar XML" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-code"></i></a>`

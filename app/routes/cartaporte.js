@@ -3,6 +3,7 @@ const router = express.Router();
 const { getPool, sql } = require('../config/db');
 const { getSatDb } = require('../config/sat-db');
 const { requierePermiso } = require('../middleware/permisos');
+const { badgeStatus } = require('../services/status-badge');
 const bloqueos = require('../services/bloqueos');
 
 const SEARCH_COLS = new Set(['CartaPorte','NombreComunCli','Status','DesFlete','RealizoPedido']);
@@ -69,7 +70,7 @@ router.get('/data', async (req, res) => {
         <td data-field="FehcaCarga"    data-value="${fmt(r.FehcaCarga)}">${fmtDate(r.FehcaCarga)}</td>
         <td data-field="NombreComunCli" data-value="${fmt(r.NombreComunCli)}">${fmt(r.NombreComunCli)}</td>
         <td data-field="DesFlete"      data-value="${fmt(r.DesFlete)}">${fmt(r.DesFlete)}</td>
-        <td data-field="Status"        data-value="${fmt(r.Status)}">${fmt(r.Status)}</td>
+        <td data-field="Status"        data-value="${fmt(r.Status)}">${badgeStatus(r.Status)}</td>
         <td data-field="RealizoPedido" data-value="${fmt(r.RealizoPedido)}">${fmt(r.RealizoPedido)}</td>
         <td class="text-center">${timbrada
           ? `<a href="/cfdi/xml?${qs}" class="btn btn-sm btn-primary py-0 px-1" title="Descargar XML" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-code"></i></a>`

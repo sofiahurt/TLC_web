@@ -3,6 +3,7 @@ const router = express.Router();
 const { getPool, sql } = require('../config/db');
 const { browseQuery } = require('../config/browse');
 const { requierePermiso } = require('../middleware/permisos');
+const { badgeStatus } = require('../services/status-badge');
 const { ajustarSaldoFactura, ajustarSaldoNotaDebito, aplicadoND, recalcularStatusND, resolverSerieFac } = require('../services/saldo-factura');
 const conciliacion = require('../services/conciliacion-saldos');
 const { quienAplica } = require('../services/docs-aplicados');
@@ -59,7 +60,7 @@ router.get('/data', async (req, res) => {
       <td data-field="NombreCom" data-value="${fmt(r.NombreCom)}">${fmt(r.NombreCom)}</td>
       <td data-field="NomClientePago" data-value="${fmt(r.NomClientePago)}">${fmt(r.NomClientePago)}</td>
       <td data-field="TotalImporte" data-value="${r.TotalImporte||0}" class="text-end">${fmtN(r.TotalImporte)}</td>
-      <td data-field="Status" data-value="${fmt(r.Status)}">${fmt(r.Status)}</td>
+      <td data-field="Status" data-value="${fmt(r.Status)}">${badgeStatus(r.Status)}</td>
       <td class="text-center">${fmt(r.UUID)
         ? `<a href="/cfdi/xml-pago?idNoPago=${r.Id_NoPago}" class="btn btn-sm btn-primary py-0 px-1" title="Descargar XML" onclick="event.stopPropagation()"><i class="bi bi-file-earmark-code"></i></a>`
         : `<button class="btn btn-sm btn-outline-secondary py-0 px-1" disabled title="Solo disponible una vez timbrado"><i class="bi bi-file-earmark-code"></i></button>`}</td>
