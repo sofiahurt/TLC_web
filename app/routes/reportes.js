@@ -297,6 +297,14 @@ const COLUMNAS_FACTURAS = [
   { header: 'Realizo',        campo: 'Realizo',        tipo: 'texto' },
 ];
 
+// Una Nota de Crédito/Débito cancelada (CANCELADO/CANCELADA) sale con sus importes en 0.
+// Las facturas canceladas ya vienen en 0 desde fn_ReporteFacturas.
+function ceroSiNotaCancelada(r) {
+  if (!['NC', 'ND'].includes(trim(r.TipoDocumento).toUpperCase())) return;
+  if (!trim(r.Status).toUpperCase().startsWith('CANCELAD')) return;
+  ['SubTotal', 'IVA', 'Retencion', 'Total'].forEach(k => { r[k] = 0; });
+}
+
 router.get('/facturas/excel', requierePermiso('reportes.facturas.ver'), async (req, res) => {
   try {
     const fechaIni = trim(req.query.fechaIni);
@@ -310,6 +318,8 @@ router.get('/facturas/excel', requierePermiso('reportes.facturas.ver'), async (r
       .input('fechaIni', sql.Date, fechaIni).input('fechaFin', sql.Date, fechaFin)
       .input('tipoDocumento', sql.VarChar(2), tipoDocumento)
       .query(`SELECT * FROM Empresa2.fn_ReporteFacturas(@fechaIni, @fechaFin, @tipoDocumento) ORDER BY TipoDocumento, Id_Documento`);
+
+    result.recordset.forEach(ceroSiNotaCancelada);
 
     const workbook = construirWorkbookReporte({
       nombreHoja: 'Facturas',
