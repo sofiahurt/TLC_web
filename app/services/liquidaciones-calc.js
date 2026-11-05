@@ -76,7 +76,10 @@ function calcularTotales(liq, renglones, opciones = {}) {
   // 6. Total a liquidar al operador
   const sueldoBase = aCentavos(liq.sueldoBase), imss = aCentavos(liq.imss), infonavit = aCentavos(liq.infonavit);
   const extraComision = aCentavos(liq.extraComision), extraDescuento = aCentavos(liq.extraDescuento);
-  const totalLiquidacion = (totalComision + extraComision + sueldoBase) - (totalDesc + extraDescuento + infonavit + imss);
+  // Dif. aplicada: si se pidió aplicar las diferencias (aplicarDif), entra al total la diferencia completa:
+  //   positiva (saldo en contra del operador) = se descuenta; negativa (saldo a favor) = se paga.
+  const difAplicada = liq.aplicarDif ? totalDif : 0;
+  const totalLiquidacion = (totalComision + extraComision + sueldoBase) - (totalDesc + extraDescuento + infonavit + imss + difAplicada);
 
   // 7. Gastos del viaje que absorbe la empresa
   const casetaSinIva = Math.round(real.caseta / (1 + ivaTasa));
@@ -100,6 +103,8 @@ function calcularTotales(liq, renglones, opciones = {}) {
     granTotalLiq: deCentavos(granTotalLiq),
     totalUtilidad: deCentavos(totalFlete - granTotalLiq),
     totalDif: deCentavos(totalDif),
+    difAplicada: deCentavos(difAplicada),
+    aplicarDif: !!liq.aplicarDif,
   });
   return out;
 }

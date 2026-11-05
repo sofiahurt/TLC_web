@@ -99,6 +99,22 @@ prueba('estadías y demoras (DepoSolicitud) entran a totalViaje y a las diferenc
   assert.strictEqual(r.totalDif, 70);
 });
 
+prueba('dif. aplicada: positiva descuenta, negativa paga, sin aplicar no cuenta', () => {
+  const liq = { sueldoBase: 1000, comidas: { real: 40 } };
+  const rg = [{ costos: { comidas: 100 } }];                    // estimado 100, real 40 -> dif +60 (en contra)
+  const sin = calcularTotales(liq, rg);
+  assert.strictEqual(sin.totalDif, 60);
+  assert.strictEqual(sin.difAplicada, 0);
+  assert.strictEqual(sin.totalLiquidacion, 1000);
+  const con = calcularTotales({ ...liq, aplicarDif: true }, rg);
+  assert.strictEqual(con.difAplicada, 60);
+  assert.strictEqual(con.totalLiquidacion, 940);                // se descuenta
+  const fav = calcularTotales({ sueldoBase: 1000, aplicarDif: true, comidas: { real: 130 } }, rg);   // dif -30 (a favor)
+  assert.strictEqual(fav.difAplicada, -30);
+  assert.strictEqual(fav.totalLiquidacion, 1030);               // se paga
+  assert.strictEqual(fav.granTotalLiq, fav.totalLiquidacion + fav.totalViaje);
+});
+
 prueba('no muta los argumentos', () => {
   const liq = { sueldoBase: 100, comidas: { real: 5 } };
   const copia = JSON.stringify(liq);

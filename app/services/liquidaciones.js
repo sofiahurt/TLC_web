@@ -106,7 +106,9 @@ function filaAModelo(r) {
   for (const [k, col] of Object.entries(ESCALARES)) liq[k] = ESCALARES_TEXTO.has(k) ? (k === 'fecha' ? fechaISO(r[col]) : trim(r[col])) : num(r[col]);
   for (const [k, [e, re, d]] of Object.entries(COLS_CONCEPTO)) liq[k] = { estimado: num(r[e]), real: num(r[re]), dif: num(r[d]) };
   liq.caseta.sinIva = num(r[COL_CASETA_SINIVA]);
+  // DifAplicada guarda la diferencia aplicada al total (con signo); distinta de 0 = "aplicar diferencias" activo.
   liq.difAplicada = num(r.DifAplicada);
+  liq.aplicarDif = liq.difAplicada !== 0;
   return liq;
 }
 
@@ -213,14 +215,20 @@ async function persistir(tx, liq, quien) {
   await q.query(`UPDATE Empresa2.Liquida SET ${sets.join(', ')} WHERE MES=@mes AND ID_LIQUIDACION=@num`);
 }
 
+// Un "real" que quedó IGUAL al estimado se llenó solo (no lo capturó nadie): se suelta para que siga al estimado
+// nuevo cuando cambian las cartas porte o los depósitos. Los reales capturados (distintos del estimado) se respetan.
+function soltarRealesAutomaticos(liq) {
+  CONCEPTOS.forEach(k => { if (liq[k].real === liq[k].estimado) liq[k].real = 0; });
+}
+
 // Recalcula desde cero (cabecera + renglones con costos) y guarda. Devuelve el modelo completo.
 async function recalcular(tx, mes, numero, quien, ajustar) {
   const cab = await leerCabecera(new sql.Request(tx), mes, numero, true);
   const base = filaAModelo(cab);
+  soltarRealesAutomaticos(base);
   if (ajustar) ajustar(base);
   const viajes = await leerRenglones(tx, mes, numero);
   const calculado = calcularTotales(base, viajes);
-  calculado.difAplicada = base.difAplicada;
   await persistir(tx, calculado, quien);
   calculado.viajes = viajes;
   return calculado;
@@ -487,6 +495,7 @@ const validaImporte = (nombre, v) => {
 function aplicarCambios(liq, cambios) {
   CAMPOS_EDITABLES.forEach(k => { if (cambios[k] !== undefined) liq[k] = validaImporte(k, cambios[k]); });
   if (cambios.descripcionOtros !== undefined) liq.descripcionOtros = trim(cambios.descripcionOtros);
+  if (cambios.aplicarDif !== undefined) liq.aplicarDif = cambios.aplicarDif === true || cambios.aplicarDif === 1 || cambios.aplicarDif === '1' || cambios.aplicarDif === 'true';
   if (cambios.real && typeof cambios.real === 'object') {
     for (const [k, v] of Object.entries(cambios.real)) {
       if (!CONCEPTOS.includes(k)) throw err(400, `Concepto desconocido: ${k}.`);
@@ -513,6 +522,7 @@ async function previsualizar(id, cambios) {
   const cab = await leerCabecera(new sql.Request(pool), mes, numero, false);
   const base = filaAModelo(cab);
   if (!esGenerada(cab)) return modeloCompleto(pool, mes, numero);
+  soltarRealesAutomaticos(base);
   aplicarCambios(base, cambios || {});
   const viajes = await leerRenglones(pool, mes, numero);
   const calculado = calcularTotales(base, viajes);
@@ -529,18 +539,15 @@ const recalcularDiferencias = (id, quien) => {
   });
 };
 
-// Suma totalDif a extraDescuento. Idempotente: solo suma lo que aún no se había aplicado (DifAplicada).
-const aplicarDiferencias = (id, quien) => {
+// Poner / quitar la diferencia aplicada: con aplicar=true el total de diferencias (estimado - real) entra al total de
+// la liquidación como "Dif. aplicada" (positiva = se descuenta; negativa = se paga); con false se quita.
+// No toca Extra comisión ni Extra descuento. Mientras la liquidación no se guarda, la pantalla lo maneja con
+// el cambio `aplicarDif` (vista previa); este método es el equivalente directo para quien llame a la API.
+const aplicarDiferencias = (id, aplicar, quien) => {
   const { mes, numero } = parseId(id);
   return enTransaccion(async (tx) => {
     exigirGenerada(await leerCabecera(new sql.Request(tx), mes, numero, true));
-    const actual = await recalcular(tx, mes, numero, quien);
-    const pendiente = r2(actual.totalDif - actual.difAplicada);
-    if (pendiente === 0) return actual;
-    return recalcular(tx, mes, numero, quien, (liq) => {
-      liq.extraDescuento = r2(liq.extraDescuento + pendiente);
-      liq.difAplicada = r2(liq.difAplicada + pendiente);
-    });
+    return recalcular(tx, mes, numero, quien, (liq) => { liq.aplicarDif = aplicar !== false; });
   });
 };
 

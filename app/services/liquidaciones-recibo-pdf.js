@@ -62,6 +62,7 @@ function paginaRecibo(liq, emp, esPrimera) {
             linea('Desc. Diesel', -liq.desDiesel),
             ...(liq.totalAdelanto ? [linea('Adelantos', -liq.totalAdelanto)] : []),
             ...(liq.extraDescuento ? [linea('Otros descuentos', -liq.extraDescuento)] : []),
+            ...(liq.difAplicada ? [linea('Diferencias', -liq.difAplicada)] : []),
             linea('IMSS', -liq.imss),
             linea('Infonavit', -liq.infonavit),
             linea('Total a Liquidar', liq.totalLiquidacion, true),

@@ -81,15 +81,15 @@
       <div class="col-lg-7">
         <h6 class="mb-1">Costos por concepto</h6>
         <table class="table table-sm mb-0">
-          <thead class="table-light"><tr><th>Concepto</th><th class="text-end">Estimado</th><th style="width:130px" class="text-end">Real</th><th class="text-end">Diferencia</th></tr></thead>
+          <thead class="table-light"><tr><th>Concepto</th><th class="text-end">Estimado</th><th style="width:130px" class="text-end">Real</th><th class="text-end">Diferencia</th><th style="width:170px"></th></tr></thead>
           <tbody id="bodyConceptos"></tbody>
-          <tfoot><tr class="fw-semibold"><td colspan="3" class="text-end">Total diferencias</td><td class="text-end" id="t_totalDif"></td></tr></tfoot>
+          <tfoot><tr class="fw-semibold"><td colspan="3" class="text-end align-middle">Total diferencias</td>
+            <td class="text-end align-middle" id="t_totalDif"></td>
+            <td class="align-middle"><% if (can('liquidaciones.editar')) { %><button class="btn btn-sm py-0 ed w-100" id="btnAplicarDif" onclick="alternarDiferencia()"></button><% } %></td></tr>
+            <tr><td colspan="5" class="small text-muted text-end" id="t_difAyuda"></td></tr></tfoot>
         </table>
         <div class="mt-2 d-flex gap-2 flex-wrap">
-          <% if (can('liquidaciones.editar')) { %>
-          <button class="btn btn-sm btn-outline-secondary ed" onclick="accion('recalcular-diferencias')">Recalcular diferencias</button>
-          <button class="btn btn-sm btn-outline-warning ed" onclick="if(confirm('Se sumará el total de diferencias al Extra descuento (una sola vez). ¿Continuar?'))accion('aplicar-diferencias')">Aplicar diferencias</button>
-          <% } %>
+
         </div>
       </div>
       <div class="col-lg-5">
@@ -227,24 +227,37 @@ function pintarCalculo(l) {
   });
   el('c_sinIva').textContent = `(sin IVA: ${money(l.caseta.sinIva)})`;
   el('t_totalDif').textContent = money(l.totalDif);
+  // Botón junto a la columna Diferencia: pone o quita la diferencia en el total de la liquidación (positivo = se descuenta;
+  // negativo = saldo a favor, se paga). Hasta que se guarda la liquidación se puede poner y quitar las veces que haga falta.
+  _aplicarDif = !!l.aplicarDif;
+  const b = el('btnAplicarDif');
+  if (b) {
+    const hay = Math.abs(l.totalDif) >= 0.005;
+    b.disabled = !hay && !_aplicarDif;
+    b.innerHTML = _aplicarDif ? '<i class="bi bi-x-circle"></i> Quitar diferencia' : l.totalDif > 0 ? `<i class="bi bi-dash-circle"></i> Descontar ${money(l.totalDif)}` : l.totalDif < 0 ? `<i class="bi bi-plus-circle"></i> Pagar ${money(-l.totalDif)}` : 'Sin diferencias';
+    b.className = 'btn btn-sm py-0 ed w-100 ' + (_aplicarDif ? 'btn-secondary' : l.totalDif > 0 ? 'btn-danger' : l.totalDif < 0 ? 'btn-success' : 'btn-outline-secondary');
+  }
+  el('t_difAyuda').textContent = _aplicarDif ? `Dif. aplicada al total: ${money(-l.difAplicada)} (${l.difAplicada > 0 ? 'se descuenta' : 'se paga'})` : 'Positivo = saldo en contra del operador (se descuenta). Negativo = saldo a favor (se paga).';
   const fila = (n, v, neg, fuerte) => `<tr class="${fuerte ? 'fw-bold table-light' : ''}"><td>${n}</td><td class="text-end">${neg ? '−' : ''}${money(v)}</td></tr>`;
   el('bodyTotales').innerHTML = fila('Comisión de viajes', l.totalComision) + fila('Extra comisión', l.extraComision) + fila('Sueldo base', l.sueldoBase)
     + fila('Adelanto', l.totalAdelanto, true) + fila('Extra descuento', l.extraDescuento, true)
-    + fila('IMSS', l.imss, true) + fila('Infonavit', l.infonavit, true) + fila('Total a liquidar', l.totalLiquidacion, false, true)
+    + fila('IMSS', l.imss, true) + fila('Infonavit', l.infonavit, true)
+    + `<tr><td>Dif. aplicada <span class="small text-muted">(+ se paga / − se descuenta)</span></td><td class="text-end ${l.difAplicada < 0 ? 'text-success' : l.difAplicada > 0 ? 'text-danger' : ''}">${money(-l.difAplicada)}</td></tr>`
+    + fila('Total a liquidar', l.totalLiquidacion, false, true)
     + fila('Gastos del viaje', l.totalViaje) + fila('Gran total', l.granTotalLiq, false, true) + fila('Total flete', l.totalFlete) + fila('Utilidad', l.totalUtilidad, false, true);
 }
 
 // Lo capturado en pantalla, tal como lo recibe el servidor.
 function cambiosCapturados() {
-  const body = { descripcionOtros: el('e_descripcionOtros').value, real: {} };
+  const body = { descripcionOtros: el('e_descripcionOtros').value, real: {}, aplicarDif: _aplicarDif };
   ['sueldoBase', 'imss', 'infonavit', 'extraComision', 'extraDescuento', 'totalAdelanto'].forEach(k => { body[k] = el('e_' + k).value; });
   document.querySelectorAll('#bodyConceptos .real').forEach(i => { body.real[i.dataset.k] = i.value; });
   return body;
 }
 
 // Recalcula en cuanto se teclea: el cálculo lo hace el servidor (vista previa, no guarda) y aquí solo se muestra.
-let _calcSeq = 0, _calcTimer = null;
-function recalcularAlTeclear() {
+let _calcSeq = 0, _calcTimer = null, _aplicarDif = false;
+function recalcularAlTeclear(ya) {
   if (!_liq || _liq.status.toUpperCase() !== 'GENERADA') return;
   clearTimeout(_calcTimer);
   _calcTimer = setTimeout(async () => {
@@ -254,7 +267,7 @@ function recalcularAlTeclear() {
       if (seq !== _calcSeq) return;   // llegó una respuesta más nueva
       verErrorLiq(''); pintarCalculo(l);
     } catch (e) { if (seq === _calcSeq) verErrorLiq(e.message); }
-  }, 200);
+  }, ya === true ? 0 : 200);
 }
 el('mdlLiq').addEventListener('input', e => { if (e.target.matches('.ed')) recalcularAlTeclear(); });
 
@@ -263,6 +276,8 @@ async function guardarCambios() {   // guarda y cierra la forma
   const body = cambiosCapturados();
   try { await api('/liquidaciones/' + _liq.id, { method: 'PATCH', body }); mdlLiq.hide(); cargar(_pag); } catch (e) { verErrorLiq(e.message); }
 }
+// Pone o quita la diferencia en el total. Solo cambia la pantalla (con vista previa del servidor); se guarda con "Guardar cambios".
+function alternarDiferencia() { _aplicarDif = !_aplicarDif; recalcularAlTeclear(true); }
 async function accion(nombre) {
   verErrorLiq('');
   try { pintarLiq(await api(`/liquidaciones/${_liq.id}/${nombre}`, { method: 'POST' })); cargar(_pag); } catch (e) { verErrorLiq(e.message); }

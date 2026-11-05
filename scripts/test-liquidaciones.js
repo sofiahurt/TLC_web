@@ -144,14 +144,49 @@ const rechaza = async (fn, status, nombre) => {
     const antes = (await svc.obtener(liq.id)).comidas.real;
     assert.strictEqual(antes, 10);
 
-    // aplicar diferencias: idempotente
-    const dif = (await svc.recalcularDiferencias(liq.id, 'PRUEBA')).totalDif;
-    const extraAntes = (await svc.obtener(liq.id)).extraDescuento;
-    r = await svc.aplicarDiferencias(liq.id, 'PRUEBA');
-    assert.strictEqual(Math.round(r.extraDescuento * 100), Math.round((extraAntes + dif) * 100));
-    const r2 = await svc.aplicarDiferencias(liq.id, 'PRUEBA');
-    assert.strictEqual(r2.extraDescuento, r.extraDescuento);
-    paso(`aplicar diferencias suma totalDif (${dif}) una sola vez`);
+    // Dif. aplicada: positiva (saldo en contra) se descuenta; negativa (a favor del operador) se paga.
+    // No toca Extra comisión ni Extra descuento y se puede poner y quitar mientras no se guarde (vista previa).
+    // el real que se llenó solo sigue al estimado cuando se agregan cartas porte (no deja diferencias falsas)
+    const sinCapturar = await svc.obtener(liq.id);
+    assert.strictEqual(sinCapturar.caseta.real, sinCapturar.caseta.estimado);
+    assert.strictEqual(sinCapturar.caseta.dif, 0);
+    paso(`el real automático sigue al estimado (casetas ${sinCapturar.caseta.estimado}, dif 0)`);
+    // se captura un real de casetas 100 menor que el estimado: queda saldo en contra del operador
+    await svc.editar(liq.id, { real: { caseta: sinCapturar.caseta.estimado - 100 } }, 'PRUEBA');
+    const base = await svc.obtener(liq.id);
+    const dif = base.totalDif;
+    assert.ok(dif > 0, 'la liquidación de prueba debe tener diferencia positiva');
+    assert.strictEqual(base.difAplicada, 0);
+    const prevAplicada = await svc.previsualizar(liq.id, { aplicarDif: true });
+    assert.strictEqual(prevAplicada.difAplicada, dif);
+    assert.strictEqual(Math.round(prevAplicada.totalLiquidacion * 100), Math.round((base.totalLiquidacion - dif) * 100));
+    assert.strictEqual((await svc.obtener(liq.id)).difAplicada, 0, 'la vista previa no debe guardar');
+    r = await svc.aplicarDiferencias(liq.id, true, 'PRUEBA');
+    assert.strictEqual(r.difAplicada, dif);
+    assert.strictEqual(r.extraDescuento, base.extraDescuento);
+    assert.strictEqual(r.extraComision, base.extraComision);
+    assert.strictEqual(Math.round(r.totalLiquidacion * 100), Math.round((base.totalLiquidacion - dif) * 100));
+    r = await svc.aplicarDiferencias(liq.id, true, 'PRUEBA');   // otra vez: no se duplica
+    assert.strictEqual(Math.round(r.totalLiquidacion * 100), Math.round((base.totalLiquidacion - dif) * 100));
+    r = await svc.aplicarDiferencias(liq.id, false, 'PRUEBA');   // quitarla
+    assert.strictEqual(r.difAplicada, 0);
+    assert.strictEqual(Math.round(r.totalLiquidacion * 100), Math.round(base.totalLiquidacion * 100));
+    paso(`dif. aplicada positiva (${dif}) se descuenta, se puede quitar y no toca extras`);
+
+    // diferencia NEGATIVA (saldo a favor del operador): se paga (sube el total) y la dif. aplicada queda negativa
+    await svc.editar(liq.id, { real: { comidas: 500 } }, 'PRUEBA');
+    const conNeg = await svc.obtener(liq.id);
+    assert.ok(conNeg.totalDif < 0);
+    r = await svc.editar(liq.id, { aplicarDif: true }, 'PRUEBA');
+    assert.strictEqual(r.difAplicada, conNeg.totalDif);
+    assert.ok(r.difAplicada < 0);
+    assert.strictEqual(Math.round(r.totalLiquidacion * 100), Math.round((conNeg.totalLiquidacion - conNeg.totalDif) * 100));
+    // si cambian las diferencias estando aplicada, la dif. aplicada sigue al total
+    r = await svc.editar(liq.id, { real: { comidas: 800 } }, 'PRUEBA');
+    assert.strictEqual(r.difAplicada, r.totalDif);
+    r = await svc.editar(liq.id, { aplicarDif: false, real: { comidas: 10, caseta: 0 } }, 'PRUEBA');
+    assert.strictEqual(r.difAplicada, 0);
+    paso(`dif. aplicada negativa (${conNeg.totalDif}) se paga, sigue al total de diferencias y se quita`);
 
     // pagar -> solo lectura
     r = await svc.pagar(liq.id, 'PRUEBA');

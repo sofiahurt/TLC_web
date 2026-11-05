@@ -183,7 +183,7 @@ router.delete('/:id/viajes/:idDeta', requierePermiso('liquidaciones.editar'), ma
 
 router.post('/:id/recalcular-diferencias', requierePermiso('liquidaciones.editar'), manejar(async (req, res) => res.json(await svc.recalcularDiferencias(req.params.id, quien(req)))));
 // Suma totalDif a extraDescuento una sola vez (lo ya aplicado queda registrado en DifAplicada).
-router.post('/:id/aplicar-diferencias', requierePermiso('liquidaciones.editar'), manejar(async (req, res) => res.json(await svc.aplicarDiferencias(req.params.id, quien(req)))));
+router.post('/:id/aplicar-diferencias', requierePermiso('liquidaciones.editar'), manejar(async (req, res) => res.json(await svc.aplicarDiferencias(req.params.id, !['false', '0', false, 0].includes((req.body || {}).aplicar), quien(req)))));
 router.post('/:id/pagar', requierePermiso('liquidaciones.pagar'), manejar(async (req, res) => res.json(await svc.pagar(req.params.id, quien(req)))));
 router.post('/:id/cancelar', requierePermiso('liquidaciones.cancelar'), manejar(async (req, res) => res.json(await svc.cancelar(req.params.id, quien(req)))));
 router.post('/:id/reabrir', requierePermiso('liquidaciones.reabrir'), manejar(async (req, res) => res.json(await svc.reabrir(req.params.id, quien(req)))));
