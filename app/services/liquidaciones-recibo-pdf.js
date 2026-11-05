@@ -26,7 +26,6 @@ async function empresa() {
 function paginaRecibo(liq, emp, esPrimera) {
   const filas = liq.viajes.map(v => [
     { text: v.serie, noWrap: true }, { text: v.cartaPorte, noWrap: true }, { text: v.desFlete },
-    { text: dinero(v.comision), alignment: 'right', noWrap: true },
   ]);
   const linea = (concepto, importe, negrita) => [
     { text: concepto, bold: !!negrita }, { text: dinero(importe), alignment: 'right', bold: !!negrita },
@@ -41,10 +40,10 @@ function paginaRecibo(liq, emp, esPrimera) {
     { text: [{ text: 'Operador: ', bold: true }, `${liq.idOperador} - ${liq.operador}`], margin: [0, 2, 0, 8] },
     {
       table: {
-        headerRows: 1, widths: [40, 95, '*', 85],
+        headerRows: 1, widths: [40, 95, '*'],
         body: [
-          [{ text: 'Serie', bold: true }, { text: 'Carta Porte', bold: true }, { text: 'Descripción del flete', bold: true }, { text: 'Importe', bold: true, alignment: 'right' }],
-          ...(filas.length ? filas : [[{ text: 'Sin viajes', colSpan: 4, alignment: 'center', italics: true }, {}, {}, {}]]),
+          [{ text: 'Serie', bold: true }, { text: 'Carta Porte', bold: true }, { text: 'Descripción del flete', bold: true }],
+          ...(filas.length ? filas : [[{ text: 'Sin viajes', colSpan: 3, alignment: 'center', italics: true }, {}, {}]]),
         ],
       },
       layout: { hLineWidth: (i) => (i <= 1 ? 1 : 0.3), vLineWidth: () => 0, hLineColor: () => '#888' },

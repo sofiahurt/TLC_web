@@ -3,7 +3,7 @@
 // Pruebas unitarias de calcularTotales (función pura, sin base de datos).
 // Ejecutar: node scripts/test-liquidaciones-calc.js
 const assert = require('assert');
-const { calcularTotales, comisionRenglon } = require('../app/services/liquidaciones-calc');
+const { calcularTotales, comisionRenglon, repartirCentavos } = require('../app/services/liquidaciones-calc');
 
 let ok = 0;
 const prueba = (nombre, fn) => { fn(); ok++; console.log('  ok  ' + nombre); };
@@ -113,6 +113,18 @@ prueba('dif. aplicada: positiva descuenta, negativa paga, sin aplicar no cuenta'
   assert.strictEqual(fav.difAplicada, -30);
   assert.strictEqual(fav.totalLiquidacion, 1030);               // se paga
   assert.strictEqual(fav.granTotalLiq, fav.totalLiquidacion + fav.totalViaje);
+});
+
+prueba('lo depositado se reparte entre rubros en proporción a lo solicitado, sin perder centavos', () => {
+  assert.deepStrictEqual(repartirCentavos(150000, [196400]), [150000]);            // un rubro: directo
+  const r = repartirCentavos(10000, [3000, 3000, 3000]);                            // 100.00 entre 3 iguales
+  assert.strictEqual(r.reduce((a, b) => a + b, 0), 10000);
+  assert.deepStrictEqual(repartirCentavos(100, [0, 0]), [0, 0]);                    // sin rubros solicitados: sin reparto
+  assert.deepStrictEqual(repartirCentavos(0, [500, 500]), [0, 0]);
+  const m = repartirCentavos(487100, [476900, 10200]);                              // 4,871 depositado: casetas 4,769 + pensión 102
+  assert.deepStrictEqual(m, [476900, 10200]);
+  const c = repartirCentavos(300000, [476900, 10200]);                              // depositó menos: proporcional
+  assert.strictEqual(c.reduce((a, b) => a + b, 0), 300000);
 });
 
 prueba('no muta los argumentos', () => {

@@ -244,7 +244,7 @@ function pintarCalculo(l) {
     + fila('IMSS', l.imss, true) + fila('Infonavit', l.infonavit, true)
     + `<tr><td>Dif. aplicada <span class="small text-muted">(+ se paga / − se descuenta)</span></td><td class="text-end ${l.difAplicada < 0 ? 'text-success' : l.difAplicada > 0 ? 'text-danger' : ''}">${money(-l.difAplicada)}</td></tr>`
     + fila('Total a liquidar', l.totalLiquidacion, false, true)
-    + fila('Gastos del viaje', l.totalViaje) + fila('Gran total', l.granTotalLiq, false, true) + fila('Total flete', l.totalFlete) + fila('Utilidad', l.totalUtilidad, false, true);
+;   // Gastos del viaje, Gran total, Total flete y Utilidad: ocultos por ahora (el servidor sigue calculándolos)
 }
 
 // Lo capturado en pantalla, tal como lo recibe el servidor.

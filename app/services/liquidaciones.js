@@ -10,7 +10,7 @@
 
 const { getPool, sql } = require('../config/db');
 const cfg = require('../config/liquidaciones');
-const { calcularTotales, comisionRenglon, CONCEPTOS } = require('./liquidaciones-calc');
+const { calcularTotales, comisionRenglon, repartirCentavos, aCentavos, deCentavos, CONCEPTOS } = require('./liquidaciones-calc');
 
 const trim = v => (v == null ? '' : String(v).trim());
 const num = v => (v == null || v === '' || isNaN(Number(v)) ? 0 : Number(v));
@@ -146,8 +146,10 @@ async function columnasDepositos(pool) {
   return _tablasDepo;
 }
 
-// Costos por concepto de cada viaje = suma de sus solicitudes de depósito VALIDADAS en DepoSolicitud
-// (Validado=1). Las tablas históricas no tienen Validado: ahí cuentan las AUTORIZADAS (FlagDeposito=1).
+// Costos por concepto de cada viaje = lo DEPOSITADO en sus solicitudes VALIDADAS en DepoSolicitud (Validado=1),
+// no lo solicitado. MontoDepositado es un total por solicitud: se reparte entre sus rubros en proporción a lo
+// solicitado de cada uno (con un solo rubro es directo). Si una solicitud no trae MontoDepositado (tablas
+// históricas, que además no tienen Validado y usan FlagDeposito=1), se toma lo solicitado.
 // Devuelve { 'anio|serie|cp': { concepto: importe } }.
 async function costosDeDepositos(pool, filas) {
   const porAnio = {};
@@ -164,10 +166,22 @@ async function costosDeDepositos(pool, filas) {
       return `(LTRIM(RTRIM(Serie))=@s${i} AND LTRIM(RTRIM(CartaPorte))=@c${i})`;
     }).join(' OR ');
     const validado = cols.has('validado') ? 'ISNULL(Validado,0)=1' : 'ISNULL(FlagDeposito,0)=1';
-    const sumas = CONCEPTOS.map(k => (cols.has(COL_DEPOSITO[k].toLowerCase()) ? `SUM(ISNULL(${COL_DEPOSITO[k]},0)) AS ${k}` : `CAST(0 AS DECIMAL(18,2)) AS ${k}`)).join(', ');
-    const res = await q.query(`SELECT LTRIM(RTRIM(Serie)) AS Serie, LTRIM(RTRIM(CartaPorte)) AS CartaPorte, ${sumas}
-      FROM Empresa2.${nombre} WHERE ${validado} AND (${cond}) GROUP BY LTRIM(RTRIM(Serie)), LTRIM(RTRIM(CartaPorte))`);
-    res.recordset.forEach(c => { out[`${anio}|${c.Serie}|${c.CartaPorte}`] = c; });
+    const rubros = CONCEPTOS.map(k => (cols.has(COL_DEPOSITO[k].toLowerCase()) ? `ISNULL(${COL_DEPOSITO[k]},0) AS ${k}` : `CAST(0 AS DECIMAL(18,2)) AS ${k}`)).join(', ');
+    const monto = cols.has('montodepositado') ? 'MontoDepositado' : 'CAST(NULL AS DECIMAL(18,2)) AS MontoDepositado';
+    const res = await q.query(`SELECT LTRIM(RTRIM(Serie)) AS Serie, LTRIM(RTRIM(CartaPorte)) AS CartaPorte, ${rubros}, ${monto}
+      FROM Empresa2.${nombre} WHERE ${validado} AND (${cond})`);
+    res.recordset.forEach(c => {
+      const llave = `${anio}|${c.Serie}|${c.CartaPorte}`;
+      const acum = out[llave] = out[llave] || Object.fromEntries(CONCEPTOS.map(k => [k, 0]));
+      const solicitado = CONCEPTOS.map(k => aCentavos(c[k]));
+      let reparto = solicitado;                                   // sin monto depositado: lo solicitado
+      if (c.MontoDepositado != null) {
+        const dep = aCentavos(c.MontoDepositado);
+        reparto = solicitado.some(v => v > 0) ? repartirCentavos(dep, solicitado)
+          : CONCEPTOS.map(k => (k === 'otros' ? dep : 0));        // depositado sin rubro solicitado: va a Otros
+      }
+      CONCEPTOS.forEach((k, i) => { acum[k] = deCentavos(aCentavos(acum[k]) + reparto[i]); });
+    });
   }
   return out;
 }
@@ -274,7 +288,7 @@ async function listar(f = {}) {
   const W = where.length ? 'WHERE ' + where.join(' AND ') : '';
   const total = (await req.query(`SELECT COUNT(*) n FROM Empresa2.Liquida l ${W}`)).recordset[0].n;
   const rows = (await req.query(`SELECT l.MES, l.ID_LIQUIDACION, l.FECHA, l.ID_OPERADOR, l.OPERADOR, l.TOTALLIQUIDACION, l.STATUS, l.WHOCAPTURA
-    FROM Empresa2.Liquida l ${W} ORDER BY l.MES, l.FECHA, l.ID_LIQUIDACION
+    FROM Empresa2.Liquida l ${W} ORDER BY l.MES DESC, l.FECHA DESC, l.ID_LIQUIDACION DESC
     OFFSET ${(pagina - 1) * tam} ROWS FETCH NEXT ${tam} ROWS ONLY`)).recordset;
   // cartas porte de las liquidaciones de la página
   const cps = {};

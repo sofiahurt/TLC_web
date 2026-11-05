@@ -21,11 +21,12 @@ const rechaza = async (fn, status, nombre) => {
   const creadas = [];
   const flags = [];   // { tabla, serie, cp, flagOriginal }
   const validados = [];   // DepoSolicitud que se marcan Validado=1 para la prueba (se restauran)
+  const montos = [];      // MontoDepositado original de las que se modifican para la prueba (se restauran)
   try {
     // operador activo con cartas porte sin liquidar en el año actual
     // (con al menos 2 cartas porte con casetas en DepoSolicitud, para probar que los costos se suman)
     const op = (await q(`SELECT TOP 1 c.Id_Operador FROM Empresa2.CartaPorte c
-        JOIN Empresa2.DepoSolicitud d ON d.Serie=c.Serie AND d.CartaPorte=c.CartaPorte AND ISNULL(d.Casetas,0)>0
+        JOIN Empresa2.DepoSolicitud d ON d.Serie=c.Serie AND d.CartaPorte=c.CartaPorte AND ISNULL(d.Casetas,0)>0 AND (ISNULL(d.Prestamo,0)+ISNULL(d.Talachas,0)+ISNULL(d.Llantas,0)+ISNULL(d.Diesel,0)+ISNULL(d.Comidas,0)+ISNULL(d.Pension,0)+ISNULL(d.Bascula,0)+ISNULL(d.Refacciones,0)+ISNULL(d.Maniobra,0)+ISNULL(d.Otros,0)+ISNULL(d.Estadias,0)+ISNULL(d.Demoras,0))=0
         JOIN Empresa2.Operadores o ON o.ID_OPERADOR=c.Id_Operador AND UPPER(LTRIM(RTRIM(o.STATUS)))='ACTIVO'
        WHERE ISNULL(c.FlagLiq,0)=0 AND UPPER(LTRIM(RTRIM(c.Status))) NOT LIKE 'CANCELAD%'
        GROUP BY c.Id_Operador HAVING COUNT(DISTINCT c.CartaPorte)>=2 ORDER BY COUNT(DISTINCT c.CartaPorte) DESC`))[0];
@@ -70,7 +71,7 @@ const rechaza = async (fn, status, nombre) => {
     paso(`una carta porte sin depósito validado no sale y se explica: "${noAut.motivo}"`);
 
     const conDepo = await q(`SELECT DISTINCT TOP 2 LTRIM(RTRIM(c.Serie)) serie, LTRIM(RTRIM(c.CartaPorte)) cartaPorte FROM Empresa2.CartaPorte c
-        JOIN Empresa2.DepoSolicitud d ON d.Serie=c.Serie AND d.CartaPorte=c.CartaPorte AND ISNULL(d.Casetas,0)>0
+        JOIN Empresa2.DepoSolicitud d ON d.Serie=c.Serie AND d.CartaPorte=c.CartaPorte AND ISNULL(d.Casetas,0)>0 AND (ISNULL(d.Prestamo,0)+ISNULL(d.Talachas,0)+ISNULL(d.Llantas,0)+ISNULL(d.Diesel,0)+ISNULL(d.Comidas,0)+ISNULL(d.Pension,0)+ISNULL(d.Bascula,0)+ISNULL(d.Refacciones,0)+ISNULL(d.Maniobra,0)+ISNULL(d.Otros,0)+ISNULL(d.Estadias,0)+ISNULL(d.Demoras,0))=0
        WHERE c.Id_Operador=@o AND ISNULL(c.FlagLiq,0)=0 AND UPPER(LTRIM(RTRIM(c.Status))) NOT LIKE 'CANCELAD%'`, { o: op.Id_Operador });
     const [c1, c2] = conDepo.map(c => ({ anioCP: new Date().getFullYear(), serie: c.serie, cartaPorte: c.cartaPorte }));
     for (const c of [c1, c2]) {
@@ -78,9 +79,18 @@ const rechaza = async (fn, status, nombre) => {
       flags.push({ tabla: t, serie: c.serie, cp: c.cartaPorte });
     }
     // Costos desde DepoSolicitud: solo cuentan las solicitudes VALIDADAS. Se validan las de c1 y c2 (y se restauran).
-    const depos = await q(`SELECT Id_DepoSol, Validado, ISNULL(Casetas,0) Casetas, ISNULL(Maniobra,0) Maniobra, ISNULL(Otros,0) Otros, CartaPorte FROM Empresa2.DepoSolicitud
+    const depos = await q(`SELECT Id_DepoSol, Validado, ISNULL(Casetas,0) Casetas, MontoDepositado, CartaPorte FROM Empresa2.DepoSolicitud
         WHERE LTRIM(RTRIM(CartaPorte)) IN (@a, @b)`, { a: c1.cartaPorte, b: c2.cartaPorte });
-    const esperadoCasetas = (cp) => Math.round(depos.filter(d => d.CartaPorte.trim() === cp).reduce((s, d) => s + Number(d.Casetas), 0) * 100) / 100;
+    // Los costos son lo DEPOSITADO, no lo solicitado: a c1 se le deposita 100 menos de lo solicitado (se restaura al final).
+    for (const d of depos.filter(d => d.CartaPorte.trim() === c1.cartaPorte)) {
+      montos.push({ id: d.Id_DepoSol, valor: d.MontoDepositado });
+      d.MontoDepositado = Math.round((Number(d.Casetas) - 100) * 100) / 100;
+      await pool.request().input('i', sql.Decimal(9, 0), d.Id_DepoSol).input('m', sql.Decimal(11, 2), d.MontoDepositado)
+        .query('UPDATE Empresa2.DepoSolicitud SET MontoDepositado=@m WHERE Id_DepoSol=@i');
+    }
+    // con un solo rubro, lo depositado es el costo; sin monto depositado se toma lo solicitado
+    const esperadoCasetas = (cp) => Math.round(depos.filter(d => d.CartaPorte.trim() === cp)
+      .reduce((s, d) => s + Number(d.MontoDepositado != null ? d.MontoDepositado : d.Casetas), 0) * 100) / 100;
     // llamada directa a la API: una carta porte sin depósito validado NO se acepta (se des-validan para la prueba y se restauran)
     for (const d of depos) { validados.push({ id: d.Id_DepoSol, valor: d.Validado }); }
     const idsDepo = depos.map(d => Number(d.Id_DepoSol)).join(',');
@@ -91,7 +101,7 @@ const rechaza = async (fn, status, nombre) => {
     assert.ok(esperadoCasetas(c1.cartaPorte) > 0, 'la carta porte de prueba debe tener casetas');
     assert.strictEqual(r.caseta.estimado, esperadoCasetas(c1.cartaPorte));
     assert.strictEqual(r.viajes[0].costos.caseta, esperadoCasetas(c1.cartaPorte));
-    paso(`depósitos validados suman costos (caseta ${r.caseta.estimado})`);
+    paso(`los costos son lo depositado, no lo solicitado (caseta ${r.caseta.estimado} vs solicitado ${depos.filter(d => d.CartaPorte.trim() === c1.cartaPorte).reduce((s, d) => s + Number(d.Casetas), 0)})`);
     assert.strictEqual(r.viajes.length, 1);
     assert.strictEqual((await q(`SELECT FlagLiq FROM ${flags[0].tabla} WHERE Serie=@s AND CartaPorte=@c`, { s: c1.serie, c: c1.cartaPorte }))[0].FlagLiq, 1);
     paso('agregar viaje marca la carta porte como liquidada');
@@ -272,6 +282,8 @@ const rechaza = async (fn, status, nombre) => {
       const { mes, numero } = svc.parseId(id);
       await pool.request().input('m', sql.Decimal(3, 0), mes).input('n', sql.Decimal(9, 0), numero)
         .query('DELETE FROM Empresa2.LiqDeta WHERE MES=@m AND ID_LIQUIDACION=@n; DELETE FROM Empresa2.Liquida WHERE MES=@m AND ID_LIQUIDACION=@n'); } }
+    for (const m of montos) await pool.request().input('i', sql.Decimal(9, 0), m.id).input('m', sql.Decimal(11, 2), m.valor)
+      .query('UPDATE Empresa2.DepoSolicitud SET MontoDepositado=@m WHERE Id_DepoSol=@i');
     for (const v of validados) await pool.request().input('i', sql.Decimal(9, 0), v.id).input('v', v.valor == null ? sql.TinyInt : sql.TinyInt, v.valor)
       .query('UPDATE Empresa2.DepoSolicitud SET Validado=@v WHERE Id_DepoSol=@i');
     for (const f of flags) await pool.request().input('s', sql.VarChar(3), f.serie).input('c', sql.VarChar(30), f.cp)

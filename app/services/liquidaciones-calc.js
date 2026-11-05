@@ -109,6 +109,19 @@ function calcularTotales(liq, renglones, opciones = {}) {
   return out;
 }
 
+// Reparte un monto (en centavos) entre rubros en proporción a sus pesos (lo solicitado de cada rubro), sin perder
+// centavos: la suma del resultado es exactamente `total` (método del mayor residuo). Pesos en cero = sin reparto.
+function repartirCentavos(total, pesos) {
+  const W = pesos.reduce((a, b) => a + b, 0);
+  if (W <= 0 || total <= 0) return pesos.map(() => 0);
+  const exactos = pesos.map(p => (total * p) / W);
+  const base = exactos.map(Math.floor);
+  let resto = total - base.reduce((a, b) => a + b, 0);
+  const orden = exactos.map((e, i) => ({ i, f: e - base[i] })).sort((a, b) => b.f - a.f);
+  for (let j = 0; resto > 0; j++, resto--) base[orden[j % orden.length].i]++;
+  return base;
+}
+
 // Comisión de un renglón (para mostrarla y para el recibo): la misma regla del paso 3.
 function comisionRenglon(r) {
   if (r.pagoKilometro != null && Number(r.pagoKilometro) !== 0) return deCentavos(productoCentavos(r.kilometros, r.pagoKilometro));
@@ -116,4 +129,4 @@ function comisionRenglon(r) {
   return 0;
 }
 
-module.exports = { calcularTotales, comisionRenglon, CONCEPTOS, aCentavos, deCentavos };
+module.exports = { calcularTotales, comisionRenglon, repartirCentavos, CONCEPTOS, aCentavos, deCentavos };
