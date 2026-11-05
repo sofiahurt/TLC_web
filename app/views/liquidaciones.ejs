@@ -99,7 +99,6 @@
     </div>
   </div>
   <div class="modal-footer py-2">
-    <button class="btn btn-sm btn-outline-secondary me-auto" onclick="verRecibo()"><i class="bi bi-printer"></i> Recibo</button>
     <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal"><i class="bi bi-x-lg"></i> Cancelar</button>
     <% if (can('liquidaciones.editar')) { %><button class="btn btn-sm btn-primary ed" onclick="guardarCambios()"><i class="bi bi-floppy"></i> Guardar cambios</button><% } %>
     <% if (can('liquidaciones.reabrir')) { %><button class="btn btn-sm btn-warning d-none" id="btnReabrir" onclick="if(confirm('¿Reabrir la liquidación PAGADA?'))accion('reabrir')"><i class="bi bi-unlock"></i> Reabrir</button><% } %>
@@ -294,7 +293,6 @@ async function cancelarLiq(id) {
   try { await api(`/liquidaciones/${id}/cancelar`, { method: 'POST' }); cargar(_pag); }
   catch (e) { verError(e.message); }
 }
-function verRecibo() { window.open(`/liquidaciones/${_liq.id}/recibo`, '_blank'); }
 
 // ── Candidatas ──
 async function abrirCandidatas() {
