@@ -46,9 +46,28 @@ const rechaza = async (fn, status, nombre) => {
     paso(`crear liquidación ${liq.id} (advertencias: ${advertencias.length})`);
     assert.ok(liq.sueldoBase >= 0 && liq.imss >= 0);
 
-    const cand = await svc.candidatas(op.Id_Operador, { limit: 10 });
-    assert.ok(cand.length >= 2 && cand.every(c => !c.liquidada));
-    paso(`candidatas: ${cand.length} cartas porte sin liquidar`);
+    // Candidatas: solo cartas porte con depósito VALIDADO (Validado=1), búsqueda por número y motivo si no aparece
+    const aut = (await q(`SELECT TOP 1 LTRIM(RTRIM(c.CartaPorte)) cp, c.Id_Operador FROM Empresa2.CartaPorte c
+        JOIN Empresa2.DepoSolicitud d ON d.Serie=c.Serie AND d.CartaPorte=c.CartaPorte AND ISNULL(d.Validado,0)=1
+       WHERE ISNULL(c.FlagLiq,0)=0 AND c.Id_Operador>0 AND UPPER(LTRIM(RTRIM(c.Status))) NOT LIKE 'CANCELAD%'`))[0];
+    assert.ok(aut, 'no hay carta porte con depósito validado para probar');
+    const todas = await svc.candidatas(aut.Id_Operador, { anio: new Date().getFullYear(), limit: 500 });
+    assert.ok(todas.length >= 1);
+    for (const c of todas) {
+      const n = (await q(`SELECT COUNT(*) n FROM Empresa2.DepoSolicitud WHERE LTRIM(RTRIM(CartaPorte))=@c AND ISNULL(Validado,0)=1`, { c: c.cartaPorte }))[0].n;
+      assert.ok(n > 0, `${c.cartaPorte} salió como candidata sin depósito validado`);
+    }
+    paso(`candidatas: las ${todas.length} del operador ${aut.Id_Operador} tienen depósito validado`);
+    const porNumero = await svc.candidatas(aut.Id_Operador, { q: aut.cp.toLowerCase(), conMotivo: true });
+    assert.ok(porNumero.rows.length === 1 && porNumero.rows[0].cartaPorte === aut.cp && porNumero.motivo === '');
+    paso(`búsqueda por número de carta porte (${aut.cp}) devuelve ese registro`);
+    const sinAut = (await q(`SELECT TOP 1 LTRIM(RTRIM(c.CartaPorte)) cp, c.Id_Operador FROM Empresa2.CartaPorte c
+       WHERE ISNULL(c.FlagLiq,0)=0 AND c.Id_Operador>0 AND UPPER(LTRIM(RTRIM(c.Status))) NOT LIKE 'CANCELAD%'
+         AND NOT EXISTS (SELECT 1 FROM Empresa2.DepoSolicitud d WHERE d.Serie=c.Serie AND d.CartaPorte=c.CartaPorte AND ISNULL(d.Validado,0)=1)`))[0];
+    const noAut = await svc.candidatas(sinAut.Id_Operador, { q: sinAut.cp, conMotivo: true });
+    assert.strictEqual(noAut.rows.length, 0);
+    assert.ok(/depósito validado/.test(noAut.motivo), noAut.motivo);
+    paso(`una carta porte sin depósito validado no sale y se explica: "${noAut.motivo}"`);
 
     const conDepo = await q(`SELECT DISTINCT TOP 2 LTRIM(RTRIM(c.Serie)) serie, LTRIM(RTRIM(c.CartaPorte)) cartaPorte FROM Empresa2.CartaPorte c
         JOIN Empresa2.DepoSolicitud d ON d.Serie=c.Serie AND d.CartaPorte=c.CartaPorte AND ISNULL(d.Casetas,0)>0
@@ -62,12 +81,13 @@ const rechaza = async (fn, status, nombre) => {
     const depos = await q(`SELECT Id_DepoSol, Validado, ISNULL(Casetas,0) Casetas, ISNULL(Maniobra,0) Maniobra, ISNULL(Otros,0) Otros, CartaPorte FROM Empresa2.DepoSolicitud
         WHERE LTRIM(RTRIM(CartaPorte)) IN (@a, @b)`, { a: c1.cartaPorte, b: c2.cartaPorte });
     const esperadoCasetas = (cp) => Math.round(depos.filter(d => d.CartaPorte.trim() === cp).reduce((s, d) => s + Number(d.Casetas), 0) * 100) / 100;
-    let r = await svc.agregarViaje(liq.id, c1, 'PRUEBA');
-    assert.strictEqual(r.caseta.estimado, 0, 'sin validar no debe traer costos');
-    paso('depósitos sin validar no suman costos');
+    // llamada directa a la API: una carta porte sin depósito validado NO se acepta (se des-validan para la prueba y se restauran)
     for (const d of depos) { validados.push({ id: d.Id_DepoSol, valor: d.Validado }); }
+    const idsDepo = depos.map(d => Number(d.Id_DepoSol)).join(',');
+    if (depos.length) await q(`UPDATE Empresa2.DepoSolicitud SET Validado=0 WHERE Id_DepoSol IN (${idsDepo})`);
+    await rechaza(() => svc.agregarViaje(liq.id, c1, 'PRUEBA'), 409, 'carta porte sin depósito validado rechazada aunque se llame directo');
     if (depos.length) await q(`UPDATE Empresa2.DepoSolicitud SET Validado=1 WHERE Id_DepoSol IN (${depos.map(d => Number(d.Id_DepoSol)).join(',')})`);
-    r = await svc.recalcularDiferencias(liq.id, 'PRUEBA');
+    let r = await svc.agregarViaje(liq.id, c1, 'PRUEBA');
     assert.ok(esperadoCasetas(c1.cartaPorte) > 0, 'la carta porte de prueba debe tener casetas');
     assert.strictEqual(r.caseta.estimado, esperadoCasetas(c1.cartaPorte));
     assert.strictEqual(r.viajes[0].costos.caseta, esperadoCasetas(c1.cartaPorte));
@@ -96,6 +116,27 @@ const rechaza = async (fn, status, nombre) => {
     assert.strictEqual(r.totalAdelanto, 50);
     assert.strictEqual(r.descripcionOtros, 'prueba');
     paso('editar: real capturado se respeta; recalcula diferencia y adelanto');
+    // quitar o poner en 0 el IMSS recalcula la liquidación
+    const conImss = await svc.obtener(liq.id);
+    assert.ok(conImss.imss > 0, 'la liquidación de prueba debe traer IMSS');
+    for (const vacio of [0, '', null]) {
+      r = await svc.editar(liq.id, { imss: vacio }, 'PRUEBA');
+      assert.strictEqual(r.imss, 0);
+      assert.strictEqual(Math.round(r.totalLiquidacion * 100), Math.round((conImss.totalLiquidacion + conImss.imss) * 100));
+      assert.strictEqual(Math.round(r.granTotalLiq * 100), Math.round((conImss.granTotalLiq + conImss.imss) * 100));
+      r = await svc.editar(liq.id, { imss: conImss.imss }, 'PRUEBA');
+      assert.strictEqual(Math.round(r.totalLiquidacion * 100), Math.round(conImss.totalLiquidacion * 100));
+    }
+    paso('IMSS en 0 o vacío: la liquidación se recalcula sin IMSS y al restituirlo vuelve al total');
+    // vista previa (al teclear): calcula igual que guardar, pero NO guarda
+    const prev = await svc.previsualizar(liq.id, { imss: '', extraComision: 100, real: { comidas: 7 } });
+    assert.strictEqual(prev.imss, 0);
+    assert.strictEqual((await svc.obtener(liq.id)).imss, conImss.imss, 'la vista previa no debe guardar');
+    const guardado = await svc.editar(liq.id, { imss: '', extraComision: 100, real: { comidas: 7 } }, 'PRUEBA');
+    for (const k of ['totalLiquidacion', 'granTotalLiq', 'totalViaje', 'totalDif', 'totalComision']) assert.strictEqual(prev[k], guardado[k], k);
+    await svc.editar(liq.id, { imss: conImss.imss, extraComision: 0, real: { comidas: 10 } }, 'PRUEBA');
+    await rechaza(() => svc.previsualizar(liq.id, { imss: -3 }), 400, 'vista previa valida los importes');
+    paso('vista previa: mismo resultado que guardar y sin guardar nada');
     await rechaza(() => svc.editar(liq.id, { sueldoBase: -5 }, 'PRUEBA'), 400, 'valor negativo rechazado');
     await rechaza(() => svc.editar(liq.id, { real: { inexistente: 1 } }, 'PRUEBA'), 400, 'concepto desconocido rechazado');
 
@@ -174,7 +215,8 @@ const rechaza = async (fn, status, nombre) => {
     if (hist) {
       const tabla = await svc.tablaCP(pool, hist);
       const h = (await q(`SELECT TOP 1 c.Id_Operador, c.Serie, c.CartaPorte FROM ${tabla} c JOIN Empresa2.Operadores o ON o.ID_OPERADOR=c.Id_Operador
-         WHERE ISNULL(c.FlagLiq,0)=0 AND UPPER(LTRIM(RTRIM(c.Status))) NOT LIKE 'CANCELAD%' AND c.Id_Operador>0`))[0];
+         WHERE ISNULL(c.FlagLiq,0)=0 AND UPPER(LTRIM(RTRIM(c.Status))) NOT LIKE 'CANCELAD%' AND c.Id_Operador>0
+           AND EXISTS (SELECT 1 FROM Empresa2.DepoSolicitud${String(hist).slice(-2)} d WHERE d.Serie=c.Serie AND d.CartaPorte=c.CartaPorte AND ISNULL(d.FlagDeposito,0)=1)`))[0];
       if (h) {
         const { liquidacion: l2 } = await svc.crear(h.Id_Operador, 'PRUEBA');
         creadas.push(l2.id);

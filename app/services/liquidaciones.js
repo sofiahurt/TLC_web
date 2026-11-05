@@ -293,28 +293,65 @@ async function obtener(id) {
 }
 
 // Cartas porte del operador (año actual + histórico) todavía no liquidadas. Es una consulta, no una tabla temporal.
+// Tabla de DepoSolicitud del mismo año que la de la carta porte y su condición de "depósito validado":
+// Validado=1 (el que se marca en la pantalla Depósitos). Las tablas históricas no tienen Validado: ahí se usa
+// FlagDeposito=1. Devuelve null si ese año no tiene tabla de solicitudes.
+async function depositosValidados(pool, anio, alias = 'd') {
+  const nombre = parseInt(anio, 10) === cfg.anioTablaActual() ? 'DepoSolicitud' : `DepoSolicitud${String(anio).slice(-2)}`;
+  const cols = (await columnasDepositos(pool))[nombre];
+  if (!cols) return null;
+  return { tabla: 'Empresa2.' + nombre, condicion: cols.has('validado') ? `ISNULL(${alias}.Validado,0)=1` : `ISNULL(${alias}.FlagDeposito,0)=1` };
+}
+
+// Solo salen las cartas porte con depósito VALIDADO (DepoSolicitud.Validado=1). Con `q` se busca por
+// número de carta porte (parcial o completo, p. ej. CUI0003295) en todas las tablas.
+// Si hay búsqueda y no aparece, `motivo` explica por qué no es candidata.
 async function candidatas(idOperador, opciones = {}) {
   idOperador = parseInt(idOperador, 10);
   if (!idOperador) throw err(400, 'Indique el operador.');
   const pool = await getPool();
   const limite = Math.min(500, Math.max(1, parseInt(opciones.limit, 10) || 200));
   const anios = opciones.anio ? [parseInt(opciones.anio, 10)] : await aniosCP(pool);
+  const q = trim(opciones.q).toUpperCase();
   const out = [];
   for (const anio of anios) {
     const tabla = await tablaCP(pool, anio);
-    const r = await pool.request().input('op', sql.Int, idOperador).query(
-      `SELECT TOP ${limite} Serie, CartaPorte, Id_Pedido, Id_Cliente, NombreComunCli, FehcaCarga, FechaPedido, Id_Tarifa, DesFlete,
-              CostoFlete, Status
-         FROM ${tabla}
-        WHERE Id_Operador=@op AND ISNULL(FlagLiq,0)=0 AND UPPER(LTRIM(RTRIM(ISNULL(Status,'')))) NOT LIKE 'CANCELAD%'
-        ORDER BY FechaPedido DESC, Id_Pedido DESC`);
+    const depo = await depositosValidados(pool, anio);
+    if (!depo) continue;   // sin solicitudes de depósito de ese año no hay nada validado
+    const req = pool.request().input('op', sql.Int, idOperador);
+    if (q) req.input('q', sql.VarChar(40), '%' + q + '%');
+    const r = await req.query(
+      `SELECT TOP ${limite} c.Serie, c.CartaPorte, c.Id_Pedido, c.Id_Cliente, c.NombreComunCli, c.FehcaCarga, c.FechaPedido, c.Id_Tarifa, c.DesFlete,
+              c.CostoFlete, c.Status
+         FROM ${tabla} c
+        WHERE c.Id_Operador=@op AND ISNULL(c.FlagLiq,0)=0 AND UPPER(LTRIM(RTRIM(ISNULL(c.Status,'')))) NOT LIKE 'CANCELAD%'
+          ${q ? 'AND UPPER(LTRIM(RTRIM(c.CartaPorte))) LIKE @q' : ''}
+          AND EXISTS (SELECT 1 FROM ${depo.tabla} d WHERE d.Serie=c.Serie AND d.CartaPorte=c.CartaPorte AND ${depo.condicion})
+        ORDER BY c.FechaPedido DESC, c.Id_Pedido DESC`);
     r.recordset.forEach(c => out.push({
       anioCP: anio, serie: trim(c.Serie), cartaPorte: trim(c.CartaPorte), idPedido: num(c.Id_Pedido), idCliente: num(c.Id_Cliente),
       cliente: trim(c.NombreComunCli), fechaViaje: fechaISO(c.FehcaCarga || c.FechaPedido), idTarifa: num(c.Id_Tarifa),
       desFlete: trim(c.DesFlete), costoFlete: num(c.CostoFlete), status: trim(c.Status), liquidada: false,
     }));
   }
-  return out.slice(0, limite * 2).sort((a, b) => (a.fechaViaje < b.fechaViaje ? 1 : -1)).slice(0, limite);
+  out.sort((a, b) => (a.fechaViaje < b.fechaViaje ? 1 : -1));
+  const filas = out.slice(0, limite);
+  return opciones.conMotivo ? { rows: filas, motivo: filas.length || q.length < 6 ? '' : await motivoNoCandidata(pool, idOperador, q) } : filas;
+}
+
+// Por qué una carta porte buscada por número no aparece entre las candidatas.
+async function motivoNoCandidata(pool, idOperador, q) {
+  for (const anio of await aniosCP(pool)) {
+    const tabla = await tablaCP(pool, anio);
+    const c = (await pool.request().input('q', sql.VarChar(40), q)
+      .query(`SELECT TOP 1 Serie, CartaPorte, Id_Operador, FlagLiq, Status FROM ${tabla} WHERE UPPER(LTRIM(RTRIM(CartaPorte)))=@q`)).recordset[0];
+    if (!c) continue;
+    if (num(c.Id_Operador) !== idOperador) return `La carta porte ${q} pertenece al operador ${num(c.Id_Operador)}, no a este operador.`;
+    if (trim(c.Status).toUpperCase().startsWith('CANCELAD')) return `La carta porte ${q} está cancelada.`;
+    if (num(c.FlagLiq) === 1) return `La carta porte ${q} ya está liquidada.`;
+    return `La carta porte ${q} no tiene un depósito validado en Depósitos.`;
+  }
+  return `No existe la carta porte ${q}.`;
 }
 
 // ── Alta ────────────────────────────────────────────────────────────────────
@@ -390,6 +427,11 @@ async function agregarViaje(id, { serie, cartaPorte, anioCP }, quien) {
                WHERE LTRIM(RTRIM(d.SERIE))=@s AND LTRIM(RTRIM(d.CARTAPORTE))=@c AND d.ANIOCP=@a`)).recordset[0];
     if (dup) throw err(409, `La carta porte ya está en la liquidación ${idLiq(dup.MES, dup.ID_LIQUIDACION)}.`);
     if (num(cp.FlagLiq) === 1) throw err(409, 'La carta porte ya está marcada como liquidada.');
+    // Solo se liquidan cartas porte con depósito validado (misma regla que la lista de candidatas)
+    const depo = await depositosValidados(tx, anio);
+    const validado = depo && (await new sql.Request(tx).input('s', sql.VarChar(3), trim(cp.Serie)).input('c', sql.VarChar(30), trim(cp.CartaPorte))
+      .query(`SELECT TOP 1 1 AS x FROM ${depo.tabla} d WHERE LTRIM(RTRIM(d.Serie))=@s AND LTRIM(RTRIM(d.CartaPorte))=@c AND ${depo.condicion}`)).recordset[0];
+    if (!validado) throw err(409, `La carta porte ${trim(cp.CartaPorte)} no tiene un depósito validado en Depósitos.`);
 
     const tar = num(cp.Id_Tarifa) ? (await new sql.Request(tx).input('t', sql.Decimal(9, 0), num(cp.Id_Tarifa))
       .query(`SELECT KILOMETROS, COSTOPORKILO, PAGOTARIFA, DIESELPERMITIDO FROM Empresa2.Tarifas WHERE ID_TARIFA=@t`)).recordset[0] : null;
@@ -435,26 +477,47 @@ async function quitarViaje(id, idDeta, quien) {
 
 // ── Edición ─────────────────────────────────────────────────────────────────
 const CAMPOS_EDITABLES = ['sueldoBase', 'imss', 'infonavit', 'extraComision', 'extraDescuento', 'dieselRellenado', 'totalAdelanto'];
+// Un campo vacío o en 0 es válido (p. ej. quitar el IMSS o el Infonavit): se toma como 0 y los totales se recalculan sin él.
+const validaImporte = (nombre, v) => {
+  if (v === '' || v == null) return 0;
+  if (!isFinite(Number(v)) || Number(v) < 0) throw err(400, `${nombre} debe ser un número mayor o igual a 0.`);
+  return Number(v);
+};
+// Aplica los cambios capturados al modelo de la liquidación (sin guardar nada).
+function aplicarCambios(liq, cambios) {
+  CAMPOS_EDITABLES.forEach(k => { if (cambios[k] !== undefined) liq[k] = validaImporte(k, cambios[k]); });
+  if (cambios.descripcionOtros !== undefined) liq.descripcionOtros = trim(cambios.descripcionOtros);
+  if (cambios.real && typeof cambios.real === 'object') {
+    for (const [k, v] of Object.entries(cambios.real)) {
+      if (!CONCEPTOS.includes(k)) throw err(400, `Concepto desconocido: ${k}.`);
+      liq[k].real = validaImporte('real.' + k, v);
+    }
+  }
+}
+
 async function editar(id, cambios, quien) {
   const { mes, numero } = parseId(id);
   cambios = cambios || {};
-  const valida = (nombre, v) => {
-    if (v === '' || v == null || !isFinite(Number(v)) || Number(v) < 0) throw err(400, `${nombre} debe ser un número mayor o igual a 0.`);
-    return Number(v);
-  };
   return enTransaccion(async (tx) => {
     exigirGenerada(await leerCabecera(new sql.Request(tx), mes, numero, true));
-    return recalcular(tx, mes, numero, quien, (liq) => {
-      CAMPOS_EDITABLES.forEach(k => { if (cambios[k] !== undefined) liq[k] = valida(k, cambios[k]); });
-      if (cambios.descripcionOtros !== undefined) liq.descripcionOtros = trim(cambios.descripcionOtros);
-      if (cambios.real && typeof cambios.real === 'object') {
-        for (const [k, v] of Object.entries(cambios.real)) {
-          if (!CONCEPTOS.includes(k)) throw err(400, `Concepto desconocido: ${k}.`);
-          liq[k].real = valida('real.' + k, v);
-        }
-      }
-    });
+    return recalcular(tx, mes, numero, quien, (liq) => aplicarCambios(liq, cambios));
   });
+}
+
+// Vista previa mientras se teclea: calcula con calcularTotales (la misma función de siempre) los cambios
+// capturados y devuelve el resultado SIN guardar nada. Si la liquidación ya no es editable devuelve lo guardado.
+async function previsualizar(id, cambios) {
+  await asegurarEsquema();
+  const { mes, numero } = parseId(id);
+  const pool = await getPool();
+  const cab = await leerCabecera(new sql.Request(pool), mes, numero, false);
+  const base = filaAModelo(cab);
+  if (!esGenerada(cab)) return modeloCompleto(pool, mes, numero);
+  aplicarCambios(base, cambios || {});
+  const viajes = await leerRenglones(pool, mes, numero);
+  const calculado = calcularTotales(base, viajes);
+  calculado.viajes = viajes;
+  return calculado;
 }
 
 const recalcularDiferencias = (id, quien) => {
@@ -563,6 +626,6 @@ async function paraRecibos({ fechaIni, fechaFin, idOpeIni, idOpeFin }) {
 
 module.exports = {
   parseId, listar, obtener, candidatas, crear, agregarViaje, quitarViaje, editar,
-  recalcularDiferencias, aplicarDiferencias, pagar, reabrir, cancelar, eliminar, paraRecibos, asegurarEsquema,
+  recalcularDiferencias, aplicarDiferencias, pagar, reabrir, cancelar, eliminar, previsualizar, paraRecibos, asegurarEsquema,
   tablaCP, aniosCP,
 };

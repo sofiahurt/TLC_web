@@ -41,7 +41,7 @@ router.post('/', requierePermiso('liquidaciones.crear'), manejar(async (req, res
 
 // ── Cartas porte candidatas (antes de /:id) ─────────────────────────────────
 router.get('/candidatas', requierePermiso('liquidaciones.ver'), manejar(async (req, res) => {
-  res.json({ rows: await svc.candidatas(req.query.idOperador, { anio: req.query.anio, limit: req.query.limit }) });
+  res.json(await svc.candidatas(req.query.idOperador, { anio: req.query.anio, limit: req.query.limit, q: req.query.q, conMotivo: true }));
 }));
 
 // Operadores para elegir en la pantalla (solo activos)
@@ -173,6 +173,8 @@ router.get('/:id/recibo', requierePermiso('liquidaciones.ver'), manejar(async (r
   enviarPDF(res, await generarRecibosPDF([liq]), `Recibo_${liq.id}.pdf`);
 }));
 
+// Vista previa de los totales con los cambios que se están tecleando (no guarda nada).
+router.post('/:id/calcular', requierePermiso('liquidaciones.ver'), manejar(async (req, res) => res.json(await svc.previsualizar(req.params.id, req.body))));
 router.patch('/:id', requierePermiso('liquidaciones.editar'), manejar(async (req, res) => res.json(await svc.editar(req.params.id, req.body, quien(req)))));
 router.delete('/:id', requierePermiso('liquidaciones.eliminar'), manejar(async (req, res) => res.json(await svc.eliminar(req.params.id))));
 
