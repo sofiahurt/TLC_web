@@ -15,7 +15,7 @@ const { getSatDb } = require('../config/sat-db');
 // Factura o FacDeta debe ir scopeada por ambos campos, nunca solo por el ID.
 const serieKey = v => { const t = (v == null ? '' : String(v)).trim(); return t || null; };
 
-const hoy = () => new Date().toISOString().slice(0, 10);
+const hoy = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };   // fecha LOCAL (no UTC: de tarde-noche toISOString ya da el día siguiente)
 const num = v => (v === '' || v == null || isNaN(parseFloat(v))) ? 0 : parseFloat(v);
 const trim = v => (v == null ? '' : String(v).trim());
 

@@ -136,13 +136,13 @@
           <div class="col-md-3">
             <label class="form-label small mb-1">Fecha de creación</label>
             <div class="input-group input-group-sm mb-2">
-              <input type="date" id="f_Fecha" class="form-control form-control-sm" onchange="onCabeceraFieldChange()">
-              <input type="time" id="f_Hora" class="form-control form-control-sm bg-light" style="max-width:88px" readonly tabindex="-1" title="Hora de creación (solo lectura)">
+              <input type="date" id="f_Fecha" class="form-control form-control-sm" style="min-width:0" onchange="onCabeceraFieldChange()">
+              <input type="time" id="f_Hora" class="form-control form-control-sm bg-light" style="flex:0 0 118px" readonly tabindex="-1" title="Hora de creación (solo lectura)">
             </div>
             <label class="form-label fw-semibold small mb-1">Fecha del cobro</label>
             <div class="input-group input-group-sm mb-2">
-              <input type="date" id="f_FechaPago" class="form-control form-control-sm" onchange="onCabeceraFieldChange()">
-              <input type="time" id="f_HoraPago" class="form-control form-control-sm" style="max-width:88px" onchange="onCabeceraFieldChange()" title="Hora del cobro">
+              <input type="date" id="f_FechaPago" class="form-control form-control-sm" style="min-width:0" onchange="onCabeceraFieldChange()">
+              <input type="time" id="f_HoraPago" class="form-control form-control-sm" style="flex:0 0 118px" onchange="onCabeceraFieldChange()" title="Hora del cobro">
             </div>
             <label class="form-label small mb-1">Forma de pago</label>
             <div class="input-group input-group-sm mb-2">
@@ -323,7 +323,7 @@ document.addEventListener('keydown', function(e) {
   if (top) { e.preventDefault(); e.stopPropagation(); top.hide(); }
 }, true);
 
-function hoyISO(){return new Date().toISOString().slice(0,10);}
+function hoyISO(){const d=new Date();return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);}   // fecha local (no UTC)
 function fmtFechaMx(v){const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(v||''));return m?`${m[3]}/${m[2]}/${m[1]}`:(v||'');} // aaaa-mm-dd -> dd/mm/aaaa
 function horaAhora(){const d=new Date();return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');}
 function horaDe(v){return v?String(v).slice(11,16):'';} // las horas SQL llegan como 1970-01-01THH:MM:SS

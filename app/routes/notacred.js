@@ -18,7 +18,9 @@ const { ajustarFacturas } = require('../services/conciliacion-saldos');
 const serieKey = v => { const t = (v == null ? '' : String(v)).trim(); return t || null; };
 const trim = v => (v == null ? '' : String(v).trim());
 const num = v => (v === '' || v == null || isNaN(parseFloat(v))) ? 0 : parseFloat(v);
-const hoy = () => new Date().toISOString().slice(0, 10);
+// Hora capturada en pantalla (HH:MM o HH:MM:SS) -> 'HH:MM:SS'; '' si no es válida.
+const horaValida = h => { const m = /^([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/.exec(String(h || '').trim()); return m ? `${m[1]}:${m[2]}:${m[3] || '00'}` : ''; };
+const hoy = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };   // fecha LOCAL (no UTC: de tarde-noche toISOString ya da el día siguiente)
 
 function reqNC(r, tipo, serie, id) {
   r.input('tipo', sql.VarChar(3), trim(tipo));
@@ -457,7 +459,7 @@ router.post('/partida/agregar', requierePermiso('notacred.editar'), async (req, 
         const empRes = await new sql.Request(tx).query(`SELECT CP FROM dbo.Empresas WHERE LTRIM(RTRIM(SERIE))='CUA'`);
         const lugarExpedicion = trim(empRes.recordset[0]?.CP);
         await reqNC(new sql.Request(tx), tipo, serieCab, idNotaCredito)
-          .input('fecha', sql.Date, hoy()).input('hora', sql.VarChar(8), new Date().toTimeString().slice(0, 8))
+          .input('fecha', sql.Date, hoy()).input('hora', sql.VarChar(8), horaValida(f.hora) || new Date().toTimeString().slice(0, 8))
           .input('idCli', sql.Decimal(7), idCliente).input('nombreCom', sql.VarChar(150), trim(cli.recordset[0]?.NOMBRECOMUN) || trim(cli.recordset[0]?.NOMBRECOM))
           // BORRADOR hasta que /cabecera/grabar la pase a EMITIDA -- si se queda
           // así, /cabecera/cancelar-sin-confirmar puede detectar que nunca se
@@ -677,10 +679,15 @@ router.post('/cabecera/actualizar', requierePermiso('notacred.editar'), async (r
   try {
     const pool = await getPool();
     const result = await withTransaction(pool, async (tx) => {
-      const cabRes = await reqNC(new sql.Request(tx), tipo, serie, id).query(`SELECT UUID FROM Empresa2.NotaCred WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
+      const cabRes = await reqNC(new sql.Request(tx), tipo, serie, id).query(`SELECT UUID, Status FROM Empresa2.NotaCred WHERE Id_NotaCredito=@id AND ${NC_EQ}`);
       if (!cabRes.recordset[0]) throw Object.assign(new Error('Nota no encontrada.'), { status: 404 });
       if (trim(cabRes.recordset[0].UUID)) throw Object.assign(new Error('La nota ya está timbrada; solo se puede consultar.'), { status: 409 });
       const yaTimbrada = false;
+      // La hora solo cambia si llega una nueva y la nota no está cancelada ni (parcialmente) pagada.
+      const nuevaHora = horaValida(req.body.hora);
+      if (nuevaHora && ['CANCELADO', 'CANCELADA', 'PAGADA', 'PAGO PARCIAL'].includes(trim(cabRes.recordset[0].Status).toUpperCase())) {
+        throw Object.assign(new Error('La hora ya no se puede modificar: la nota está cancelada o con pagos.'), { status: 409 });
+      }
 
       // Cambio del check Un Concepto: marcado => partidas en 0; desmarcado => importes de cada documento.
       // En una nota ya EMITIDA también se deshace/aplica el efecto sobre facturas y ND.
@@ -692,6 +699,7 @@ router.post('/cabecera/actualizar', requierePermiso('notacred.editar'), async (r
       let sets = ['FlagResNota=@flagres'];
       if (!yaTimbrada) {
         if (trim(req.body.fecha)) { r2.input('fecha', sql.Date, trim(req.body.fecha)); sets.push('Fecha=@fecha'); }
+        if (nuevaHora) { r2.input('hora', sql.VarChar(8), nuevaHora); sets.push('Hora=@hora'); }
         if (trim(req.body.c_FormaPago)) { r2.input('cformapago', sql.VarChar(4), trim(req.body.c_FormaPago)); sets.push('c_FormaPago=@cformapago'); }
         if (trim(req.body.ClaveMP)) { r2.input('clavemp', sql.VarChar(3), trim(req.body.ClaveMP)); sets.push('ClaveMP=@clavemp'); }
         if (trim(req.body.c_UsoCFDI)) { r2.input('cusocfdi', sql.VarChar(5), trim(req.body.c_UsoCFDI)); sets.push('c_UsoCFDI=@cusocfdi'); }

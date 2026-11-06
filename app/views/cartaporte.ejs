@@ -1643,7 +1643,8 @@ function openAddDepo() {
   if (!_currentCP) { alert('Debe guardar primero el Pedido/Viaje antes de capturar una solicitud de depósito.'); return; }
   _depoMode = 'add'; _depoEditId = null;
   document.getElementById('depoTitle').textContent = 'Solicitud de Depósito por Viaje';
-  document.querySelectorAll('#depoModal input, #depoModal textarea').forEach(el => el.value = '');
+  // Los check de "cobrar al cliente" también se limpian (antes quedaba marcado el de la solicitud anterior)
+  document.querySelectorAll('#depoModal input, #depoModal textarea').forEach(el => { if (el.type === 'checkbox') el.checked = false; else el.value = ''; });
   document.getElementById('depoError').classList.add('d-none');
 
   // Precarga desde el Pedido/Viaje activo (todo solo lectura)

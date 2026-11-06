@@ -15,9 +15,9 @@ const { quienAplica } = require('../services/docs-aplicados');
 const trim = v => (v == null ? '' : String(v).trim());
 const num = v => (v === '' || v == null || isNaN(parseFloat(v))) ? 0 : parseFloat(v);
 const serieKey = v => { const t = trim(v); return t || null; };
-const hoy = () => new Date().toISOString().slice(0, 10);
+const hoy = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };   // fecha LOCAL (no UTC: de tarde-noche toISOString ya da el día siguiente)
 // HH:MM o HH:MM:SS -> HH:MM:SS; vacío/ inválido -> null
-const horaValida = v => { const m = /^(d{2}):(d{2})(?::(d{2}))?$/.exec(trim(v)); return m && +m[1] < 24 && +m[2] < 60 ? `${m[1]}:${m[2]}:${m[3] || '00'}` : null; };
+const horaValida = v => { const m = /^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(trim(v)); return m && +m[1] < 24 && +m[2] < 60 ? `${m[1]}:${m[2]}:${m[3] || '00'}` : null; };
 
 async function withTransaction(pool, fn) {
   const tx = new sql.Transaction(pool);

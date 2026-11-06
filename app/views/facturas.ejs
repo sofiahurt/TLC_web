@@ -145,7 +145,7 @@
               </div>
               <div style="flex:0 0 96px">
                 <label class="form-label fw-semibold small mb-1">Hora</label>
-                <input type="time" id="f_Hora" class="form-control form-control-sm" onchange="onCabeceraFieldChange()">
+                <input type="time" id="f_Hora" class="form-control form-control-sm" onchange="_horaManual=true;onCabeceraFieldChange()">
               </div>
             </div>
             <label class="form-label small mb-1">Forma de pago</label>
@@ -521,7 +521,7 @@ function hideError(){errEl.classList.add('d-none');}
 function showWarning(msg){warnEl.textContent=msg;warnEl.classList.remove('d-none');}
 function hideWarning(){warnEl.classList.add('d-none');}
 
-function hoyISO(){return new Date().toISOString().slice(0,10);}
+function hoyISO(){const d=new Date();return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);}   // fecha local (no UTC)
 
 function setSoloLectura(on){
   document.getElementById('frmModal').classList.toggle('solo-lectura', !!on);
@@ -539,7 +539,9 @@ function clearForm(){
   document.getElementById('f_RFC').value='';
   document.getElementById('f_Fecha').value=hoyISO();
   document.getElementById('f_Fecha').readOnly=false;
-  document.getElementById('f_Hora').value=''; _horaOrig=''; document.getElementById('f_Hora').readOnly=false;
+  // Factura nueva: se muestra la hora actual; si nadie la cambia, al agregar la primera partida el servidor guarda la hora real en ese momento.
+  const _n=new Date(); document.getElementById('f_Hora').value=String(_n.getHours()).padStart(2,'0')+':'+String(_n.getMinutes()).padStart(2,'0');
+  _horaManual=false; _horaOrig=''; document.getElementById('f_Hora').readOnly=false;
   document.querySelectorAll('.sat-lupa-btn').forEach(b=>b.disabled=false);
   document.getElementById('f_MonFactura').value='';
   document.getElementById('f_MonFactura_disp').value='';
@@ -645,6 +647,7 @@ function onToggleResumen(){
 
 // Persiste IncluirCP/Descripción/Observaciones/Un-Concepto si la factura ya existe;
 // si aún no existe, los valores viajan con la primera partida (ver agregarPartida).
+let _horaManual=false;   // la hora de una factura NUEVA solo se envía si el usuario la cambió
 let _horaOrig='';   // hora tal como estaba guardada (solo se envía si cambia, para no perder los segundos)
 function onCabeceraFieldChange(){
   if(!_factura.idNoFactura || _factura.soloLectura) return;
@@ -881,7 +884,7 @@ function agregarPartida(serie, cp){
     serie, cartaporte:cp,
     serieFac:document.getElementById('f_SerieFac').value.trim(),
     fecha:document.getElementById('f_Fecha').value,
-    hora:document.getElementById('f_Hora').value,
+    hora:_horaManual ? document.getElementById('f_Hora').value : '',
     flagResFac:document.getElementById('f_FlagResFac').checked?1:0,
     incluirCP:document.getElementById('f_IncluirCP').checked?1:0,
     descripcion:document.getElementById('f_Descripcion').value.trim(),
