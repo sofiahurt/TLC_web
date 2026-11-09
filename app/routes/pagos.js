@@ -756,17 +756,19 @@ router.post('/copiar', requierePermiso('pagos.editar'), requierePermiso('pagos.b
         const etiqueta = esFactura
           ? `Factura ${trim(l.SERIEFAC)}${trim(l.SERIEFAC) ? '-' : ''}${l.NOFACTURA}`
           : `Nota de Débito ${trim(l.SERIEND)}${trim(l.SERIEND) ? '-' : ''}${l.ID_NOTACREDITO}`;
-        let saldo = 0, motivo = '', serieReal = '';
+        let saldo = 0, motivo = '', serieReal = '', doc = null;
         if (esFactura) {
           serieReal = (await resolverSerieFac(tx, l.NOFACTURA, l.SERIEFAC)) || '';
           const fac = (await new sql.Request(tx).input('id', sql.Decimal(9), l.NOFACTURA).input('serieFac', sql.VarChar(20), serieKey(serieReal))
-            .query(`SELECT TOTAL, PagosReal, NotasCredito, Status FROM Empresa2.Factura WITH (UPDLOCK, ROWLOCK) WHERE Id_NoFactura=@id AND ISNULL(LTRIM(RTRIM(SerieFac)),'')=ISNULL(@serieFac,'')`)).recordset[0];
+            .query(`SELECT TOTAL, SubTotal, IVA, Retencion, PagosReal, NotasCredito, Status FROM Empresa2.Factura WITH (UPDLOCK, ROWLOCK) WHERE Id_NoFactura=@id AND ISNULL(LTRIM(RTRIM(SerieFac)),'')=ISNULL(@serieFac,'')`)).recordset[0];
+          if (fac) doc = { total: num(fac.TOTAL), sub: num(fac.SubTotal), iva: num(fac.IVA), ret: num(fac.Retencion) };
           if (!fac) motivo = 'la factura ya no existe';
           else if (trim(fac.Status).toUpperCase() === 'CANCELADA') motivo = 'la factura está cancelada';
           else saldo = r2(Math.max(num(fac.TOTAL) - num(fac.PagosReal) - num(fac.NotasCredito), 0));
         } else {
           const nd = (await new sql.Request(tx).input('id', sql.Decimal(7), l.ID_NOTACREDITO).input('serie', sql.VarChar(10), serieKey(l.SERIEND))
-            .query(`SELECT ImporteTotal, Status FROM Empresa2.NotaCred WITH (UPDLOCK, ROWLOCK) WHERE Id_NotaCredito=@id AND LTRIM(RTRIM(Tipo))='ND' AND ISNULL(LTRIM(RTRIM(Serie)),'')=ISNULL(@serie,'')`)).recordset[0];
+            .query(`SELECT ImporteTotal, Subtotal, IVA, Retencion, Status FROM Empresa2.NotaCred WITH (UPDLOCK, ROWLOCK) WHERE Id_NotaCredito=@id AND LTRIM(RTRIM(Tipo))='ND' AND ISNULL(LTRIM(RTRIM(Serie)),'')=ISNULL(@serie,'')`)).recordset[0];
+          if (nd) doc = { total: num(nd.ImporteTotal), sub: num(nd.Subtotal), iva: num(nd.IVA), ret: num(nd.Retencion) };
           if (!nd) motivo = 'la nota de débito ya no existe';
           else if (trim(nd.Status).toUpperCase() === 'CANCELADO') motivo = 'la nota de débito está cancelada';
           else saldo = r2(Math.max(num(nd.ImporteTotal) - await aplicadoND(tx, { idNotaDebito: l.ID_NOTACREDITO, serieND: l.SERIEND, excluirPago: idNoPago }), 0));
@@ -776,7 +778,7 @@ router.post('/copiar', requierePermiso('pagos.editar'), requierePermiso('pagos.b
         const total = motivo ? 0 : r2(Math.min(totalOrig, saldo));
         if (motivo) ajustadas.push(etiqueta + ': ' + motivo + ' (queda en $0.00)');
         else if (total < totalOrig - 0.005) ajustadas.push(etiqueta + ': importe topado al saldo disponible $' + total.toFixed(2));
-        nuevasLineas.push({ l, saldo: motivo ? 0 : saldo, total, f: totalOrig > 0.005 ? total / totalOrig : 0, serieReal });
+        nuevasLineas.push({ l, saldo: motivo ? 0 : saldo, total, f: totalOrig > 0.005 ? total / totalOrig : 0, serieReal, doc });
       }
 
       const nuevo = (await new sql.Request(tx).query(`SELECT ISNULL(MAX(Id_NoPago),0)+1 AS next FROM Empresa2.Pagos WITH (UPDLOCK, HOLDLOCK)`)).recordset[0].next;
@@ -792,19 +794,30 @@ router.post('/copiar', requierePermiso('pagos.editar'), requierePermiso('pagos.b
           DROP TABLE #p;`);
 
       let idd = 0;
-      for (const { l, saldo, total, f, serieReal } of nuevasLineas) {
+      for (const { l, saldo, total, f, serieReal, doc } of nuevasLineas) {
         idd++;
         const imprte = Math.min(r2(num(l.IMPRTE) * f), total);
+        const comp = r2(total - imprte);
+        // Base, IVA y retención de cada renglón = los del documento (factura o ND) en proporción a lo pagado:
+        //   valor del documento x (importe pagado / total del documento). Para IMPRTE y, aparte, para COMPESACION.
+        // Así el renglón siempre cuadra con su factura (con IVA 16% y retención 4% equivale a importe / 1.12).
+        const prop = (monto) => {
+          const k = doc && doc.total > 0.005 ? monto / doc.total : 0;
+          return { base: r2((doc ? doc.sub : 0) * k), iva: r2((doc ? doc.iva : 0) * k), ret: r2((doc ? doc.ret : 0) * k) };
+        };
+        const real = { valores: prop(imprte) };
+        const compp = { valores: prop(comp) };
         await new sql.Request(tx)
           .input('old', sql.Decimal(9), idNoPago).input('oldd', sql.Decimal(7), l.ID_NOPAGFAC)
           .input('nuevo', sql.Decimal(9), nuevo).input('idd', sql.Decimal(7), idd)
           .input('saldo', sql.Decimal(11, 2), saldo).input('imprte', sql.Decimal(11, 2), imprte).input('total', sql.Decimal(11, 2), total)
           .input('f', sql.Float, f).input('serieReal', sql.VarChar(20), serieReal || '')
+          .input('sub', sql.Decimal(11, 2), real.valores.base).input('iva', sql.Decimal(10, 2), real.valores.iva).input('ret', sql.Decimal(9, 2), real.valores.ret)
+          .input('subc', sql.Decimal(11, 2), compp.valores.base).input('ivac', sql.Decimal(10, 2), compp.valores.iva).input('retc', sql.Decimal(9, 2), compp.valores.ret)
           .query(`SELECT * INTO #l FROM Empresa2.PagFac WHERE ID_NOPAGO=@old AND ID_NOPAGFAC=@oldd;
             UPDATE #l SET ID_NOPAGO=@nuevo, ID_NOPAGFAC=@idd, SALDOANT=@saldo, IMPRTE=@imprte, COMPESACION=@total-@imprte, TOTALPAGO=@total,
               SERIEFAC=CASE WHEN NOFACTURA>0 AND @serieReal<>'' THEN @serieReal ELSE SERIEFAC END,
-              SUBTOTAL=ROUND(SUBTOTAL*@f,2), RETENCION=ROUND(RETENCION*@f,2), IVA=ROUND(IVA*@f,2),
-              SUBTOTALCOMP=ROUND(SUBTOTALCOMP*@f,2), IVACOMP=ROUND(IVACOMP*@f,2), RETENCIONCOMP=ROUND(RETENCIONCOMP*@f,2);
+              SUBTOTAL=@sub, RETENCION=@ret, IVA=@iva, SUBTOTALCOMP=@subc, IVACOMP=@ivac, RETENCIONCOMP=@retc;
             INSERT INTO Empresa2.PagFac SELECT * FROM #l;
             DROP TABLE #l;`);
       }
