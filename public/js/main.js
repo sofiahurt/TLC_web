@@ -103,6 +103,33 @@ async function descargarReporte({ url, params, btnId, progresoId, errorId, nombr
   }
 }
 
+// Botón "X" dentro de un campo de búsqueda: aparece cuando hay texto, lo borra y dispara 'input' para refrescar el browse
+function agregarBotonLimpiar(input) {
+  if (!input || input.dataset.conLimpiar) return;
+  input.dataset.conLimpiar = '1';
+  const wrap = document.createElement('div');
+  wrap.className = 'position-relative';
+  input.parentNode.insertBefore(wrap, input);
+  wrap.appendChild(input);
+  input.style.paddingRight = '1.75rem';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn-limpiar-busqueda';
+  btn.title = 'Borrar búsqueda';
+  btn.setAttribute('aria-label', 'Borrar búsqueda');
+  btn.innerHTML = '<i class="bi bi-x-lg"></i>';
+  wrap.appendChild(btn);
+  const sync = () => { btn.style.display = input.value ? '' : 'none'; };
+  btn.addEventListener('click', () => {
+    input.value = '';
+    sync();
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.focus();
+  });
+  input.addEventListener('input', sync);
+  sync();
+}
+
 // Generic browse search
 function initBrowse(options) {
   const { searchInput, searchColumn, tableBody, paginationEl, infoEl, pageSize = 20, fetchUrl, onLoad, defaultSort = '', defaultDir = 'asc' } = options;
@@ -147,6 +174,7 @@ function initBrowse(options) {
 
   function goToPage(n) { currentPage = n; load(); }
 
+  agregarBotonLimpiar(searchInput);
   if (searchInput) searchInput.addEventListener('input', debounce(() => { currentPage = 1; load(); }, 300));
 
   if (paginationEl) {

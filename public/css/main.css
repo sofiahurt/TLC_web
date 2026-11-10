@@ -187,3 +187,9 @@ body { background: #E8EFF5; }
   .sidebar.show { transform: translateX(0); }
   #page-content { margin-left: 0; width: 100%; }
 }
+
+.btn-limpiar-busqueda {
+  position: absolute; top: 0; bottom: 0; right: 0; width: 1.75rem;
+  border: 0; background: transparent; color: #6c757d; padding: 0; cursor: pointer; z-index: 5;
+}
+.btn-limpiar-busqueda:hover { color: #212529; }
