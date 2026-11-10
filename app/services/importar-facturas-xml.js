@@ -21,6 +21,7 @@ const { RUTA_XML } = require('../config/storage');
 const { importeALetras } = require('./importe-letras');
 const { fmt, porLocalName, attr } = require('./pdf-utils');
 const { recalcularStatusND } = require('./saldo-factura');
+const { asegurarEsquemaNotaCred } = require('./notacred-esquema');
 
 const r2  = v => Math.round((Number(v) || 0) * 100) / 100;
 const num = v => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
@@ -162,6 +163,7 @@ async function importarNotaDebito(pool, res, xmlString, d) {
   res.factura = `ND-${d.folio}`;
   const tx = new sql.Transaction(pool);
   try {
+    await asegurarEsquemaNotaCred();
     await tx.begin();
     const rqND = () => new sql.Request(tx).input('id', sql.Decimal(7), d.folio).input('serie', sql.VarChar(10), d.serie);
     const cond = `Id_NotaCredito=@id AND LTRIM(RTRIM(Tipo))='ND' AND ISNULL(LTRIM(RTRIM(Serie)),'')=ISNULL(@serie,'')`;
@@ -206,14 +208,15 @@ async function importarNotaDebito(pool, res, xmlString, d) {
       .input('ft', sql.VarChar(20), cortar(d.fechaTimbrado, 20) || null).input('uuid', sql.VarChar(149), d.uuid)
       .input('uni', sql.VarChar(5), cortar(c1.claveUnidad, 5) || 'E48').input('prod', sql.VarChar(20), cortar(c1.claveProdServ, 20) || '78101802')
       .input('desc', sql.VarChar(100), cortar(descripcion, 100)).input('rfcp', sql.VarChar(20), cortar(d.rfcProvCertif, 20) || null)
+      .input('moneda', sql.VarChar(5), cortar(d.moneda, 5) || 'MXN').input('tc', sql.Decimal(9, 2), d.moneda === 'MXN' ? 1 : d.tipoCambio)
       .query(`INSERT INTO Empresa2.NotaCred(
           Serie, Id_NotaCredito, Fecha, Hora, c_FormaPago, ClaveMP, LugarExpedicion, Id_Cliente, NombreCom, TipoFactura,
           Retencion, Subtotal, IVA, ImporteTotal, ImporteLetras, SumaPartidas, Status, c_TipoRelacion, c_UsoCFDI, noCertificado,
-          FechaTimbrado, UUID, c_ClaveUnidad, c_ClaveProdServ, Descripcion, RfcProvCertif, FlagResNota, Tipo, WhoIs
+          FechaTimbrado, UUID, c_ClaveUnidad, c_ClaveProdServ, Descripcion, RfcProvCertif, FlagResNota, Tipo, WhoIs, Moneda, TipoCambio
         ) VALUES(
           @serie, @id, @fecha, @hora, @cformapago, @clavemp, @lugarexp, @idCli, @nombreCom, 'Pesos',
           @ret, @sub, @iva, @tot, @letras, @tot, 'EMITIDA', @trel, @uso, @nocert,
-          @ft, @uuid, @uni, @prod, @desc, @rfcp, 1, 'ND', 'Importación XML'
+          @ft, @uuid, @uni, @prod, @desc, @rfcp, 1, 'ND', 'Importación XML', @moneda, @tc
         )`);
 
     // Una línea por documento relacionado, ubicado por UUID (factura; si no, otra ND)

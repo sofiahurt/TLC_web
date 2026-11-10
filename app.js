@@ -84,6 +84,7 @@ const { RUTA_XML } = require('./app/config/storage');
 const PORT = process.env.PORT || 3000;
 sesiones.iniciar();
 require('./app/services/permisos-seed').asegurarPermisos();
+require('./app/services/notacred-esquema').asegurarEsquemaNotaCred().catch(e => console.error('Esquema NotaCred (Moneda/TipoCambio):', e.message));
 app.listen(PORT, () => {
   console.log(`TLC Web corriendo en http://localhost:${PORT}`);
   console.log(`Almacenamiento XML:  ${RUTA_XML}`);

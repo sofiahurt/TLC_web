@@ -174,6 +174,20 @@
               <input type="text" id="f_c_TipoRelacion_disp" class="form-control form-control-sm bg-light" placeholder="Seleccionar..." readonly>
               <button class="btn btn-outline-secondary btn-sm sat-lupa-btn" type="button" onclick="openLookupSat('tipoRelacion')"><i class="bi bi-search"></i></button>
             </div>
+            <div class="d-flex gap-2">
+              <div style="flex:1 1 0;min-width:0">
+                <label class="form-label small mb-1">Moneda</label>
+                <div class="input-group input-group-sm mb-2">
+                  <input type="hidden" id="f_Moneda">
+                  <input type="text" id="f_Moneda_disp" class="form-control form-control-sm bg-light" placeholder="Seleccionar..." readonly>
+                  <button class="btn btn-outline-secondary btn-sm sat-lupa-btn" type="button" onclick="openLookupSat('moneda')"><i class="bi bi-search"></i></button>
+                </div>
+              </div>
+              <div style="flex:0 0 96px">
+                <label class="form-label small mb-1">T. cambio</label>
+                <input type="number" id="f_TipoCambio" class="form-control form-control-sm mb-2" step="0.01" min="0" onchange="onCabeceraFieldChange()">
+              </div>
+            </div>
           </div>
         </div>
 
@@ -386,6 +400,14 @@ function fmtMoney(v){
   return signo+'$'+Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 }
 function fmtFechaMx(v){const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(v||''));return m?`${m[3]}/${m[2]}/${m[1]}`:(v||'');} // aaaa-mm-dd -> dd/mm/aaaa
+// Moneda de la nota: clave SAT; vacío o 'Pesos' = MXN. Con MXN el tipo de cambio es 1 y no se captura.
+function monedaClave(v){const m=String(v||'').trim().toUpperCase(); return (!m||m==='PESOS')?'MXN':(m==='DOLARES'?'USD':m);}
+function setMonedaForm(clave,tc){
+  setSatField('f_Moneda','f_Moneda_disp','moneda',clave);
+  const t=document.getElementById('f_TipoCambio');
+  t.value=clave==='MXN'?1:(parseFloat(tc)>0?tc:'');
+  t.readOnly=clave==='MXN';
+}
 function showError(msg){const e=document.getElementById('frmError');e.textContent=msg;e.classList.remove('d-none');}
 function hideError(){document.getElementById('frmError').classList.add('d-none');}
 function showWarning(msg){const e=document.getElementById('frmWarning');e.textContent=msg;e.classList.remove('d-none');}
@@ -423,6 +445,7 @@ function clearForm(){
   setSatField('f_ClaveMP','f_ClaveMP_disp','metodoPago','PPD');
   setSatField('f_c_UsoCFDI','f_c_UsoCFDI_disp','usoCfdi','G03');
   setSatField('f_c_TipoRelacion','f_c_TipoRelacion_disp','tipoRelacion',_tipoActivo==='ND'?'2':'1');
+  setMonedaForm('MXN',1);
   // Mismos defaults que DEFAULTS_TIPO en notacred.js (78101802/E48/texto fijo)
   // -- se resuelven vía el mismo lookup para mostrar la descripción real.
   setSatField('f_c_ClaveProdServ','f_c_ClaveProdServ_disp','claveProdServ','78101802');
@@ -477,7 +500,7 @@ function openEdit(){
   modal.show();
 }
 
-function cargarNota(tipo, serie, id, omitidasCopia, conservarConfirmada){
+function cargarNota(tipo, serie, id, omitidasCopia, conservarConfirmada, aviso){
   fetch(`/notacred/get?tipo=${tipo}&serie=${encodeURIComponent(serie)}&id=${id}`).then(r=>r.json()).then(d=>{
     if(d.error){showError(d.error);return;}
     const c=d.cabecera;
@@ -506,6 +529,7 @@ function cargarNota(tipo, serie, id, omitidasCopia, conservarConfirmada){
     setSatField('f_ClaveMP','f_ClaveMP_disp','metodoPago',(c.ClaveMP||'').trim());
     setSatField('f_c_UsoCFDI','f_c_UsoCFDI_disp','usoCfdi',(c.c_UsoCFDI||'').trim());
     setSatField('f_c_TipoRelacion','f_c_TipoRelacion_disp','tipoRelacion',(c.c_TipoRelacion||'').trim());
+    setMonedaForm(monedaClave(c.Moneda),c.TipoCambio);
     setSatField('f_c_ClaveProdServ','f_c_ClaveProdServ_disp','claveProdServ',(c.c_ClaveProdServ||'').trim());
     setSatField('f_c_ClaveUnidad','f_c_ClaveUnidad_disp','claveUnidad',(c.c_ClaveUnidad||'').trim());
     document.getElementById('f_Descripcion').value=(c.Descripcion||'').trim();
@@ -522,6 +546,7 @@ function cargarNota(tipo, serie, id, omitidasCopia, conservarConfirmada){
     document.getElementById('f_WhoIs_disp').textContent=(c.WhoIs||'').trim();   // quien la realizó; no se sustituye por el usuario actual
     setSoloLectura(yaTimbrada);
     if(omitidasCopia && omitidasCopia.length) showWarning('No se copiaron '+omitidasCopia.length+' partida(s): '+omitidasCopia.join('; '));
+    if(aviso) showWarning(aviso);   // primera partida con moneda distinta a la de la nota
   });
 }
 
@@ -576,6 +601,8 @@ function onCabeceraFieldChange(){
     c_ClaveProdServ:document.getElementById('f_c_ClaveProdServ').value.trim(),
     c_ClaveUnidad:document.getElementById('f_c_ClaveUnidad').value.trim(),
     descripcion:document.getElementById('f_Descripcion').value.trim(),
+    moneda:document.getElementById('f_Moneda').value.trim(),
+    tipoCambio:document.getElementById('f_TipoCambio').value,
   };
   fetch('/notacred/cabecera/actualizar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
     .then(r=>r.json()).then(d=>{
@@ -771,6 +798,8 @@ function agregarLinea(tipoDoc, folio, serieRef){
     c_ClaveProdServ:document.getElementById('f_c_ClaveProdServ').value.trim(),
     c_ClaveUnidad:document.getElementById('f_c_ClaveUnidad').value.trim(),
     Descripcion:document.getElementById('f_Descripcion').value.trim(),
+    moneda:document.getElementById('f_Moneda').value.trim(),
+    tipoCambio:document.getElementById('f_TipoCambio').value,
   };
   if(tipoDoc==='factura'){ body.idNoFactura=folio; body.serieFacRef=serieRef; }
   else { body.idNotaDebito=folio; body.serieND=serieRef; }
@@ -784,7 +813,7 @@ function agregarLinea(tipoDoc, folio, serieRef){
       document.getElementById('f_Tipo').disabled=true;
       document.getElementById('f_Serie').readOnly=true;
       document.getElementById('f_NombreCom_disp').readOnly=true;
-      cargarNota(_nota.tipo, d.serie||'', d.idNotaCredito);
+      cargarNota(_nota.tipo, d.serie||'', d.idNotaCredito, undefined, undefined, d.aviso);
     });
 }
 
@@ -920,6 +949,10 @@ const _satLkCfg={
   metodoPago:{title:'Método de Pago',url:'/clientes/lookup/sat/metodo-pago',onSelect:(clave,desc)=>{document.getElementById('f_ClaveMP').value=clave;document.getElementById('f_ClaveMP_disp').value=`${clave} - ${desc}`;onCabeceraFieldChange();}},
   usoCfdi:{title:'Uso CFDI',url:'/clientes/lookup/sat/uso-cfdi',onSelect:(clave,desc)=>{document.getElementById('f_c_UsoCFDI').value=clave;document.getElementById('f_c_UsoCFDI_disp').value=`${clave} - ${desc}`;onCabeceraFieldChange();}},
   tipoRelacion:{title:'Tipo de Relación',url:'/clientes/lookup/sat/tipo-relacion',onSelect:(clave,desc)=>{document.getElementById('f_c_TipoRelacion').value=clave;document.getElementById('f_c_TipoRelacion_disp').value=`${clave} - ${desc}`;onCabeceraFieldChange();}},
+  moneda:{title:'Moneda',url:'/clientes/lookup/sat/moneda',onSelect:(clave,desc)=>{
+    document.getElementById('f_Moneda').value=clave;document.getElementById('f_Moneda_disp').value=`${clave} - ${desc}`;
+    const t=document.getElementById('f_TipoCambio'); if(clave==='MXN'){t.value=1;t.readOnly=true;} else {t.readOnly=false; if(parseFloat(t.value)===1) t.value='';}
+    onCabeceraFieldChange();}},
   claveProdServ:{title:'Clave Producto/Servicio',url:'/clientes/lookup/sat/prodserv',onSelect:(clave,desc)=>{document.getElementById('f_c_ClaveProdServ').value=clave;document.getElementById('f_c_ClaveProdServ_disp').value=`${clave} - ${desc}`;onCabeceraFieldChange();}},
   claveUnidad:{title:'Clave Unidad',url:'/clientes/lookup/sat/unidad',onSelect:(clave,desc)=>{document.getElementById('f_c_ClaveUnidad').value=clave;document.getElementById('f_c_ClaveUnidad_disp').value=`${clave} - ${desc}`;onCabeceraFieldChange();}},
 };

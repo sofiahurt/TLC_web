@@ -4,6 +4,7 @@ const { create } = require('xmlbuilder2');
 const { sql } = require('../config/db');
 const { serieFiscal } = require('../config/empresa-serie');
 const { fmt, fmtDec, isoFechaHora, agregarConcepto, IVA_TASA } = require('./cfdi-utils');
+const { monedaNota } = require('./notacred-esquema');
 
 // c_TipoRelacion en el catálogo sat_TipoRelacion (y como se captura en la app)
 // no lleva cero a la izquierda ('1','2'...) pero el XSD del SAT exige 2
@@ -47,6 +48,9 @@ async function buildCFDINotaCredito(tipo, serie, idNotaCredito, centralOperativo
     .query(`SELECT * FROM Empresa2.NotaCredDeta WHERE ID_NOTACREDITO=@id AND ${NC_EQ} ORDER BY ID_NOTASCREDDETA`);
   const lineas = detRes.recordset;
   if (!lineas.length) throw new Error(`La Nota ${idNotaCredito} no tiene líneas`);
+
+  const moneda = monedaNota(cab.Moneda);
+  if (moneda !== 'MXN' && !(parseFloat(cab.TipoCambio) > 0)) throw new Error(`La nota está en ${moneda}: capture el tipo de cambio.`);
 
   // 3. Empresa emisora
   const empRes = await pool.request()
@@ -97,7 +101,8 @@ async function buildCFDINotaCredito(tipo, serie, idNotaCredito, centralOperativo
     'Sello':            '',
     'FormaPago':        fmt(cab.c_FormaPago) || undefined,
     'SubTotal':         fmtDec(cab.Subtotal, 2),
-    'Moneda':           'MXN',
+    'Moneda':           moneda,
+    'TipoCambio':       moneda !== 'MXN' ? fmtDec(cab.TipoCambio, 4) : undefined,
     'Total':            fmtDec(cab.ImporteTotal, 2),
     'TipoDeComprobante': tipoComprobante,
     'Exportacion':      '01',
