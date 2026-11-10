@@ -7,6 +7,8 @@
 // (RUTA_XML, FAC_{Serie}{Folio}_Timbrada.xml) para que PDF y descarga lo hallen.
 //
 //   - Solo TipoDeComprobante="I"; los demás se omiten sin fallar el lote.
+//   - Los de Serie "ND" son Notas de Débito (el sistema anterior las timbraba como Ingreso): se importan a
+//     Empresa2.NotaCred/NotaCredDeta con Tipo='ND' y Serie='ND' (ver importarNotaDebito).
 //   - Si ya existe (SerieFac + Id_NoFactura) no se inserta.
 //   - Cabecera + conceptos en UNA transacción por archivo.
 //   - Los importes salen del XML tal cual (no se llama a recalcularCabecera).
@@ -18,6 +20,7 @@ const { sql } = require('../config/db');
 const { RUTA_XML } = require('../config/storage');
 const { importeALetras } = require('./importe-letras');
 const { fmt, porLocalName, attr } = require('./pdf-utils');
+const { recalcularStatusND } = require('./saldo-factura');
 
 const r2  = v => Math.round((Number(v) || 0) * 100) / 100;
 const num = v => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
@@ -93,8 +96,14 @@ function parsearFacturaXml(xmlString) {
     advertencias.push(`Total del XML (${total.toFixed(2)}) no coincide con SubTotal+IVA-Retención (${esperado.toFixed(2)}).`);
   }
 
+  // Documentos relacionados (en una ND: las facturas/ND a las que cobra), por UUID
+  const relNodos = hijos(comp, 'CfdiRelacionados');
+  const relUuids = [...new Set(relNodos.flatMap(n => hijos(n, 'CfdiRelacionado')).map(n => (n.getAttribute('UUID') || '').trim().toUpperCase()).filter(Boolean))];
+  const tipoRelacion = relNodos.length ? (relNodos[0].getAttribute('TipoRelacion') || '').trim() : '';
+
   const moneda = attr(comp, 'Moneda') || 'MXN';
   return {
+    relUuids, tipoRelacion,
     tipo, serie: attr(comp, 'Serie') || null, folio: parseInt(folioTxt, 10),
     fecha: mf[1], hora: mf[2],
     subTotal, iva, retencion, total, moneda,
@@ -140,6 +149,123 @@ function guardarXml(d, xmlString) {
   return null;
 }
 
+const esNotaDebito = d => (d.serie || '').trim().toUpperCase() === 'ND';
+const nombreXmlND = d => `ND_${d.serie}${d.folio}_Timbrada.xml`;
+const DESC_ND_DEFECTO = 'SERVICIO DE TRASLADO DE MERCANCIA VIA TRANSPORTE';
+
+// ── Nota de Débito (Ingreso con Serie ND) -> Empresa2.NotaCred / NotaCredDeta ──
+// Misma forma que una ND "Un Concepto" del sistema: importes de la cabecera tal cual el XML y una línea por cada
+// documento relacionado (ubicado por UUID) con importes en 0. No toca los saldos de las facturas. La ND entra
+// EMITIDA y su status se recalcula con lo ya aplicado en Cobros (recalcularStatusND). Clave: (ND, 'ND', folio).
+async function importarNotaDebito(pool, res, xmlString, d) {
+  res.nd = true;
+  res.factura = `ND-${d.folio}`;
+  const tx = new sql.Transaction(pool);
+  try {
+    await tx.begin();
+    const rqND = () => new sql.Request(tx).input('id', sql.Decimal(7), d.folio).input('serie', sql.VarChar(10), d.serie);
+    const cond = `Id_NotaCredito=@id AND LTRIM(RTRIM(Tipo))='ND' AND ISNULL(LTRIM(RTRIM(Serie)),'')=ISNULL(@serie,'')`;
+
+    const ex = await rqND().query(`SELECT UUID FROM Empresa2.NotaCred WITH (UPDLOCK, HOLDLOCK) WHERE ${cond}`);
+    if (ex.recordset[0]) { await tx.rollback(); res.estado = 'existente'; res.motivo = 'la nota de débito ya existe'; return res; }
+    const dupUuid = await new sql.Request(tx).input('uuid', sql.VarChar(149), d.uuid)
+      .query(`SELECT TOP 1 Id_NotaCredito, LTRIM(RTRIM(Serie)) Serie, LTRIM(RTRIM(Tipo)) Tipo FROM Empresa2.NotaCred WHERE LTRIM(RTRIM(UUID)) = @uuid`);
+    if (dupUuid.recordset[0]) {
+      await tx.rollback(); const o = dupUuid.recordset[0];
+      res.estado = 'existente'; res.motivo = `ya existe: el UUID está en la nota ${o.Tipo} ${o.Serie || ''}${o.Id_NotaCredito}`;
+      return res;
+    }
+    // ¿Quedó también como Factura (importaciones anteriores)? Solo se avisa; se borra a mano.
+    const comoFactura = await new sql.Request(tx).input('uuid', sql.VarChar(149), d.uuid)
+      .query(`SELECT TOP 1 Id_NoFactura, LTRIM(RTRIM(SerieFac)) SerieFac FROM Empresa2.Factura WHERE LTRIM(RTRIM(UUID)) = @uuid`);
+    if (comoFactura.recordset[0]) {
+      const o = comoFactura.recordset[0];
+      res.advertencias.push(`El mismo UUID ya está registrado como Factura ${o.SerieFac ? o.SerieFac + '-' : ''}${o.Id_NoFactura}; bórrela manualmente para no duplicar.`);
+    }
+
+    const cli = await buscarCliente(tx, d);
+    if (!cli.id) res.clienteNoEncontrado = cli.motivo;
+
+    const c1 = d.conceptos[0];
+    if (d.conceptos.length > 1) res.advertencias.push(`El XML trae ${d.conceptos.length} conceptos; la nota guarda la clave y descripción del primero (los importes son los de la cabecera).`);
+    let descripcion = c1.descripcion;
+    if (descripcion.includes('\uFFFD')) descripcion = DESC_ND_DEFECTO;   // XML con acentos mal codificados
+    if (descripcion.length > 100) res.advertencias.push(`La descripción del concepto (${descripcion.length} car.) se recortó a 100.`);
+
+    await rqND()
+      .input('fecha', sql.VarChar(10), d.fecha).input('hora', sql.VarChar(8), d.hora)
+      .input('cformapago', sql.VarChar(4), cortar(d.formaPago, 4) || null).input('clavemp', sql.VarChar(3), cortar(d.metodoPago, 3) || null)
+      .input('lugarexp', sql.VarChar(60), cortar(d.lugarExpedicion, 60) || null)
+      .input('idCli', sql.Decimal(7), cli.id).input('nombreCom', sql.VarChar(150), cortar(d.nombre, 150))
+      .input('ret', sql.Decimal(9, 2), d.retencion).input('sub', sql.Decimal(9, 2), d.subTotal)
+      .input('iva', sql.Decimal(10, 2), d.iva).input('tot', sql.Decimal(12, 2), d.total)
+      .input('letras', sql.VarChar(200), importeALetras(d.total, d.moneda))
+      .input('trel', sql.VarChar(3), d.tipoRelacion ? String(parseInt(d.tipoRelacion, 10)) : '2')
+      .input('uso', sql.VarChar(5), cortar(d.usoCfdi, 5) || null)
+      .input('nocert', sql.VarChar(79), cortar(d.noCertificado, 79) || null)
+      .input('ft', sql.VarChar(20), cortar(d.fechaTimbrado, 20) || null).input('uuid', sql.VarChar(149), d.uuid)
+      .input('uni', sql.VarChar(5), cortar(c1.claveUnidad, 5) || 'E48').input('prod', sql.VarChar(20), cortar(c1.claveProdServ, 20) || '78101802')
+      .input('desc', sql.VarChar(100), cortar(descripcion, 100)).input('rfcp', sql.VarChar(20), cortar(d.rfcProvCertif, 20) || null)
+      .query(`INSERT INTO Empresa2.NotaCred(
+          Serie, Id_NotaCredito, Fecha, Hora, c_FormaPago, ClaveMP, LugarExpedicion, Id_Cliente, NombreCom, TipoFactura,
+          Retencion, Subtotal, IVA, ImporteTotal, ImporteLetras, SumaPartidas, Status, c_TipoRelacion, c_UsoCFDI, noCertificado,
+          FechaTimbrado, UUID, c_ClaveUnidad, c_ClaveProdServ, Descripcion, RfcProvCertif, FlagResNota, Tipo, WhoIs
+        ) VALUES(
+          @serie, @id, @fecha, @hora, @cformapago, @clavemp, @lugarexp, @idCli, @nombreCom, 'Pesos',
+          @ret, @sub, @iva, @tot, @letras, @tot, 'EMITIDA', @trel, @uso, @nocert,
+          @ft, @uuid, @uni, @prod, @desc, @rfcp, 1, 'ND', 'Importación XML'
+        )`);
+
+    // Una línea por documento relacionado, ubicado por UUID (factura; si no, otra ND)
+    let idd = 0;
+    for (const uuid of d.relUuids) {
+      const fac = (await new sql.Request(tx).input('u', sql.VarChar(149), uuid)
+        .query(`SELECT Id_NoFactura, LTRIM(RTRIM(SerieFac)) SerieFac, TOTAL, PagosReal, NotasCredito, UUID FROM Empresa2.Factura WHERE UPPER(LTRIM(RTRIM(UUID))) = @u`)).recordset[0];
+      let rel = null;
+      if (fac) rel = { idFac: Number(fac.Id_NoFactura), serieFac: fac.SerieFac || null, idND: 0, serieND: null, total: num(fac.TOTAL), pagos: num(fac.PagosReal), notas: num(fac.NotasCredito), uuid: fmt(fac.UUID) };
+      else {
+        const nd = (await new sql.Request(tx).input('u', sql.VarChar(149), uuid)
+          .query(`SELECT Id_NotaCredito, LTRIM(RTRIM(Serie)) Serie, ImporteTotal, UUID FROM Empresa2.NotaCred WHERE LTRIM(RTRIM(Tipo))='ND' AND UPPER(LTRIM(RTRIM(UUID))) = @u`)).recordset[0];
+        if (nd) rel = { idFac: 0, serieFac: null, idND: Number(nd.Id_NotaCredito), serieND: nd.Serie || null, total: num(nd.ImporteTotal), pagos: 0, notas: 0, uuid: fmt(nd.UUID) };
+      }
+      if (!rel) {
+        // No está en el sistema: la partida se agrega igual (solo con el UUID) y se avisa
+        res.advertencias.push(`Documento relacionado ${uuid} no encontrado en el sistema; la partida se agregó solo con el UUID.`);
+        rel = { idFac: 0, serieFac: null, idND: 0, serieND: null, total: 0, pagos: 0, notas: 0, uuid };
+      }
+      idd++;
+      await rqND().input('idd', sql.Decimal(7), idd).input('idCli', sql.Decimal(7), cli.id)
+        .input('idf', sql.Decimal(7), rel.idFac).input('serieFac', sql.VarChar(20), rel.serieFac).input('uuidf', sql.VarChar(60), rel.uuid || uuid)
+        .input('idnd', sql.Decimal(7), rel.idND).input('seriend', sql.VarChar(20), rel.serieND)
+        .input('totalfac', sql.Decimal(11, 2), rel.total).input('pagos', sql.Decimal(11, 2), rel.pagos).input('notas', sql.Decimal(11, 2), rel.notas)
+        .query(`INSERT INTO Empresa2.NotaCredDeta(
+            SERIE, ID_NOTACREDITO, ID_NOTASCREDDETA, ID_CLIENTE, TIPO, ID_NOFACTURA, SerieFac, UUIDFac, Id_NotaDebito, SerieND,
+            TOTALFAC, PAGOSREALFAC, NOTASCREDITOFAC, RETENCION, SUBTOTAL, IVA, IMPORTEAPLICA
+          ) VALUES(
+            @serie, @id, @idd, @idCli, 'ND', @idf, @serieFac, @uuidf, @idnd, @seriend,
+            @totalfac, @pagos, @notas, 0, 0, 0, 0
+          )`);
+    }
+
+    // El status lo da lo aplicado en Cobros/Notas a esta ND (EMITIDA si nada)
+    await recalcularStatusND(tx, { idNotaDebito: d.folio, serieND: d.serie });
+
+    try {
+      fs.mkdirSync(RUTA_XML, { recursive: true });
+      const destino = path.join(RUTA_XML, nombreXmlND(d));
+      if (!fs.existsSync(destino)) fs.writeFileSync(destino, xmlString, 'utf8');
+    } catch (err) { throw new Error(`No se pudo guardar el XML en ${RUTA_XML}: ${err.message}`); }
+
+    await tx.commit();
+    res.estado = 'importada'; res.conceptos = d.relUuids.length; res.relacionadas = idd;
+    return res;
+  } catch (err) {
+    try { await tx.rollback(); } catch (_) { /* ya cerrada */ }
+    res.estado = 'error'; res.motivo = err.message;
+    return res;
+  }
+}
+
 // ── Importa UN xml. Nunca lanza: devuelve { estado, ... } ────────────────────
 // estado: importada | existente | completada | omitida | error
 async function importarXml(pool, archivo, xmlString, opts = {}) {
@@ -152,6 +278,7 @@ async function importarXml(pool, archivo, xmlString, opts = {}) {
   if (d.tipo !== 'I') { res.estado = 'omitida'; res.motivo = `omitido: tipo ${d.tipo || '(sin tipo)'}`; return res; }
   res.factura = `${d.serie ? d.serie + '-' : ''}${d.folio}`;
   res.advertencias = d.advertencias.slice();
+  if (esNotaDebito(d)) return importarNotaDebito(pool, res, xmlString, d);
 
   const tx = new sql.Transaction(pool);
   try {
@@ -246,13 +373,14 @@ function listarXml(carpeta) {
 }
 
 function resumenVacio(total) {
-  return { total, procesados: 0, importadas: 0, existentes: 0, completadas: 0, omitidas: 0, errores: 0, clientesNoEncontrados: 0, detalle: [], terminado: false };
+  return { total, procesados: 0, notasDebito: 0, importadas: 0, existentes: 0, completadas: 0, omitidas: 0, errores: 0, clientesNoEncontrados: 0, detalle: [], terminado: false };
 }
 function acumular(resumen, r) {
   resumen.procesados++;
   ({ importada: () => resumen.importadas++, existente: () => resumen.existentes++, completada: () => resumen.completadas++,
      omitida: () => resumen.omitidas++, error: () => resumen.errores++ })[r.estado]();
   if (r.clienteNoEncontrado) resumen.clientesNoEncontrados++;
+  if (r.nd && r.estado === 'importada') resumen.notasDebito++;
   resumen.detalle.push(r);
 }
 

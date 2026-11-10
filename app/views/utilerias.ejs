@@ -264,11 +264,11 @@ function pintarImportacion(t){
   const avisos=t.detalle.filter(x=>(x.advertencias||[]).length);
   box.innerHTML=
     `<div class="small mb-2">Total: <strong>${t.total}</strong> — <span class="text-success">${t.importadas} importadas</span>, `+
-    `<span class="text-primary">${t.completadas} completadas</span>, <span class="text-warning">${t.existentes} ya existían</span>, `+
+    `${t.notasDebito?`(<strong>${t.notasDebito}</strong> de ellas son notas de débito serie ND) `:''}<span class="text-primary">${t.completadas} completadas</span>, <span class="text-warning">${t.existentes} ya existían</span>, `+
     `<span class="text-secondary">${t.omitidas} omitidas por tipo</span>, <span class="text-danger">${t.errores} con error</span>, `+
     `${t.clientesNoEncontrados} clientes no encontrados.</div>`+
     (t.errorGeneral?`<div class="alert alert-danger py-2 small">${_esc(t.errorGeneral)}</div>`:'')+
-    filas('importada','Importadas',x=>`${x.conceptos} concepto(s)`)+filas('completada','Completadas')+filas('existente','Ya existentes')+
+    filas('importada','Importadas',x=>x.nd?`Nota de débito; ${x.relacionadas} documento(s) relacionado(s)`:`${x.conceptos} concepto(s)`)+filas('completada','Completadas')+filas('existente','Ya existentes')+
     filas('omitida','Omitidas')+filas('error','Con error')+
     (sinCli.length?`<div class="mb-3"><div class="fw-semibold small mb-1">Clientes no encontrados (importadas con Id_Cliente = 0)</div><table class="table table-sm table-bordered mb-0"><tbody>`+
       sinCli.map(x=>`<tr><td class="small">${_esc(x.factura||x.archivo)}</td><td class="small">${_esc(x.clienteNoEncontrado)}</td></tr>`).join('')+`</tbody></table></div>`:'')+
