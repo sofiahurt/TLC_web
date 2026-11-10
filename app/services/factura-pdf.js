@@ -21,6 +21,7 @@ const { sql } = require('../config/db');
 const { RUTA_XML } = require('../config/storage');
 const { serieFiscal } = require('../config/empresa-serie');
 const { buildCFDIFactura } = require('./cfdi-factura');
+const { CLAVE_PRODSERV_APOYO, DESCRIPCION_APOYO, esPartidaDeApoyo } = require('./factura-conceptos');
 const { DOMParser } = require('@xmldom/xmldom');
 const QRCode = require('qrcode');
 const {
@@ -243,15 +244,17 @@ function tablaUnConcepto(d) {
 // agrupa en "Otros" -- confirmado con el usuario que no hace falta una
 // columna dedicada para cada uno de esos.
 function tablaPorLinea(d) {
-  const body = d.lineas.map(l => {
+  const body = d.lineas.map((l, idx) => {
+    // Incluir CP con varias partidas: de la 2 en adelante son conceptos de apoyo (misma clave y descripción que el XML)
+    const apoyo = esPartidaDeApoyo(d.fac, d.lineas, idx);
     const flete   = num(l.COSTOFLETE);
     const renta   = num(l.CostoRenta);
     const maniobras = num(l.COSTOMANIOBRAS);
     const otros = num(l.COSTOAUTOPISTAS) + num(l.CostoPension) + num(l.CostoEstadias) + num(l.COSTOSOTROS) + num(l.KILOMETROS) + num(l.COSTODEMORAS);
-    const descripcion = fmt(l.DESCRIPCION) || fmt(l.DESFLETE);
+    const descripcion = apoyo ? DESCRIPCION_APOYO : (fmt(l.DESCRIPCION) || fmt(l.DESFLETE));
     const textoAdd = fmt(l.TEXTOADD);
     return [
-      { text: fmt(l.C_CLAVEPRODSERV), fontSize: 8 },
+      { text: apoyo ? CLAVE_PRODSERV_APOYO : fmt(l.C_CLAVEPRODSERV), fontSize: 8 },
       { text: textoAdd ? `${descripcion}\n${textoAdd}` : descripcion, fontSize: 8 },
       { text: `$${numFmt(flete, 2)}`, fontSize: 8, alignment: 'right' },
       { text: `$${numFmt(maniobras, 2)}`, fontSize: 8, alignment: 'right' },

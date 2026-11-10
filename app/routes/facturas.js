@@ -509,6 +509,7 @@ router.post('/partida/agregar', requierePermiso('facturas.editar'), async (req, 
         const metodoPago = trim(f.MetodoPago) || trim(cli.METODOPAGO) || 'Pago en parcialidades o diferido';
         const flagResFac = f.flagResFac ? 1 : 0;
         const incluirCP = f.incluirCP ? 1 : 0;
+        if (flagResFac && incluirCP) throw Object.assign(new Error('No se puede combinar "Un Concepto" con "Incluir CP": marque solo una de las dos.'), { status: 400 });
         const descripcion = trim(f.descripcion);
         const observaciones = trim(f.observaciones);
 
@@ -667,6 +668,8 @@ router.post('/cabecera/actualizar', requierePermiso('facturas.editar'), async (r
       // con lo que ya se timbró en el CFDI real.
       if (trim(facRes.recordset[0].UUID)) throw Object.assign(new Error('La factura ya está timbrada; solo se puede consultar.'), { status: 409 });
       const yaTimbrada = false;
+      // "Un Concepto" e "Incluir CP" son excluyentes (un concepto agregado no puede llevar el complemento Carta Porte de una partida)
+      if (req.body.flagResFac && req.body.incluirCP) throw Object.assign(new Error('No se puede combinar "Un Concepto" con "Incluir CP": marque solo una de las dos.'), { status: 400 });
       const nuevaFecha = !yaTimbrada && trim(req.body.fecha);
       let extraSet = '';
       const r2 = reqSerieFac(new sql.Request(tx), serieFac)

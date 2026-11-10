@@ -5,6 +5,7 @@ const { sql } = require('../config/db');
 const { serieFiscal } = require('../config/empresa-serie');
 const { buildComplementoCartaPorte } = require('./cfdi-traslado');
 const { fmt, fmtDec, isoFechaHora, agregarConcepto, IVA_TASA } = require('./cfdi-utils');
+const { CLAVE_PRODSERV_APOYO, DESCRIPCION_APOYO, esMultipartidaConCP, esPartidaDeApoyo } = require('./factura-conceptos');
 
 /**
  * Arma el CFDI 4.0 (TipoDeComprobante="I") de una Factura. Reutiliza el mismo
@@ -40,8 +41,10 @@ async function buildCFDIFactura(idNoFactura, serieFac, centralOperativo, pool) {
   if (!lineas.length) throw new Error(`La Factura ${idNoFactura} no tiene partidas`);
 
   const incluirCP = parseInt(fac.IncluirCP) === 1;
-  if (incluirCP && lineas.length > 1) {
-    throw new Error('No se puede incluir el complemento Carta Porte: la factura tiene más de una Carta Porte aplicada. El complemento CP representa un solo viaje.');
+  // Incluir CP con varias partidas: la 1 es el flete (y arma el complemento); las demás van como conceptos de apoyo
+  // (ver factura-conceptos.js). Eso solo se puede armar partida por partida, no en modo "Un Concepto".
+  if (esMultipartidaConCP(fac, lineas) && parseInt(fac.FlagResFac) === 1) {
+    throw new Error('Con "Incluir CP" y varias partidas la factura debe armarse por partida: desmarque "Un Concepto".');
   }
 
   // 3. Empresa emisora — misma consulta/patrón que buildCFDITraslado.
@@ -133,11 +136,12 @@ async function buildCFDIFactura(idNoFactura, serieFac, centralOperativo, pool) {
     if (r.iva > 0.005) totalBaseIVA += r.subtotal;
   } else {
     // Un concepto por cada línea de FacDeta
-    for (const l of lineas) {
+    for (const [idx, l] of lineas.entries()) {
+      const apoyo = esPartidaDeApoyo(fac, lineas, idx);
       const r = agregarConcepto(conceptosNode, {
-        claveProdServ: l.C_CLAVEPRODSERV,
-        claveUnidad:   l.C_CLAVEUNIDAD,
-        descripcion:   l.DESCRIPCION || `CARTA PORTE ${fmt(l.CARTAPORTE)}`,
+        claveProdServ: apoyo ? CLAVE_PRODSERV_APOYO : l.C_CLAVEPRODSERV,
+        claveUnidad:   (apoyo && !fmt(l.C_CLAVEUNIDAD)) ? 'E48' : l.C_CLAVEUNIDAD,
+        descripcion:   apoyo ? DESCRIPCION_APOYO : (l.DESCRIPCION || `CARTA PORTE ${fmt(l.CARTAPORTE)}`),
         subtotal:      l.SUBTOTAL,
         iva:           parseFloat(l.IVA) || 0,
         reten:         parseFloat(l.RETEN) || 0,
