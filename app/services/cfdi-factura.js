@@ -7,6 +7,19 @@ const { buildComplementoCartaPorte } = require('./cfdi-traslado');
 const { fmt, fmtDec, isoFechaHora, agregarConcepto, IVA_TASA } = require('./cfdi-utils');
 const { CLAVE_PRODSERV_APOYO, DESCRIPCION_APOYO, esMultipartidaConCP, esPartidaDeApoyo } = require('./factura-conceptos');
 
+// Base de la retención de una partida (como el sistema Clarion: flete + kilómetros + paradas; aquí también la renta,
+// que es el núcleo alternativo al flete). Los demás conceptos (casetas, maniobras, otros...) solo llevan IVA.
+// La base debe cuadrar con la retención guardada (4%); si no cuadra al centavo se deriva de ella (retención / 4%).
+const TASA_RETENCION = 0.04;
+function baseRetencionLinea(l) {
+  const reten = parseFloat(l.RETEN) || 0;
+  if (reten <= 0.005) return 0;
+  const n = v => parseFloat(v) || 0;
+  const base = Math.round((n(l.COSTOFLETE) + n(l.CostoRenta) + n(l.KILOMETROS) + n(l.COSTOPARADA)) * 100) / 100;
+  if (base > 0.005 && Math.abs(Math.round(base * TASA_RETENCION * 100) / 100 - reten) <= 0.015) return base;
+  return Math.round(reten / TASA_RETENCION * 100) / 100;
+}
+
 /**
  * Arma el CFDI 4.0 (TipoDeComprobante="I") de una Factura. Reutiliza el mismo
  * armador de complemento Carta Porte que usa buildCFDITraslado
@@ -131,6 +144,11 @@ async function buildCFDIFactura(idNoFactura, serieFac, centralOperativo, pool) {
       subtotal:      fac.SubTotal,
       iva:           parseFloat(fac.IVA) || 0,
       reten:         parseFloat(fac.Retencion) || 0,
+      baseRetencion: (() => {   // suma de las bases de retención de las partidas; si no cuadra con la cabecera, Retención / 4%
+        const reten = parseFloat(fac.Retencion) || 0;
+        const suma = lineas.reduce((a, l) => a + baseRetencionLinea(l), 0);
+        return Math.abs(suma * TASA_RETENCION - reten) <= 0.02 * lineas.length ? suma : reten / TASA_RETENCION;
+      })(),
     });
     totalIVA += r.iva; totalRET += r.reten;
     if (r.iva > 0.005) totalBaseIVA += r.subtotal;
@@ -145,6 +163,7 @@ async function buildCFDIFactura(idNoFactura, serieFac, centralOperativo, pool) {
         subtotal:      l.SUBTOTAL,
         iva:           parseFloat(l.IVA) || 0,
         reten:         parseFloat(l.RETEN) || 0,
+        baseRetencion: baseRetencionLinea(l),
       });
       totalIVA += r.iva; totalRET += r.reten;
       if (r.iva > 0.005) totalBaseIVA += r.subtotal;

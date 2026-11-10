@@ -40,7 +40,9 @@ function claveUnidadDescripcion(claveUnidad) {
 
 // Arma un cfdi:Concepto con su Impuestos (IVA 16% + retención IVA 002 4% si
 // aplica) y regresa los importes para acumular a nivel comprobante.
-function agregarConcepto(conceptosNode, { claveProdServ, claveUnidad, descripcion, subtotal, iva, reten }) {
+// baseRetencion (opcional): base de la retención cuando es menor al subtotal (partida con kilómetros + otros: solo el
+// núcleo retiene). Sin ella la retención usa el subtotal, como siempre.
+function agregarConcepto(conceptosNode, { claveProdServ, claveUnidad, descripcion, subtotal, iva, reten, baseRetencion }) {
   const importe = fmtDec(subtotal, 2);
   // ObjetoImp: 02 (sí objeto de impuesto) si lleva IVA o retención; 01 (no objeto) si no lleva ninguno.
   const llevaImpuestos = iva > 0.005 || reten > 0.005;
@@ -68,7 +70,7 @@ function agregarConcepto(conceptosNode, { claveProdServ, claveUnidad, descripcio
   }
   if (reten > 0.005) {
     impuestosNode.ele('cfdi:Retenciones').ele('cfdi:Retencion', {
-      Base: importe, Impuesto: '002', TipoFactor: 'Tasa', TasaOCuota: RET_TASA, Importe: fmtDec(reten, 2),
+      Base: baseRetencion > 0.005 ? fmtDec(baseRetencion, 2) : importe, Impuesto: '002', TipoFactor: 'Tasa', TasaOCuota: RET_TASA, Importe: fmtDec(reten, 2),
     }).up().up();
   }
   impuestosNode.up();

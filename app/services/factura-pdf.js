@@ -247,18 +247,19 @@ function tablaPorLinea(d) {
   const body = d.lineas.map((l, idx) => {
     // Incluir CP con varias partidas: de la 2 en adelante son conceptos de apoyo (misma clave y descripción que el XML)
     const apoyo = esPartidaDeApoyo(d.fac, d.lineas, idx);
-    const flete   = num(l.COSTOFLETE);
-    const renta   = num(l.CostoRenta);
+    // Importe = el costo base de la partida: flete, renta o kilómetros, según cuál corresponda (los que apliquen se suman)
+    const importe = num(l.COSTOFLETE) + num(l.CostoRenta) + num(l.KILOMETROS);
     const maniobras = num(l.COSTOMANIOBRAS);
-    const otros = num(l.COSTOAUTOPISTAS) + num(l.CostoPension) + num(l.CostoEstadias) + num(l.COSTOSOTROS) + num(l.KILOMETROS) + num(l.COSTODEMORAS);
+    const demoras = num(l.COSTODEMORAS);
+    const otros = num(l.COSTOAUTOPISTAS) + num(l.CostoPension) + num(l.CostoEstadias) + num(l.COSTOSOTROS);
     const descripcion = apoyo ? DESCRIPCION_APOYO : (fmt(l.DESCRIPCION) || fmt(l.DESFLETE));
     const textoAdd = fmt(l.TEXTOADD);
     return [
       { text: apoyo ? CLAVE_PRODSERV_APOYO : fmt(l.C_CLAVEPRODSERV), fontSize: 8 },
       { text: textoAdd ? `${descripcion}\n${textoAdd}` : descripcion, fontSize: 8 },
-      { text: `$${numFmt(flete, 2)}`, fontSize: 8, alignment: 'right' },
+      { text: `$${numFmt(importe, 2)}`, fontSize: 8, alignment: 'right' },
       { text: `$${numFmt(maniobras, 2)}`, fontSize: 8, alignment: 'right' },
-      { text: `$${numFmt(renta, 2)}`, fontSize: 8, alignment: 'right' },
+      { text: `$${numFmt(demoras, 2)}`, fontSize: 8, alignment: 'right' },
       { text: `$${numFmt(otros, 2)}`, fontSize: 8, alignment: 'right' },
     ];
   });
