@@ -265,7 +265,7 @@
         <li class="nav-item"><a class="nav-link" data-doc="nd" href="#" onclick="return docLkSwitchTab(this)">Notas de Débito</a></li>
       </ul>
       <input type="text" id="docLkQ" class="form-control form-control-sm mb-2" placeholder="Buscar por folio...">
-      <table class="table table-hover table-sm"><thead class="table-secondary"><tr><th>Folio</th><th>Fecha</th><th class="text-end">Saldo</th><th>Status</th></tr></thead>
+      <table class="table table-hover table-sm"><thead class="table-secondary"><tr><th>Serie</th><th>Folio</th><th>Fecha</th><th class="text-end">Saldo</th><th>Status</th></tr></thead>
       <tbody id="docLkBody"></tbody></table>
       <div class="d-flex justify-content-between align-items-center">
         <span id="docLkInfo" class="small text-muted"></span>
@@ -740,7 +740,7 @@ function loadDocLk(){
       const fecha = docLkTipo==='factura' ? r.FechaFactura : r.Fecha;
       const saldo = docLkTipo==='factura' ? r.Saldo : r.ImporteTotal;
       const serieRef = docLkTipo==='factura' ? (r.SerieFac||'') : (r.SerieND||'');
-      return `<tr data-folio="${folio}" data-serie="${serieRef}" style="cursor:pointer"><td>${folio}</td><td>${fmtFechaMx(fecha)}</td><td class="text-end">${fmtMoney(saldo)}</td><td>${r.Status||''}</td></tr>`;
+      return `<tr data-folio="${folio}" data-serie="${serieRef}" style="cursor:pointer"><td>${serieRef}</td><td>${folio}</td><td>${fmtFechaMx(fecha)}</td><td class="text-end">${fmtMoney(saldo)}</td><td>${r.Status||''}</td></tr>`;
     }).join('');
     document.getElementById('docLkInfo').textContent=`Pág ${d.page}/${d.totalPages} — ${d.total} registros`;
     document.getElementById('docLkPrev').disabled=d.page<=1;
