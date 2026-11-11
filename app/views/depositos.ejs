@@ -59,11 +59,11 @@
     <div id="scrollTop"><div></div></div>
     <div class="table-responsive" id="scrollMain"><table class="table table-hover table-sm mb-0 align-middle" id="tblDepos">
       <thead class="thead-tlc"><tr>
-        <th>No</th><th>TC</th><th class="nw" style="min-width:260px">Operador</th><th class="nw" style="min-width:150px">Carta Porte</th>
+        <th>No</th><th>TC</th><th class="nw" style="min-width:260px">Operador</th><th class="nw" style="min-width:150px">Carta Porte</th><th class="nw" style="min-width:200px">Origen - Destino</th>
         <% conceptos.forEach(c => { %><th class="text-end c-<%= c %>"><%= c %></th><% }) %>
         <th class="text-end">Total</th><th class="text-center" style="width:90px">Autorizar</th>
       </tr></thead>
-      <tbody id="bodyDepos"><tr><td colspan="<%= conceptos.length + 6 %>" class="text-center text-muted py-3">Cargando...</td></tr></tbody>
+      <tbody id="bodyDepos"><tr><td colspan="<%= conceptos.length + 7 %>" class="text-center text-muted py-3">Cargando...</td></tr></tbody>
       <tfoot id="footDepos" class="fw-bold"></tfoot>
     </table></div>
   </div></div>
@@ -73,10 +73,11 @@
 <script>
 const CONCEPTOS = <%- JSON.stringify(conceptos) %>;
 const COLS_DEFAULT = ['Diesel', 'Casetas', 'Maniobra', 'Otros', 'Estadias', 'Demoras'];
-const NCOLS = CONCEPTOS.length + 6;
+const NCOLS = CONCEPTOS.length + 7;
 const esc = v => String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const money = v => Number(v || 0).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
 const el = id => document.getElementById(id);
+const odTxt = f => [f.Origen, f.Destino].filter(Boolean).join(' → ');
 const fechaActual = () => el('fFecha').value;
 
 function verError(m) { const e = el('msgError'); e.textContent = m || ''; e.classList.toggle('d-none', !m); }
@@ -105,6 +106,7 @@ function pintar() {
       <td>${f.Id_DepoSol}</td><td>${esc(f.TC)}</td>
       <td class="nw">${f.ID_OPERADOR == null ? '' : esc(f.ID_OPERADOR) + ' - '}${esc(f.OPERADOR)}</td>
       <td class="nw">${esc(f.Serie)}-${esc(f.CartaPorte)}</td>
+      <td class="nw od-cell" title="${esc(odTxt(f))}">${esc(odTxt(f))}</td>
       ${CONCEPTOS.map(c => `<td class="text-end c-${c}">${f[c] ? money(f[c]) : ''}</td>`).join('')}
       <td class="text-end fw-semibold">${money(f.Total)}</td>
       <td class="text-center"><input type="checkbox" class="form-check-input" ${f.FlagDeposito ? 'checked' : ''}
@@ -115,7 +117,7 @@ function pintar() {
   const aut = vista.filter(f => f.FlagDeposito);
   const suma = (arr, k) => arr.reduce((s, f) => s + Number(f[k] || 0), 0);
   el('footDepos').innerHTML = vista.length
-    ? `<tr class="table-light"><td colspan="4" class="text-end">Autorizados (${aut.length} de ${vista.length}):</td>
+    ? `<tr class="table-light"><td colspan="5" class="text-end">Autorizados (${aut.length} de ${vista.length}):</td>
         ${CONCEPTOS.map(c => `<td class="text-end c-${c}">${money(suma(aut, c))}</td>`).join('')}
         <td class="text-end">${money(suma(aut, 'Total'))}</td><td></td></tr>` : '';
   ajustarBarra();

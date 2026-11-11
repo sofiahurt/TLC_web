@@ -21,7 +21,7 @@ const CP_NO_CANCELADA = `NOT EXISTS (SELECT 1 FROM Empresa2.CartaPorte cpc
     WHERE cpc.Serie = ds.Serie AND cpc.CartaPorte = ds.CartaPorte AND UPPER(LTRIM(RTRIM(cpc.Status))) LIKE 'CANCELAD%')`;
 
 const SELECT_BASE = `
-  SELECT Id_DepoSol, TC, ID_OPERADOR, OPERADOR, Serie, CartaPorte,
+  SELECT Id_DepoSol, TC, ID_OPERADOR, OPERADOR, Serie, CartaPorte, Origen, Destino,
          ${CONCEPTOS.map(c => `ISNULL(${c},0) AS ${c}`).join(', ')},
          ${SUMA_SQL} AS Total, ISNULL(FlagDeposito,0) AS FlagDeposito, ISNULL(FlagEnDeposito,0) AS FlagEnDeposito
     FROM Empresa2.DepoSolicitud ds`;
@@ -47,7 +47,7 @@ router.get('/data', requierePermiso('depositos.ver'), async (req, res) => {
       WHERE Fecha=@f AND ISNULL(FlagEnDeposito,0)=0 AND ${CP_NO_CANCELADA}
       ORDER BY Id_DepoSol`);
     res.json({ filas: r.recordset.map(x => ({
-      ...x, TC: trim(x.TC), OPERADOR: trim(x.OPERADOR), Serie: trim(x.Serie), CartaPorte: trim(x.CartaPorte),
+      ...x, TC: trim(x.TC), OPERADOR: trim(x.OPERADOR), Serie: trim(x.Serie), CartaPorte: trim(x.CartaPorte), Origen: trim(x.Origen), Destino: trim(x.Destino),
     })) });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -79,7 +79,7 @@ router.post('/autorizar', requierePermiso('depositos.autorizar'), async (req, re
 // (solicitado - depositado) y la verificación se cierra con Validado. Una solicitud
 // validada ya no se edita hasta que se quita la validación.
 const SELECT_VERIF = `
-  SELECT Id_DepoSol, TC, ID_OPERADOR, OPERADOR, Serie, CartaPorte,
+  SELECT Id_DepoSol, TC, ID_OPERADOR, OPERADOR, Serie, CartaPorte, Origen, Destino,
          ${CONCEPTOS.map(c => `ISNULL(${c},0) AS ${c}`).join(', ')}, ${SUMA_SQL} AS Solicitado,
          ISNULL(FlagDeposito,0) AS FlagDeposito, MontoDepositado, Diferencia, ISNULL(Validado,0) AS Validado, WhoValida, FechaValida,
          NoCuenta, ISNULL(FlagEnDeposito,0) AS FlagEnDeposito,
@@ -98,7 +98,7 @@ router.get('/verificar/data', requierePermiso('depositos.ver'), async (req, res)
       ORDER BY Id_DepoSol`);
     const fechaTxt = v => (v instanceof Date ? v.toISOString().slice(0, 10) : trim(v));
     res.json({ filas: r.recordset.map(x => ({
-      ...x, TC: trim(x.TC), OPERADOR: trim(x.OPERADOR), Serie: trim(x.Serie), CartaPorte: trim(x.CartaPorte),
+      ...x, TC: trim(x.TC), OPERADOR: trim(x.OPERADOR), Serie: trim(x.Serie), CartaPorte: trim(x.CartaPorte), Origen: trim(x.Origen), Destino: trim(x.Destino),
       WhoValida: trim(x.WhoValida), FechaValida: fechaTxt(x.FechaValida),
       NoCuenta: trim(x.NoCuenta), CuentaOperador: trim(x.CuentaOperador),
     })) });
@@ -170,7 +170,7 @@ router.get('/excel', requierePermiso('depositos.ver'), async (req, res) => {
     const ws = wb.addWorksheet('Depositos');
     ws.addRow([`Depósitos autorizados del ${fecha.split('-').reverse().join('/')}`]).font = { bold: true, size: 13 };
     ws.addRow([]);
-    const enc = ws.addRow(['No', 'TC', 'Operador', 'Carta Porte', ...CONCEPTOS, 'Total']);
+    const enc = ws.addRow(['No', 'TC', 'Operador', 'Carta Porte', 'Origen - Destino', ...CONCEPTOS, 'Total']);
     enc.font = { bold: true, color: { argb: 'FFFFFFFF' } };
     enc.eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E78' } }; c.alignment = { horizontal: 'center' }; });
 
@@ -181,14 +181,15 @@ router.get('/excel', requierePermiso('depositos.ver'), async (req, res) => {
       ws.addRow([
         Number(x.Id_DepoSol), trim(x.TC),
         `${x.ID_OPERADOR == null ? '' : Number(x.ID_OPERADOR)} - ${trim(x.OPERADOR)}`,
-        `${trim(x.Serie)}-${trim(x.CartaPorte)}`, ...importes,
+        `${trim(x.Serie)}-${trim(x.CartaPorte)}`,
+        [trim(x.Origen), trim(x.Destino)].filter(Boolean).join(' → '), ...importes,
       ]);
     }
-    const tot = ws.addRow(['Totales:', '', '', '', ...sumas.map(v => Math.round(v * 100) / 100)]);
+    const tot = ws.addRow(['Totales:', '', '', '', '', ...sumas.map(v => Math.round(v * 100) / 100)]);
     tot.font = { bold: true };
     ws.columns.forEach((col, i) => {
-      if (i >= 4) col.numFmt = '$#,##0.00';
-      col.width = i === 2 ? 34 : i === 3 ? 18 : i >= 4 ? 13 : 10;
+      if (i >= 5) col.numFmt = '$#,##0.00';
+      col.width = i === 2 ? 34 : i === 3 ? 18 : i === 4 ? 40 : i >= 5 ? 13 : 10;
     });
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

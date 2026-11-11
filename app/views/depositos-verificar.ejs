@@ -64,13 +64,13 @@
     <div id="scrollTop"><div></div></div>
     <div class="table-responsive" id="scrollMain"><table class="table table-hover table-sm mb-0 align-middle" id="tblVerif">
       <thead class="thead-tlc"><tr>
-        <th>No</th><th>TC</th><th class="nw" style="min-width:230px">Operador</th><th class="nw" style="min-width:140px">Carta Porte</th>
+        <th>No</th><th>TC</th><th class="nw" style="min-width:230px">Operador</th><th class="nw" style="min-width:140px">Carta Porte</th><th class="nw" style="min-width:200px">Origen - Destino</th>
         <% conceptos.forEach(c => { %><th class="text-end c-<%= c %>"><%= c %></th><% }) %>
         <th class="text-end">Solicitado</th><th class="text-center" style="width:70px">Autorizada</th>
         <th style="min-width:120px">Depositado</th><th class="text-end">Diferencia</th><th style="min-width:120px">Cuenta</th>
         <th class="text-center" style="width:90px">Validada</th><th style="width:50px"></th>
       </tr></thead>
-      <tbody id="bodyVerif"><tr><td colspan="<%= conceptos.length + 11 %>" class="text-center text-muted py-3">Cargando...</td></tr></tbody>
+      <tbody id="bodyVerif"><tr><td colspan="<%= conceptos.length + 12 %>" class="text-center text-muted py-3">Cargando...</td></tr></tbody>
       <tfoot id="footVerif" class="fw-bold"></tfoot>
     </table></div>
   </div></div>
@@ -81,10 +81,11 @@
 const PUEDE = <%- JSON.stringify(puedeVerificar) %>;
 const CONCEPTOS = <%- JSON.stringify(conceptos) %>;
 const COLS_DEFAULT = ['Diesel', 'Casetas', 'Maniobra', 'Otros', 'Estadias', 'Demoras'];
-const NCOLS = CONCEPTOS.length + 11;
+const NCOLS = CONCEPTOS.length + 12;
 const esc = v => String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const money = v => Number(v || 0).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
 const el = id => document.getElementById(id);
+const odTxt = f => [f.Origen, f.Destino].filter(Boolean).join(' → ');
 const fechaActual = () => el('fFecha').value;
 const r2 = v => Math.round(Number(v || 0) * 100) / 100;
 function verError(m) { const e = el('msgError'); e.textContent = m || ''; e.classList.toggle('d-none', !m); }
@@ -130,6 +131,7 @@ function pintar() {
       <td>${f.Id_DepoSol}</td><td>${esc(f.TC)}</td>
       <td class="nw">${f.ID_OPERADOR == null ? '' : esc(f.ID_OPERADOR) + ' - '}${esc(f.OPERADOR)}</td>
       <td class="nw">${esc(f.Serie)}-${esc(f.CartaPorte)}</td>
+      <td class="nw od-cell" title="${esc(odTxt(f))}">${esc(odTxt(f))}</td>
       ${CONCEPTOS.map(c => `<td class="text-end c-${c}">${f[c] ? money(f[c]) : ''}</td>`).join('')}
       <td class="text-end fw-semibold">${money(f.Solicitado)}</td>
       <td class="text-center">${f.FlagDeposito ? '<i class="bi bi-check-circle-fill text-success" title="Autorizada"></i>' : '<i class="bi bi-dash-circle text-muted" title="Sin autorizar"></i>'}</td>
@@ -149,7 +151,7 @@ function pintar() {
   const suma = (arr, k) => arr.reduce((s, f) => s + Number(f[k] || 0), 0);
   const capt = vista.filter(f => f.MontoDepositado != null);
   el('footVerif').innerHTML = vista.length
-    ? `<tr class="table-light"><td colspan="4" class="text-end">Totales (${vista.length}):</td>
+    ? `<tr class="table-light"><td colspan="5" class="text-end">Totales (${vista.length}):</td>
         ${CONCEPTOS.map(c => `<td class="text-end c-${c}">${money(suma(vista, c))}</td>`).join('')}
         <td class="text-end">${money(suma(vista, 'Solicitado'))}</td><td></td>
         <td class="text-end">${money(suma(capt, 'MontoDepositado'))}</td><td class="text-end">${money(suma(capt, 'Diferencia'))}</td><td colspan="3"></td></tr>` : '';
