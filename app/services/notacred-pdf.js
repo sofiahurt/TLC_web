@@ -227,14 +227,13 @@ function bloqueTotales(d) {
     layout: NOBORDER,
   };
 
-  // NotaCred no tiene columna de moneda propia (el XML siempre declara
-  // Moneda="MXN" en cfdi-notacredito.js) -- se muestra fija, igual que ahí.
+  // Moneda de la nota (NotaCred.Moneda); las anteriores a la columna quedan en MXN.
   return {
     margin: [0, 8, 0, 0],
     columns: [
       { width: '*', fontSize: 8, stack: [
         { text: fmt(d.nc.ImporteLetras), bold: true, margin: [0,0,0,5] },
-        { text: [{ text: 'MONEDA: ', bold: true }, monedaTxt('MXN')], margin: [0,0,0,3] },
+        { text: [{ text: 'MONEDA: ', bold: true }, monedaTxt(fmt(d.nc.Moneda) || 'MXN')], margin: [0,0,0,3] },
         { text: [{ text: 'FORMA PAGO: ', bold: true }, `${fmt(d.nc.c_FormaPago)} ${formaPagoTxt(d.nc.c_FormaPago, d.nc.FormaPago)}`], margin: [0,0,0,3] },
         { text: [{ text: 'METODO PAGO: ', bold: true }, `${fmt(d.nc.ClaveMP)} ${metodoPagoTxt(d.nc.ClaveMP, d.nc.MetodoPago)}`] },
       ]},
