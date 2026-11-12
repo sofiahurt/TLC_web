@@ -623,7 +623,8 @@ router.post('/linea/actualizar-importe', requierePermiso('notacred.editar'), asy
       // subtotal ya topado al saldo produce un total que excede ese mismo saldo.
       const factorNeto = 1 + (ivaOriginal > 0.005 ? 0.16 : 0) - (retOriginal > 0.005 ? 0.04 : 0);
       const aplicaBruto = Math.round(nuevoSubtotal * factorNeto * 100) / 100;
-      if (aplicaBruto > saldoDisponible) {
+      // El tope solo aplica a Notas de Crédito: una ND puede ser mayor al saldo/suma de sus documentos.
+      if (trim(tipo) !== 'ND' && aplicaBruto > saldoDisponible) {
         nuevoSubtotal = Math.round((saldoDisponible / factorNeto) * 100) / 100;
         limitado = true;
       }
@@ -775,7 +776,8 @@ router.post('/cabecera/importe-resumen', requierePermiso('notacred.editar'), asy
       const FACTOR_NETO = 1.12; // 1 + IVA(16%) - Retención(4%)
       let nuevoSub = Math.max(0, num(subtotal));
       let limitado = false;
-      if (Math.round(nuevoSub * FACTOR_NETO * 100) / 100 > saldoDisponible) {
+      // El tope solo aplica a Notas de Crédito: una ND puede ser mayor al saldo/suma de sus documentos.
+      if (trim(tipo) !== 'ND' && Math.round(nuevoSub * FACTOR_NETO * 100) / 100 > saldoDisponible) {
         nuevoSub = Math.round((saldoDisponible / FACTOR_NETO) * 100) / 100;
         limitado = true;
       }
