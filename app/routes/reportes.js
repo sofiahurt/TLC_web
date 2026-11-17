@@ -53,7 +53,7 @@ function construirWorkbookReporte({ nombreHoja, titulo, subtitulo, columnas, fil
 
   columnas.forEach((c, idx) => {
     const columna = sheet.getColumn(idx + 1);
-    columna.width = 16;
+    columna.width = c.ancho || 16;
     if (NUMFMT_POR_TIPO[c.tipo]) columna.numFmt = NUMFMT_POR_TIPO[c.tipo];
   });
 
@@ -336,14 +336,14 @@ router.get('/facturas/excel', requierePermiso('reportes.facturas.ver'), async (r
   }
 });
 
-// ═══════════════════ REPORTE: SOLICITUD DE DEPÓSITOS ═════════════════════
+// ═══════════════════════ REPORTE: DEPÓSITOS ══════════════════════════════
 
 // Un renglón por solicitud VALIDADA y por concepto con monto (> 0).
 const CONCEPTOS_DEPO = ['Prestamo','Talachas','Llantas','Diesel','Comidas','Pension','Bascula','Casetas','Refacciones','Maniobra','Otros','Estadias','Demoras'];
 const COLUMNAS_DEPOSITOS = [
   { header: 'Fecha',          campo: 'Fecha',       tipo: 'fecha' },
   { header: 'Carta Porte',    campo: 'CartaPorte',  tipo: 'texto' },
-  { header: 'Origen-Destino', campo: 'OrigenDestino', tipo: 'texto' },
+  { header: 'Origen-Destino', campo: 'OrigenDestino', tipo: 'texto', ancho: 50 },
   { header: 'Id Operador',    campo: 'ID_OPERADOR', tipo: 'entero' },
   { header: 'Operador',       campo: 'OPERADOR',    tipo: 'texto' },
   { header: 'Concepto',       campo: 'Concepto',    tipo: 'texto' },
@@ -386,14 +386,14 @@ router.get('/depositos/excel', requierePermiso('reportes.depositos.ver'), async 
 
     const operador = idOperador ? (result.recordset[0] ? trim(result.recordset[0].OPERADOR) : `Id ${idOperador}`) : 'Todos los operadores';
     const workbook = construirWorkbookReporte({
-      nombreHoja: 'Solicitud de Depositos',
-      titulo: 'Reporte de Solicitud de Depósitos',
+      nombreHoja: 'Depositos',
+      titulo: 'Reporte de Depósitos',
       subtitulo: `Del ${fmtFechaTitulo(fechaIni)} al ${fmtFechaTitulo(fechaFin)} — ${operador} (solo validadas)`,
       columnas: COLUMNAS_DEPOSITOS,
       filas: result.recordset,
       columnasTotales: ['Monto'],
     });
-    await enviarWorkbook(res, workbook, 'SolicitudDepositos', fechaIni, fechaFin);
+    await enviarWorkbook(res, workbook, 'Depositos', fechaIni, fechaFin);
   } catch (err) {
     console.error('reportes/depositos/excel error:', err);
     if (!res.headersSent) res.status(500).json({ error: err.message }); else res.end();

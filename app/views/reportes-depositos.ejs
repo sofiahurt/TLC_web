@@ -3,7 +3,7 @@
 <div id="page-content">
   <div class="d-flex align-items-center mb-3">
     <button class="btn btn-sm btn-outline-secondary me-3 d-md-none" id="sidebarToggle"><i class="bi bi-list fs-5"></i></button>
-    <h4 class="mb-0 fw-bold flex-grow-1">Reportes — Solicitud de Depósitos</h4>
+    <h4 class="mb-0 fw-bold flex-grow-1">Reportes — Depósitos</h4>
   </div>
 
   <div class="card border-0 shadow-sm">
@@ -50,6 +50,6 @@ function generarExcelDepositos(){
   const errorEl=document.getElementById('dep_Error'); errorEl.classList.add('d-none');
   if(!fechaIni || !fechaFin){ errorEl.textContent='El rango de fechas es obligatorio.'; errorEl.classList.remove('d-none'); return; }
   const params=new URLSearchParams({ fechaIni, fechaFin, idOperador: document.getElementById('dep_Operador').value });
-  descargarReporte({ url:'/reportes/depositos/excel', params, btnId:'dep_BtnGenerar', progresoId:'dep_Progreso', errorId:'dep_Error', nombrePorDefecto:'SolicitudDepositos.xlsx' });
+  descargarReporte({ url:'/reportes/depositos/excel', params, btnId:'dep_BtnGenerar', progresoId:'dep_Progreso', errorId:'dep_Error', nombrePorDefecto:'Depositos.xlsx' });
 }
 </script>
