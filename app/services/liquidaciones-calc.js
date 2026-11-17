@@ -72,6 +72,8 @@ function calcularTotales(liq, renglones, opciones = {}) {
   // 5. Descuentos: diesel excedido + adelanto (el adelanto SÍ se descuenta al operador)
   const totalAdelanto = aCentavos(liq.totalAdelanto);
   const totalDesc = desDiesel + totalAdelanto;
+  // Incidencias cobradas al operador en esta liquidación (vienen de Empresa2.IncidenciasPagos): se descuentan aparte.
+  const descIncidencias = aCentavos(liq.descIncidencias);
 
   // 6. Total a liquidar al operador
   const sueldoBase = aCentavos(liq.sueldoBase), imss = aCentavos(liq.imss), infonavit = aCentavos(liq.infonavit);
@@ -79,7 +81,7 @@ function calcularTotales(liq, renglones, opciones = {}) {
   // Dif. aplicada: si se pidió aplicar las diferencias (aplicarDif), entra al total la diferencia completa:
   //   positiva (saldo en contra del operador) = se descuenta; negativa (saldo a favor) = se paga.
   const difAplicada = liq.aplicarDif ? totalDif : 0;
-  const totalLiquidacion = (totalComision + extraComision + sueldoBase) - (totalDesc + extraDescuento + infonavit + imss + difAplicada);
+  const totalLiquidacion = (totalComision + extraComision + sueldoBase) - (totalDesc + extraDescuento + infonavit + imss + difAplicada + descIncidencias);
 
   // 7. Gastos del viaje que absorbe la empresa
   const casetaSinIva = Math.round(real.caseta / (1 + ivaTasa));
@@ -98,6 +100,7 @@ function calcularTotales(liq, renglones, opciones = {}) {
     desDiesel: deCentavos(desDiesel),
     totalAdelanto: deCentavos(totalAdelanto),
     totalDesc: deCentavos(totalDesc),
+    descIncidencias: deCentavos(descIncidencias),
     totalLiquidacion: deCentavos(totalLiquidacion),
     totalViaje: deCentavos(totalViaje),
     granTotalLiq: deCentavos(granTotalLiq),

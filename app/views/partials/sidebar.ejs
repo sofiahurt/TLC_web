@@ -42,6 +42,9 @@
         <% if (typeof tienePermiso === 'function' && tienePermiso('liquidaciones.ver')) { %>
         <a href="/liquidaciones" class="sidebar-link <%= modulo==='liquidaciones' ?'active':'' %>"><i class="bi bi-person-badge"></i> Liquidaciones</a>
         <% } %>
+        <% if (typeof tienePermiso === 'function' && tienePermiso('incidencias.ver')) { %>
+        <a href="/incidencias" class="sidebar-link <%= modulo==='incidencias' ?'active':'' %>"><i class="bi bi-exclamation-triangle"></i> Incidencias</a>
+        <% } %>
       </div>
     </div>
 

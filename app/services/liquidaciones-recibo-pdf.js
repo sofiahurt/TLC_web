@@ -62,6 +62,7 @@ function paginaRecibo(liq, emp, esPrimera) {
             ...(liq.totalAdelanto ? [linea('Adelantos', -liq.totalAdelanto)] : []),
             ...(liq.extraDescuento ? [linea('Otros descuentos', -liq.extraDescuento)] : []),
             ...(liq.difAplicada ? [linea('Diferencias', -liq.difAplicada)] : []),
+            ...(liq.descIncidencias ? [linea('Incidencias', -liq.descIncidencias)] : []),
             linea('IMSS', -liq.imss),
             linea('Infonavit', -liq.infonavit),
             linea('Total a Liquidar', liq.totalLiquidacion, true),

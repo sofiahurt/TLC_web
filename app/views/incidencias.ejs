@@ -1,0 +1,245 @@
+<%- include('partials/header', { titulo: 'Incidencias' }) %>
+<%- include('partials/sidebar') %>
+<%
+  const can = c => typeof tienePermiso === 'function' && tienePermiso(c);
+%>
+<div id="page-content">
+  <div class="d-flex align-items-center mb-3">
+    <button class="btn btn-sm btn-outline-secondary me-3 d-md-none" id="sidebarToggle"><i class="bi bi-list fs-5"></i></button>
+    <h4 class="mb-0 fw-bold flex-grow-1">Incidencias</h4>
+  </div>
+
+  <div class="card border-0 shadow-sm mb-3"><div class="card-body py-2">
+    <div class="row g-2 align-items-end">
+      <div class="col-md-3"><label class="form-label small mb-0">Buscar (operador, carta porte, tipo, folio)</label>
+        <input type="text" id="fBuscar" class="form-control form-control-sm" oninput="clearTimeout(window._t);window._t=setTimeout(()=>cargar(1),300)" autocomplete="off"></div>
+      <div class="col-auto"><label class="form-label small mb-0">Del</label><input type="date" id="fIni" class="form-control form-control-sm" onchange="cargar(1)"></div>
+      <div class="col-auto"><label class="form-label small mb-0">Al</label><input type="date" id="fFin" class="form-control form-control-sm" onchange="cargar(1)"></div>
+      <div class="col-auto"><label class="form-label small mb-0">Estatus</label>
+        <select id="fStatus" class="form-select form-select-sm" onchange="cargar(1)"><option value="">Todos</option><option>ACTIVA</option><option>SALDADA</option><option>CANCELADA</option></select></div>
+      <div class="col-auto"><div class="form-check mb-1"><input type="checkbox" id="fPend" class="form-check-input" onchange="cargar(1)"><label class="form-check-label small" for="fPend">Solo con adeudo</label></div></div>
+      <div class="col-auto small text-muted" id="lblTotal"></div>
+      <div class="col-auto ms-auto btn-action-group">
+        <% if (can('incidencias.crear')) { %><button class="btn btn-sm btn-success" onclick="abrirNueva()"><i class="bi bi-plus-lg"></i> Nueva</button><% } %>
+        <button class="btn btn-sm btn-primary" data-requires-selection disabled onclick="openEdit()"><i class="bi bi-pencil"></i> Editar</button>
+        <% if (can('incidencias.cancelar')) { %><button class="btn btn-sm btn-danger" data-requires-selection disabled onclick="cancelarSeleccionada()"><i class="bi bi-x-circle"></i> Cancelar</button><% } %>
+      </div>
+    </div>
+    <div id="msgError" class="alert alert-danger d-none py-2 small mt-2 mb-0"></div>
+  </div></div>
+
+  <div class="card border-0 shadow-sm"><div class="card-body p-0"><div class="table-responsive">
+    <table class="table table-hover table-sm mb-0 align-middle">
+      <thead class="thead-tlc"><tr><th>No.</th><th>Fecha</th><th>Operador</th><th>Carta Porte</th><th>Tipo</th><th class="text-end">Importe</th><th class="text-center">Cobra</th>
+        <th class="text-center">Parc.</th><th class="text-end">Cobrado</th><th class="text-end">Adeudo</th><th>Estatus</th></tr></thead>
+      <tbody id="bodyInc"><tr><td colspan="11" class="text-center text-muted py-3">Cargando...</td></tr></tbody>
+    </table></div></div>
+    <div class="card-footer bg-white d-flex justify-content-between align-items-center">
+      <span class="small text-muted" id="lblPag"></span>
+      <div><button class="btn btn-sm btn-outline-secondary" id="btnPrev" onclick="cargar(_pag-1)">‹</button> <button class="btn btn-sm btn-outline-secondary" id="btnNext" onclick="cargar(_pag+1)">›</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- Incidencia -->
+<div class="modal fade" id="mdlInc" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable"><div class="modal-content">
+  <div class="modal-header py-2"><h6 class="modal-title" id="incTitulo">Incidencia</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <div id="incError" class="alert alert-danger py-2 small d-none"></div>
+    <div class="row g-2">
+      <div class="col-md-3"><label class="form-label small mb-0">Fecha</label><input type="date" id="i_fecha" class="form-control form-control-sm ed"></div>
+      <div class="col-md-5 position-relative"><label class="form-label small mb-0">Carta Porte <span class="text-danger">*</span></label>
+        <input type="text" id="i_cp" class="form-control form-control-sm ed" placeholder="Buscar por número de carta porte..." autocomplete="off"
+               oninput="clearTimeout(window._t2);window._t2=setTimeout(buscarCP,300)">
+        <div id="i_cpLista" class="list-group position-absolute w-100 shadow-sm d-none" style="z-index:1056;max-height:260px;overflow:auto"></div></div>
+      <div class="col-md-4"><label class="form-label small mb-0">Unidad</label><input type="text" id="i_camion" class="form-control form-control-sm" readonly></div>
+      <div class="col-12"><label class="form-label small mb-0">Operador (el de la Carta Porte)</label><input type="text" id="i_operador" class="form-control form-control-sm" readonly></div>
+      <div class="col-md-6"><label class="form-label small mb-0">Tipo de incidencia <span class="text-danger">*</span></label><input type="text" id="i_tipo" maxlength="60" class="form-control form-control-sm ed" autocomplete="off"></div>
+      <div class="col-md-6"><label class="form-label small mb-0">Importe</label><input type="number" step="0.01" min="0" id="i_importe" class="form-control form-control-sm text-end ed" oninput="calcParcial()"></div>
+      <div class="col-12"><label class="form-label small mb-0">Descripción de lo sucedido</label><textarea id="i_desc" rows="4" class="form-control form-control-sm ed"></textarea></div>
+      <div class="col-12"><label class="form-label small mb-0">Observaciones</label><input type="text" id="i_obs" maxlength="500" class="form-control form-control-sm ed"></div>
+      <div class="col-md-4 d-flex align-items-end"><div class="form-check mb-1"><input type="checkbox" id="i_cobra" class="form-check-input ed" onchange="calcParcial()"><label class="form-check-label small" for="i_cobra">Cobrar al operador</label></div></div>
+      <div class="col-md-4"><label class="form-label small mb-0">Parcialidades</label><input type="number" min="1" max="200" step="1" id="i_parc" class="form-control form-control-sm text-end ed" oninput="calcParcial()"></div>
+      <div class="col-md-4"><label class="form-label small mb-0">Importe por parcialidad</label><input type="text" id="i_parcial" class="form-control form-control-sm text-end" readonly></div>
+    </div>
+
+    <div id="bloqueCobro" class="mt-3 d-none">
+      <div class="row g-2 mb-2 text-center">
+        <div class="col-3"><div class="small text-muted">Cobrado</div><div class="fw-semibold" id="k_cob"></div></div>
+        <div class="col-3"><div class="small text-muted">Adeudo</div><div class="fw-semibold text-danger" id="k_adeudo"></div></div>
+        <div class="col-3"><div class="small text-muted">Parcialidades pagadas</div><div class="fw-semibold" id="k_parc"></div></div>
+        <div class="col-3"><div class="small text-muted">Estatus</div><div class="fw-semibold" id="k_status"></div></div>
+      </div>
+      <div class="d-flex align-items-center mb-1"><h6 class="mb-0 flex-grow-1">Cobros</h6>
+        <% if (can('incidencias.cobrar')) { %><button class="btn btn-sm btn-outline-primary" id="btnCobro" onclick="abrirCobro()"><i class="bi bi-cash-coin"></i> Registrar cobro manual</button><% } %></div>
+      <table class="table table-sm mb-0"><thead class="table-light"><tr><th>#</th><th>Fecha</th><th>Origen</th><th class="text-end">Importe</th><th></th></tr></thead><tbody id="bodyCobros"></tbody></table>
+      <div class="small text-muted mt-1">Los cobros por liquidación se agregan y se quitan desde la pantalla de Liquidaciones.</div>
+    </div>
+  </div>
+  <div class="modal-footer py-2">
+    <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal"><i class="bi bi-x-lg"></i> Cerrar</button>
+    <button class="btn btn-sm btn-primary ed" id="btnGuardar" onclick="guardar()"><i class="bi bi-floppy"></i> Guardar</button>
+  </div>
+</div></div></div>
+
+<!-- Cobro manual -->
+<div class="modal fade" id="mdlCobro" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-sm"><div class="modal-content">
+  <div class="modal-header py-2"><h6 class="modal-title">Registrar cobro</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <div id="cobError" class="alert alert-danger py-2 small d-none"></div>
+    <label class="form-label small mb-0">Fecha</label><input type="date" id="c_fecha" class="form-control form-control-sm mb-2">
+    <label class="form-label small mb-0">Importe</label><input type="number" step="0.01" min="0" id="c_importe" class="form-control form-control-sm text-end mb-2">
+    <label class="form-label small mb-0">Observaciones</label><input type="text" id="c_obs" maxlength="200" class="form-control form-control-sm">
+  </div>
+  <div class="modal-footer py-2"><button class="btn btn-sm btn-success" onclick="guardarCobro()"><i class="bi bi-check-lg"></i> Registrar</button></div>
+</div></div></div>
+
+<%- include('partials/footer') %>
+<script>
+const el = id => document.getElementById(id);
+const esc = v => String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const money = v => Number(v || 0).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
+const fechaMx = iso => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || '')); return m ? `${m[3]}/${m[2]}/${m[1]}` : ''; };
+const hoy = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
+const PUEDE_EDITAR = <%= can('incidencias.editar') ? 'true' : 'false' %>, PUEDE_CREAR = <%= can('incidencias.crear') ? 'true' : 'false' %>;
+const mdlInc = new bootstrap.Modal(el('mdlInc'), { keyboard: false }), mdlCobro = new bootstrap.Modal(el('mdlCobro'), { keyboard: false });
+let _pag = 1, _inc = null, _cp = null;
+
+async function api(url, opts = {}) {
+  const r = await fetch(url, { ...opts, headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) }, body: opts.body ? JSON.stringify(opts.body) : undefined });
+  const d = await r.json();
+  if (!r.ok || d.error) throw new Error(d.error || 'Error inesperado.');
+  return d;
+}
+const verError = m => { el('msgError').textContent = m || ''; el('msgError').classList.toggle('d-none', !m); };
+const verErrorInc = m => { el('incError').textContent = m || ''; el('incError').classList.toggle('d-none', !m); if (m) el('incError').scrollIntoView({ block: 'nearest', behavior: 'smooth' }); };
+
+// ── Listado ──
+async function cargar(p) {
+  _pag = Math.max(1, p || 1); verError('');
+  const qs = new URLSearchParams({ buscar: el('fBuscar').value, fechaIni: el('fIni').value, fechaFin: el('fFin').value, status: el('fStatus').value, soloPendientes: el('fPend').checked ? '1' : '', page: _pag });
+  try {
+    const d = await api('/incidencias/data?' + qs);
+    // tr[data-id] + td[data-field]: el script global guarda la fila seleccionada y el doble clic llama a openEdit()
+    el('bodyInc').innerHTML = d.rows.length ? d.rows.map(r => `<tr data-id="${r.id}">
+      <td data-field="id" data-value="${r.id}" class="fw-semibold">${r.id}</td><td>${fechaMx(r.fecha)}</td>
+      <td>${esc(r.idOperador)} - ${esc(r.operador)}</td><td class="text-nowrap">${esc(r.serie)}-${esc(r.cartaPorte)}</td><td>${esc(r.tipoIncidencia)}</td>
+      <td class="text-end">${money(r.importe)}</td><td class="text-center">${r.flagCobOpe ? '<i class="bi bi-check-circle-fill text-success"></i>' : '<i class="bi bi-dash text-muted"></i>'}</td>
+      <td class="text-center">${r.flagCobOpe ? `${r.parcialPag}/${r.parcialidades}` : ''}</td>
+      <td class="text-end">${r.flagCobOpe ? money(r.importeCob) : ''}</td><td class="text-end ${r.montoAdeudo > 0 ? 'text-danger fw-semibold' : ''}">${r.flagCobOpe ? money(r.montoAdeudo) : ''}</td>
+      <td data-field="status" data-value="${esc(r.status)}"><span class="badge ${{ SALDADA: 'bg-success', CANCELADA: 'bg-danger' }[r.status.toUpperCase()] || 'bg-secondary'}">${esc(r.status)}</span></td></tr>`).join('')
+      : '<tr><td colspan="11" class="text-center text-muted py-3">Sin incidencias.</td></tr>';
+    window._selectedRow = null; window._selectedId = null;
+    document.querySelectorAll('[data-requires-selection]').forEach(b => { b.disabled = true; });
+    el('lblTotal').textContent = `${d.total} incidencia(s)`;
+    el('lblPag').textContent = `Página ${d.page} de ${d.totalPages}`;
+    el('btnPrev').disabled = d.page <= 1; el('btnNext').disabled = d.page >= d.totalPages;
+  } catch (e) { verError(e.message); }
+}
+
+// ── Alta / edición ──
+function limpiarForma() {
+  _cp = null;
+  ['i_cp', 'i_camion', 'i_operador', 'i_tipo', 'i_importe', 'i_desc', 'i_obs', 'i_parcial'].forEach(i => { el(i).value = ''; });
+  el('i_fecha').value = hoy(); el('i_cobra').checked = false; el('i_parc').value = '';
+  el('i_cpLista').classList.add('d-none'); verErrorInc('');
+}
+function abrirNueva() {
+  _inc = null; limpiarForma();
+  el('incTitulo').textContent = 'Nueva incidencia';
+  el('bloqueCobro').classList.add('d-none');
+  bloquear(false); calcParcial(); mdlInc.show();
+}
+function openEdit() { if (window._selectedRow && window._selectedRow.id) abrir(window._selectedRow.id); }
+async function abrir(id) {
+  verError('');
+  try { pintar(await api('/incidencias/' + id)); mdlInc.show(); } catch (e) { verError(e.message); }
+}
+function pintar(i) {
+  _inc = i; limpiarForma();
+  _cp = { serie: i.serie, cartaPorte: i.cartaPorte };
+  el('incTitulo').textContent = `Incidencia ${i.id} · ${i.status}`;
+  el('i_fecha').value = i.fecha; el('i_cp').value = `${i.serie}-${i.cartaPorte}`; el('i_camion').value = i.idCamion;
+  el('i_operador').value = `${i.idOperador} - ${i.operador}`; el('i_tipo').value = i.tipoIncidencia; el('i_importe').value = Number(i.importe).toFixed(2);
+  el('i_desc').value = i.descripcion; el('i_obs').value = i.observaciones; el('i_cobra').checked = !!i.flagCobOpe; el('i_parc').value = i.parcialidades || '';
+  const cancelada = i.status.toUpperCase() === 'CANCELADA';
+  bloquear(cancelada || !PUEDE_EDITAR);
+  calcParcial();
+  el('bloqueCobro').classList.toggle('d-none', !i.flagCobOpe);
+  el('k_cob').textContent = money(i.importeCob); el('k_adeudo').textContent = money(i.montoAdeudo);
+  el('k_parc').textContent = `${i.parcialPag} de ${i.parcialidades}`; el('k_status').textContent = i.status;
+  el('bodyCobros').innerHTML = i.pagos.map(p => `<tr><td>${p.idPago}</td><td>${fechaMx(p.fecha)}</td>
+    <td>${p.origen === 'LIQUIDACION' ? `Liquidación ${p.mes}-${p.idLiquidacion}` : 'Manual'}${p.observaciones && p.origen === 'MANUAL' ? ` <span class="small text-muted">· ${esc(p.observaciones)}</span>` : ''}</td>
+    <td class="text-end">${money(p.importe)}</td>
+    <td class="text-end">${p.origen === 'MANUAL' && !cancelada && el('btnCobro') ? `<button class="btn btn-sm btn-outline-danger py-0" title="Quitar cobro" onclick="quitarCobro(${p.idPago})"><i class="bi bi-x-lg"></i></button>` : ''}</td></tr>`).join('')
+    || '<tr><td colspan="5" class="text-center text-muted">Sin cobros todavía.</td></tr>';
+  if (el('btnCobro')) el('btnCobro').disabled = cancelada || i.montoAdeudo <= 0;
+}
+function bloquear(solo) {
+  document.querySelectorAll('#mdlInc .ed').forEach(e => { if (e.tagName === 'BUTTON') e.classList.toggle('d-none', solo); else if (e.type === 'checkbox') e.disabled = solo; else e.readOnly = solo; });
+  // en una incidencia existente la Carta Porte solo se cambia si no hay cobros (el servidor lo valida)
+}
+function calcParcial() {
+  const cobra = el('i_cobra').checked;
+  el('i_parc').disabled = !cobra || el('i_parc').readOnly; if (!cobra) el('i_parc').value = ''; else if (!el('i_parc').value) el('i_parc').value = 1;
+  const imp = Number(el('i_importe').value) || 0, n = parseInt(el('i_parc').value, 10) || 0;
+  el('i_parcial').value = cobra && n >= 1 ? money(Math.round(imp / n * 100) / 100) : '';
+}
+
+// ── Carta Porte ──
+async function buscarCP() {
+  const q = el('i_cp').value.trim(), lista = el('i_cpLista');
+  if (q.length < 3 || el('i_cp').readOnly) { lista.classList.add('d-none'); return; }
+  try {
+    const d = await api('/incidencias/cartasporte?q=' + encodeURIComponent(q));
+    window._cpRows = d.rows;
+    lista.innerHTML = d.rows.map((c, i) => `<button type="button" class="list-group-item list-group-item-action py-1 small" onclick="elegirCP(${i})">
+      <b>${esc(c.serie)}-${esc(c.cartaPorte)}</b> · ${fechaMx(c.fecha)} · ${esc(c.idOperador)} - ${esc(c.operador)}${/^CANCELAD/i.test(c.status) ? ' <span class="badge bg-danger">cancelada</span>' : ''}</button>`).join('')
+      || '<div class="list-group-item small text-muted">Sin resultados.</div>';
+    lista.classList.remove('d-none');
+  } catch (e) { lista.classList.add('d-none'); }
+}
+function elegirCP(i) {
+  const c = window._cpRows[i];
+  if (/^CANCELAD/i.test(c.status)) { verErrorInc('Esa Carta Porte está cancelada.'); return; }
+  verErrorInc(''); _cp = { serie: c.serie, cartaPorte: c.cartaPorte };
+  el('i_cp').value = `${c.serie}-${c.cartaPorte}`; el('i_camion').value = c.idCamion; el('i_operador').value = `${c.idOperador} - ${c.operador}`;
+  el('i_cpLista').classList.add('d-none');
+}
+document.addEventListener('click', e => { if (!e.target.closest('#i_cpLista') && e.target.id !== 'i_cp') el('i_cpLista').classList.add('d-none'); });
+
+async function guardar() {
+  verErrorInc('');
+  if (!_cp) { verErrorInc('Elija la Carta Porte de la lista de resultados.'); return; }
+  const body = { fecha: el('i_fecha').value, serie: _cp.serie, cartaPorte: _cp.cartaPorte, tipoIncidencia: el('i_tipo').value, importe: el('i_importe').value,
+    descripcion: el('i_desc').value, observaciones: el('i_obs').value, flagCobOpe: el('i_cobra').checked, parcialidades: el('i_parc').value };
+  try {
+    const d = _inc ? await api('/incidencias/' + _inc.id, { method: 'PUT', body }) : await api('/incidencias', { method: 'POST', body });
+    pintar(d); cargar(_pag);   // se queda abierta para poder registrar cobros
+  } catch (e) { verErrorInc(e.message); }
+}
+async function cancelarSeleccionada() {
+  const s = window._selectedRow; if (!s) return;
+  if (!confirm(`¿Cancelar la incidencia ${s.id}? Quedará CANCELADA (solo lectura).`)) return;
+  verError('');
+  try { await api(`/incidencias/${s.id}/cancelar`, { method: 'POST' }); cargar(_pag); } catch (e) { verError(e.message); }
+}
+
+// ── Cobros manuales ──
+function abrirCobro() {
+  el('cobError').classList.add('d-none'); el('c_fecha').value = hoy(); el('c_importe').value = Number(_inc.sugerido || 0).toFixed(2); el('c_obs').value = '';
+  mdlCobro.show();
+}
+async function guardarCobro() {
+  try {
+    pintar(await api(`/incidencias/${_inc.id}/cobros`, { method: 'POST', body: { fecha: el('c_fecha').value, importe: el('c_importe').value, observaciones: el('c_obs').value } }));
+    mdlCobro.hide(); cargar(_pag);
+  } catch (e) { el('cobError').textContent = e.message; el('cobError').classList.remove('d-none'); }
+}
+async function quitarCobro(idPago) {
+  if (!confirm('¿Quitar este cobro?')) return;
+  try { pintar(await api(`/incidencias/${_inc.id}/cobros/${idPago}`, { method: 'DELETE' })); cargar(_pag); } catch (e) { verErrorInc(e.message); }
+}
+
+cargar(1);
+</script>

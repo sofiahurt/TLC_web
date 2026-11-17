@@ -416,6 +416,7 @@ const COLUMNAS_LIQUIDACIONES = [
   { header: 'Id Operador',       campo: 'ID_OPERADOR',      tipo: 'entero' },
   { header: 'Operador',          campo: 'OPERADOR',         tipo: 'texto' },
   { header: 'Total Liquidación', campo: 'TOTALLIQUIDACION', tipo: 'moneda' },
+  { header: 'Desc. Incidencias', campo: 'DESCINCIDENCIAS', tipo: 'moneda' },
   ...REALES_LIQ.map(([h, c]) => ({ header: `Real ${h}`, campo: c, tipo: 'moneda' })),
   { header: 'Total Diferencia',  campo: 'TOTALDIF',         tipo: 'moneda' },
   { header: 'Dif. Aplicada',     campo: 'Aplicada',         tipo: 'texto' },
@@ -445,7 +446,7 @@ router.get('/liquidaciones/excel', requierePermiso('reportes.liquidaciones.ver')
       .input('fechaIni', sql.Date, fechaIni).input('fechaFin', sql.Date, fechaFin)
       .input('op', sql.Int, idOperador)
       .query(`SELECT MES, ID_LIQUIDACION, CONVERT(varchar(10), FECHA, 103) AS Fecha, ID_OPERADOR, LTRIM(RTRIM(OPERADOR)) AS OPERADOR,
-                     ISNULL(TOTALLIQUIDACION,0) AS TOTALLIQUIDACION,
+                     ISNULL(TOTALLIQUIDACION,0) AS TOTALLIQUIDACION, ISNULL(DESCINCIDENCIAS,0) AS DESCINCIDENCIAS,
                      ${REALES_LIQ.map(([, c]) => `ISNULL(${c},0) AS ${c}`).join(', ')},
                      ISNULL(TOTALDIF,0) AS TOTALDIF,
                      CASE WHEN ISNULL(DifAplicada,0) <> 0 THEN 'Sí' ELSE 'No' END AS Aplicada
@@ -461,7 +462,7 @@ router.get('/liquidaciones/excel', requierePermiso('reportes.liquidaciones.ver')
       subtitulo: `Del ${fmtFechaTitulo(fechaIni)} al ${fmtFechaTitulo(fechaFin)} — ${operador} (sin canceladas)`,
       columnas: COLUMNAS_LIQUIDACIONES,
       filas: result.recordset,
-      columnasTotales: ['Total Liquidación', ...REALES_LIQ.map(([h]) => `Real ${h}`), 'Total Diferencia'],
+      columnasTotales: ['Total Liquidación', 'Desc. Incidencias', ...REALES_LIQ.map(([h]) => `Real ${h}`), 'Total Diferencia'],
     });
     await enviarWorkbook(res, workbook, 'Liquidaciones', fechaIni, fechaFin);
   } catch (err) {

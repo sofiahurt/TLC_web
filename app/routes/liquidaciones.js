@@ -174,6 +174,10 @@ router.get('/:id/recibo', requierePermiso('liquidaciones.ver'), manejar(async (r
 }));
 
 // Vista previa de los totales con los cambios que se están tecleando (no guarda nada).
+router.get('/:id/incidencias', requierePermiso('liquidaciones.ver'), manejar(async (req, res) => res.json(await svc.incidenciasDeLiquidacion(req.params.id))));
+router.post('/:id/incidencias', requierePermiso('liquidaciones.editar'), manejar(async (req, res) => res.json(await svc.aplicarIncidencias(req.params.id, (req.body || {}).items, quien(req)))));
+router.delete('/:id/incidencias/:idIncidencia/:idPago', requierePermiso('liquidaciones.editar'), manejar(async (req, res) => res.json(await svc.quitarIncidencia(req.params.id, req.params.idIncidencia, req.params.idPago, quien(req)))));
+
 router.post('/:id/calcular', requierePermiso('liquidaciones.ver'), manejar(async (req, res) => res.json(await svc.previsualizar(req.params.id, req.body))));
 router.patch('/:id', requierePermiso('liquidaciones.editar'), manejar(async (req, res) => res.json(await svc.editar(req.params.id, req.body, quien(req)))));
 router.delete('/:id', requierePermiso('liquidaciones.eliminar'), manejar(async (req, res) => res.json(await svc.eliminar(req.params.id))));

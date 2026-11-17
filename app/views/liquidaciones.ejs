@@ -77,6 +77,12 @@
       <thead class="table-light"><tr><th>Carta Porte</th><th>Fecha</th><th>Cliente</th><th>Flete</th><th class="text-end">Costo flete</th><th class="text-end">Costo renta</th><th class="text-end">Costo kilómetros</th><th class="text-end">Km</th><th></th></tr></thead>
       <tbody id="bodyViajes"></tbody></table></div>
 
+    <div class="d-flex align-items-center mb-1"><h6 class="mb-0 flex-grow-1">Incidencias descontadas (<span id="nIncs">0</span>)</h6>
+      <% if (can('liquidaciones.editar')) { %><button class="btn btn-sm btn-outline-primary ed" id="btnAddInc" onclick="abrirIncidencias()"><i class="bi bi-exclamation-triangle"></i> Agregar incidencias</button><% } %></div>
+    <div class="table-responsive mb-3"><table class="table table-sm table-hover mb-0">
+      <thead class="table-light"><tr><th>Incidencia</th><th>Tipo</th><th>Carta Porte</th><th class="text-end">Importe incidencia</th><th class="text-end">Descontado aquí</th><th class="text-end">Adeudo restante</th><th></th></tr></thead>
+      <tbody id="bodyIncs"></tbody></table></div>
+
     <div class="row g-3">
       <div class="col-lg-7">
         <h6 class="mb-1">Costos por concepto</h6>
@@ -115,6 +121,17 @@
   </div>
 </div></div></div>
 
+<!-- Incidencias pendientes del operador -->
+<div class="modal fade" id="mdlIncs" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable"><div class="modal-content">
+  <div class="modal-header py-2"><h6 class="modal-title">Incidencias del operador con adeudo</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <div id="incsError" class="alert alert-danger py-2 small d-none"></div>
+    <div class="small text-muted mb-2">Marque las incidencias a descontar en esta liquidación. El importe sugerido es una parcialidad (o lo que falte si es la última) y se puede ajustar.</div>
+    <table class="table table-sm table-hover"><thead class="table-light"><tr><th style="width:30px"></th><th>No.</th><th>Fecha</th><th>Tipo</th><th>Carta Porte</th><th class="text-center">Parc.</th><th class="text-end">Adeudo</th><th style="width:130px" class="text-end">A descontar</th></tr></thead><tbody id="bodyIncsPend"></tbody></table>
+  </div>
+  <div class="modal-footer py-2"><button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cerrar</button><button class="btn btn-sm btn-primary" onclick="aplicarIncidencias()"><i class="bi bi-check-lg"></i> Descontar seleccionadas</button></div>
+</div></div></div>
+
 <%- include('partials/footer') %>
 <script>
 const el = id => document.getElementById(id);
@@ -124,10 +141,11 @@ const fechaMx = iso => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso ||
 const CONCEPTOS = [['maniobras', 'Maniobras'], ['prestamo', 'Préstamo'], ['talacha', 'Talacha'], ['compllanta', 'Llanta'], ['comidas', 'Comidas'],
   ['caseta', 'Casetas (con IVA)'], ['maniobrasExt', 'Maniobras extra / báscula'], ['pension', 'Pensión'], ['refacciones', 'Refacciones'], ['diesel', 'Diesel'], ['estadias', 'Estadías'], ['demoras', 'Demoras'], ['otros', 'Otros']];
 // ESC cierra solo el modal de más arriba (las cartas porte, luego "nueva", luego la liquidación).
+const mdlIncs = new bootstrap.Modal(el('mdlIncs'), { keyboard: false });
 const mdlNueva = new bootstrap.Modal(el('mdlNueva'), { keyboard: false }), mdlLiq = new bootstrap.Modal(el('mdlLiq'), { keyboard: false }), mdlCand = new bootstrap.Modal(el('mdlCand'), { keyboard: false });
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
-  const abierto = [['mdlCand', mdlCand], ['mdlNueva', mdlNueva], ['mdlLiq', mdlLiq]].find(([id]) => el(id).classList.contains('show'));
+  const abierto = [['mdlIncs', mdlIncs], ['mdlCand', mdlCand], ['mdlNueva', mdlNueva], ['mdlLiq', mdlLiq]].find(([id]) => el(id).classList.contains('show'));
   if (abierto) { e.preventDefault(); e.stopPropagation(); abierto[1].hide(); }
 }, true);
 let _pag = 1, _liq = null, _cand = [];
@@ -212,6 +230,7 @@ function pintarLiq(l, avisos) {
     <td class="text-end" id="c_dif_${k}"></td></tr>`).join('')
     + `<tr><td class="small text-muted">Descripción de Otros</td><td colspan="3"><input type="text" id="e_descripcionOtros" maxlength="299" class="form-control form-control-sm ed" value="${esc(l.descripcionOtros || '')}"></td></tr>`;
   pintarCalculo(l);
+  cargarIncidenciasLiq(pagada);
   document.querySelectorAll('#mdlLiq .ed').forEach(e => { if (e.tagName === 'INPUT') e.readOnly = pagada; else e.disabled = pagada; e.classList.toggle('d-none', pagada && e.tagName === 'BUTTON'); });
   const re = el('btnReabrir'); if (re) re.classList.toggle('d-none', l.status.toUpperCase() !== 'PAGADA');
 }
@@ -241,6 +260,7 @@ function pintarCalculo(l) {
   el('bodyTotales').innerHTML = fila('Comisión de viajes', l.totalComision) + fila('Extra comisión', l.extraComision) + fila('Sueldo base', l.sueldoBase)
     + fila('Adelanto', l.totalAdelanto, true) + fila('Extra descuento', l.extraDescuento, true)
     + fila('IMSS', l.imss, true) + fila('Infonavit', l.infonavit, true)
+    + (l.descIncidencias ? fila('Incidencias', l.descIncidencias, true) : '')
     + `<tr><td>Dif. aplicada <span class="small text-muted">(+ se paga / − se descuenta)</span></td><td class="text-end ${l.difAplicada < 0 ? 'text-success' : l.difAplicada > 0 ? 'text-danger' : ''}">${money(-l.difAplicada)}</td></tr>`
     + fila('Total a liquidar', l.totalLiquidacion, false, true)
 ;   // Gastos del viaje, Gran total, Total flete y Utilidad: ocultos por ahora (el servidor sigue calculándolos)
@@ -292,6 +312,40 @@ async function cancelarLiq(id) {
   verError('');
   try { await api(`/liquidaciones/${id}/cancelar`, { method: 'POST' }); cargar(_pag); }
   catch (e) { verError(e.message); }
+}
+
+// ── Incidencias ──
+let _incPend = [];
+async function cargarIncidenciasLiq(soloLectura) {
+  try {
+    const d = await api(`/liquidaciones/${_liq.id}/incidencias`);
+    _incPend = d.pendientes;
+    el('nIncs').textContent = d.aplicadas.length;
+    el('bodyIncs').innerHTML = d.aplicadas.map(a => `<tr><td>${a.idIncidencia}</td><td>${esc(a.tipoIncidencia)}</td><td class="text-nowrap">${esc(a.cartaPorte)}</td>
+      <td class="text-end">${money(a.importeIncidencia)}</td><td class="text-end">${money(a.importe)}</td><td class="text-end">${money(a.montoAdeudo)}</td>
+      <td class="text-end">${soloLectura ? '' : `<button class="btn btn-sm btn-outline-danger py-0 ed" title="Quitar descuento" onclick="quitarIncidencia(${a.idIncidencia}, ${a.idPago})"><i class="bi bi-x-lg"></i></button>`}</td></tr>`).join('')
+      || '<tr><td colspan="7" class="text-center text-muted">Sin incidencias descontadas.</td></tr>';
+    const b = el('btnAddInc'); if (b) { b.classList.toggle('d-none', soloLectura); b.innerHTML = `<i class="bi bi-exclamation-triangle"></i> Agregar incidencias${d.pendientes.length ? ` (${d.pendientes.length} con adeudo)` : ''}`; }
+  } catch (e) { el('bodyIncs').innerHTML = `<tr><td colspan="7" class="text-danger">${esc(e.message)}</td></tr>`; }
+}
+function abrirIncidencias() {
+  verErrorLiq(''); el('incsError').classList.add('d-none');
+  el('bodyIncsPend').innerHTML = _incPend.map((i, k) => `<tr><td><input type="checkbox" class="form-check-input incChk" data-k="${k}"></td><td>${i.id}</td><td>${fechaMx(i.fecha)}</td><td>${esc(i.tipoIncidencia)}</td>
+    <td class="text-nowrap">${esc(i.serie)}-${esc(i.cartaPorte)}</td><td class="text-center">${i.parcialPag}/${i.parcialidades}</td><td class="text-end">${money(i.montoAdeudo)}</td>
+    <td><input type="number" step="0.01" min="0" class="form-control form-control-sm text-end incImp" data-k="${k}" value="${Number(i.sugerido).toFixed(2)}"></td></tr>`).join('')
+    || '<tr><td colspan="8" class="text-center text-muted">El operador no tiene incidencias con adeudo pendientes de descontar.</td></tr>';
+  mdlIncs.show();
+}
+async function aplicarIncidencias() {
+  const items = [...document.querySelectorAll('.incChk:checked')].map(c => ({ idIncidencia: _incPend[c.dataset.k].id, importe: document.querySelector(`.incImp[data-k="${c.dataset.k}"]`).value }));
+  if (!items.length) { el('incsError').textContent = 'Marque al menos una incidencia.'; el('incsError').classList.remove('d-none'); return; }
+  try { pintarLiq(await api(`/liquidaciones/${_liq.id}/incidencias`, { method: 'POST', body: { items } })); mdlIncs.hide(); cargar(_pag); }
+  catch (e) { el('incsError').textContent = e.message; el('incsError').classList.remove('d-none'); }
+}
+async function quitarIncidencia(idIncidencia, idPago) {
+  if (!confirm('¿Quitar el descuento de esta incidencia? La incidencia vuelve a tener ese adeudo.')) return;
+  verErrorLiq('');
+  try { pintarLiq(await api(`/liquidaciones/${_liq.id}/incidencias/${idIncidencia}/${idPago}`, { method: 'DELETE' })); cargar(_pag); } catch (e) { verErrorLiq(e.message); }
 }
 
 // ── Candidatas ──

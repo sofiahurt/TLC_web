@@ -55,6 +55,7 @@ app.use('/notacred',    requierePermiso('notacred.ver'),   require('./app/routes
 app.use('/pagos',       requierePermiso('pagos.ver'),      require('./app/routes/pagos'));
 app.use('/depositos',   require('./app/routes/depositos'));   // permisos depositos.* por ruta
 app.use('/liquidaciones', require('./app/routes/liquidaciones')); // permisos liquidaciones.* por ruta
+app.use('/incidencias', require('./app/routes/incidencias'));     // permisos incidencias.* por ruta
 app.use('/seguridad',   requierePermiso('seguridad.administrar'), require('./app/routes/seguridad'));
 app.use('/usuarios',    requierePermiso('usuarios.ver'),     require('./app/routes/usuarios'));
 app.use('/centrales',   requierePermiso('centrales.ver'),  require('./app/routes/centrales'));
@@ -84,6 +85,7 @@ const { RUTA_XML } = require('./app/config/storage');
 const PORT = process.env.PORT || 3000;
 sesiones.iniciar();
 require('./app/services/permisos-seed').asegurarPermisos();
+require('./app/services/incidencias').asegurarEsquema().catch(e => console.error('Esquema Incidencias:', e.message));
 require('./app/services/notacred-esquema').asegurarEsquemaNotaCred().catch(e => console.error('Esquema NotaCred (Moneda/TipoCambio):', e.message));
 app.listen(PORT, () => {
   console.log(`TLC Web corriendo en http://localhost:${PORT}`);

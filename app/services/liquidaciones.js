@@ -10,6 +10,7 @@
 
 const { getPool, sql } = require('../config/db');
 const cfg = require('../config/liquidaciones');
+const incidencias = require('./incidencias');
 const { calcularTotales, comisionRenglon, repartirCentavos, aCentavos, deCentavos, CONCEPTOS } = require('./liquidaciones-calc');
 
 const trim = v => (v == null ? '' : String(v).trim());
@@ -29,6 +30,7 @@ function asegurarEsquema() {
     const nuevas = [['Empresa2.Liquida', 'DifAplicada', 'DECIMAL(13,2)'], ['Empresa2.LiqDeta', 'COSTORENTA', 'DECIMAL(18,2)'], ['Empresa2.LiqDeta', 'COSTOKILOMETROS', 'DECIMAL(18,2)']];
     ['ESTADIAS', 'DEMORAS'].forEach(c => ['', 'REAL', 'DIF'].forEach(s => nuevas.push(['Empresa2.Liquida', `COSTO${c}${s}`, 'DECIMAL(18,2)'])));
     _esquema = getPool().then(async pool => {
+      await incidencias.asegurarEsquema();   // crea Incidencias/IncidenciasPagos y Liquida.DESCINCIDENCIAS
       for (const [t, c, tipo] of nuevas) {
         await pool.request().query(`IF COL_LENGTH('${t}', '${c}') IS NULL ALTER TABLE ${t} ADD ${c} ${tipo} NULL`);
       }
@@ -68,7 +70,7 @@ const ESCALARES = {
   totalComision: 'TOTALCOMISION', dieselPermitido: 'DISELPERMITIDO', dieselRellenado: 'DISELRELLENADO', desDiesel: 'DESDISEL',
   totalDesc: 'TOTALDESC', totalAdelanto: 'TOTALADELANTO', totalLiquidacion: 'TOTALLIQUIDACION', totalViaje: 'TOTALVIAJE',
   granTotalLiq: 'GRANTOTALLIQ', totalFlete: 'TOTALFLETE', totalUtilidad: 'TOTALUTILIDAD', totalDif: 'TOTALDIF',
-  descripcionOtros: 'DESOTROSCOSTOS',
+  descripcionOtros: 'DESOTROSCOSTOS', descIncidencias: 'DESCINCIDENCIAS',
 };
 // concepto -> [estimado, real, dif] (+ sinIva para caseta)
 const COLS_CONCEPTO = {
@@ -214,7 +216,7 @@ async function persistir(tx, liq, quien) {
   const poner = (col, tipo, valor, p) => { q.input(p, tipo, valor); sets.push(`${col}=@${p}`); };
   for (const k of ['sueldoBase', 'imss', 'infonavit', 'extraComision', 'extraDescuento', 'totalComision',
     'dieselPermitido', 'dieselRellenado', 'desDiesel', 'totalDesc', 'totalAdelanto', 'totalLiquidacion', 'totalViaje',
-    'granTotalLiq', 'totalFlete', 'totalUtilidad', 'totalDif']) poner(ESCALARES[k], sql.Decimal(18, 2), r2(liq[k]), 'p_' + k);
+    'granTotalLiq', 'totalFlete', 'totalUtilidad', 'totalDif', 'descIncidencias']) poner(ESCALARES[k], sql.Decimal(18, 2), r2(liq[k]), 'p_' + k);
   poner(ESCALARES.descripcionOtros, sql.VarChar(299), trim(liq.descripcionOtros).slice(0, 299) || null, 'p_desc');
   CONCEPTOS.forEach(k => {
     const [e, re, d] = COLS_CONCEPTO[k];
@@ -240,6 +242,7 @@ async function recalcular(tx, mes, numero, quien, ajustar) {
   const cab = await leerCabecera(new sql.Request(tx), mes, numero, true);
   const base = filaAModelo(cab);
   soltarRealesAutomaticos(base);
+  base.descIncidencias = await incidencias.totalLiquidacion(tx, mes, numero);   // fuente de verdad: los cobros de incidencias de esta liquidación
   if (ajustar) ajustar(base);
   const viajes = await leerRenglones(tx, mes, numero);
   const calculado = calcularTotales(base, viajes);
@@ -601,6 +604,7 @@ async function cancelar(id, quien) {
     await new sql.Request(tx).input('mes', sql.Decimal(3, 0), mes).input('num', sql.Decimal(9, 0), numero)
       .input('st', sql.VarChar(20), cfg.STATUS_CANCELADA).input('who', sql.VarChar(79), trim(quien).slice(0, 79) || null).input('f', sql.Date, hoyISO())
       .query(`UPDATE Empresa2.Liquida SET STATUS=@st, WHOMODIFICA=@who, FECHAULTMOD=@f WHERE MES=@mes AND ID_LIQUIDACION=@num`);
+    await incidencias.revertirLiquidacion(tx, mes, numero, quien);   // las incidencias descontadas vuelven a tener adeudo
     return recalcular(tx, mes, numero, quien);
   });
 }
@@ -616,12 +620,42 @@ async function eliminar(id) {
       await new sql.Request(tx).input('s', sql.VarChar(3), trim(d.SERIE)).input('c', sql.VarChar(30), trim(d.CARTAPORTE))
         .query(`UPDATE ${tabla} SET FlagLiq=0 WHERE LTRIM(RTRIM(Serie))=@s AND LTRIM(RTRIM(CartaPorte))=@c`);
     }
+    await incidencias.revertirLiquidacion(tx, mes, numero, '');
     await new sql.Request(tx).input('mes', sql.Decimal(3, 0), mes).input('num', sql.Decimal(9, 0), numero)
       .query(`DELETE FROM Empresa2.LiqDeta WHERE MES=@mes AND ID_LIQUIDACION=@num;
               DELETE FROM Empresa2.Liquida WHERE MES=@mes AND ID_LIQUIDACION=@num`);
     return { ok: true, liberadas: dets.length };
   });
 }
+
+// ── Incidencias cobradas al operador ────────────────────────────────────────
+// Se descuentan en la liquidación (IncidenciasPagos con Mes + Id_Liquidacion); el total sale de esa tabla.
+async function incidenciasDeLiquidacion(id) {
+  await asegurarEsquema();
+  const { mes, numero } = parseId(id);
+  const pool = await getPool();
+  const cab = await leerCabecera(new sql.Request(pool), mes, numero, false);
+  return incidencias.paraLiquidacion(pool, num(cab.ID_OPERADOR), mes, numero);
+}
+
+const aplicarIncidencias = (id, items, quien) => {
+  const { mes, numero } = parseId(id);
+  return enTransaccion(async (tx) => {
+    const cab = await leerCabecera(new sql.Request(tx), mes, numero, true);
+    exigirGenerada(cab);
+    await incidencias.aplicarEnLiquidacion(tx, num(cab.ID_OPERADOR), mes, numero, items, quien);
+    return recalcular(tx, mes, numero, quien);
+  });
+};
+
+const quitarIncidencia = (id, idIncidencia, idPago, quien) => {
+  const { mes, numero } = parseId(id);
+  return enTransaccion(async (tx) => {
+    exigirGenerada(await leerCabecera(new sql.Request(tx), mes, numero, true));
+    await incidencias.quitarDeLiquidacion(tx, mes, numero, idIncidencia, idPago, quien);
+    return recalcular(tx, mes, numero, quien);
+  });
+};
 
 // ── Recibos ─────────────────────────────────────────────────────────────────
 // Liquidaciones por rango de fechas (y, si se da rango de operadores, solo operadores ACTIVOS).
@@ -648,5 +682,5 @@ async function paraRecibos({ fechaIni, fechaFin, idOpeIni, idOpeFin }) {
 module.exports = {
   parseId, listar, obtener, candidatas, crear, agregarViaje, quitarViaje, editar,
   recalcularDiferencias, aplicarDiferencias, pagar, reabrir, cancelar, eliminar, previsualizar, paraRecibos, asegurarEsquema,
-  tablaCP, aniosCP,
+  tablaCP, aniosCP, incidenciasDeLiquidacion, aplicarIncidencias, quitarIncidencia,
 };

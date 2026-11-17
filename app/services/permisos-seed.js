@@ -4,6 +4,11 @@
 const { getPool, sql } = require('../config/db');
 
 const PERMISOS = [
+  { clave: 'incidencias.ver',            modulo: 'incidencias', descripcion: 'Ver incidencias de viajes',                              orden: 1 },
+  { clave: 'incidencias.crear',          modulo: 'incidencias', descripcion: 'Registrar incidencias',                                  orden: 2 },
+  { clave: 'incidencias.editar',         modulo: 'incidencias', descripcion: 'Editar incidencias (importe, parcialidades, descripción)', orden: 3 },
+  { clave: 'incidencias.cancelar',       modulo: 'incidencias', descripcion: 'Cancelar incidencias sin cobros',                        orden: 4 },
+  { clave: 'incidencias.cobrar',         modulo: 'incidencias', descripcion: 'Registrar o quitar cobros manuales de incidencias',      orden: 5 },
   { clave: 'reportes.depositos.ver',     modulo: 'reportes',   descripcion: 'Ver reporte de Depósitos',                  orden: 3 },
   { clave: 'reportes.liquidaciones.ver', modulo: 'reportes',   descripcion: 'Ver reporte de Liquidaciones',                           orden: 4 },
   { clave: 'cartaporte.btn_desbloquear', modulo: 'cartaporte', descripcion: 'Botón Desbloquear edición de CP Emitida (Carta Porte)', orden: 5 },
