@@ -21,6 +21,7 @@ app.use(session({
   cookie: { maxAge: 8 * 60 * 60 * 1000 }
 }));
 
+const seriesDefault = require('./app/config/series-default');
 app.use(sesiones.latido);
 
 app.use((req, res, next) => {
@@ -29,6 +30,7 @@ app.use((req, res, next) => {
   res.locals.serie    = req.session.usuario ? req.session.usuario.serie : null;
   res.locals.isAdmin  = req.session.usuario ? !!req.session.usuario.isAdmin : false;
   res.locals.tienePermiso = clave => tienePermiso(req, clave);
+  res.locals.seriesDefault = seriesDefault;   // FTLC / NCTLC / NDTLC / PTLC
   next();
 });
 

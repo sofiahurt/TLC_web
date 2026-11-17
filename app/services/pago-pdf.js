@@ -158,7 +158,7 @@ function bloqueDatosComprobante(d) {
       { width: '*', stack: [
         par('RFC emisor:', d.emisorRfc),
         par('Nombre emisor:', d.emisorNombre),
-        par('Folio:', String(d.pago.Id_NoPago), { color: ROJO, bold: true }),
+        par('Folio:', [fmt(d.pago.Serie), String(d.pago.Id_NoPago)].filter(Boolean).join(' '), { color: ROJO, bold: true }),
         par('RFC receptor:', d.receptorRfc || fmt(d.cliente.RFC)),
         par('Nombre receptor:', d.receptorNombre || fmt(d.pago.NombreCom)),
         par('Uso CFDI:', uso ? `${d.usoCfdi} - ${uso}` : d.usoCfdi),

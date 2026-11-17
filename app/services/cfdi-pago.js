@@ -146,6 +146,7 @@ async function buildCFDIPago(idNoPago, centralOperativo, pool) {
     SubTotal: '0', Moneda: 'XXX', Total: '0',
     TipoDeComprobante: 'P', Exportacion: '01', LugarExpedicion: lugarExp,
   };
+  if (fmt(cab.Serie)) comprobanteAttrs.Serie = fmt(cab.Serie);
   comprobanteAttrs.Folio = String(cab.Id_NoPago);
 
   const doc = create({ version: '1.0', encoding: 'UTF-8' }).ele('cfdi:Comprobante', comprobanteAttrs);

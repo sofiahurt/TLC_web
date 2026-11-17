@@ -183,7 +183,7 @@ function cajaFolio(d) {
       body: [
         [{ border: [true,true,true,false], margin: [4,3,4,2], columns: [
           { text: 'N° F A C T U R A', bold: true, fontSize: 9, width: '*' },
-          { text: folioFmt, bold: true, fontSize: 11, color: ROJO, width: 'auto' },
+          { text: [...(fmt(d.fac.SerieFac) ? [{ text: fmt(d.fac.SerieFac) + ' ', fontSize: 8 }] : []), folioFmt], bold: true, fontSize: 11, color: ROJO, width: 'auto' },
         ]}],
         [{ border: [true,false,true,false], margin: [4,2,4,2], stack: [
           { text: [{ text: 'Lugar Expedición: ', bold: true, fontSize: 7 }, { text: lugarExpedicionDesdeCP(d.fac.LugarExpedicion, d.emp), fontSize: 7 }] },

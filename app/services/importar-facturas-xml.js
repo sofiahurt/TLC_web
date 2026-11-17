@@ -22,6 +22,7 @@ const { importeALetras } = require('./importe-letras');
 const { fmt, porLocalName, attr } = require('./pdf-utils');
 const { recalcularStatusND } = require('./saldo-factura');
 const { asegurarEsquemaNotaCred } = require('./notacred-esquema');
+const SERIES = require('../config/series-default');
 
 const r2  = v => Math.round((Number(v) || 0) * 100) / 100;
 const num = v => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
@@ -105,7 +106,8 @@ function parsearFacturaXml(xmlString) {
   const moneda = attr(comp, 'Moneda') || 'MXN';
   return {
     relUuids, tipoRelacion,
-    tipo, serie: attr(comp, 'Serie') || null, folio: parseInt(folioTxt, 10),
+    // Ingreso sin Serie en el XML (sistema anterior): queda con la serie por default, igual que las facturas ya existentes.
+    tipo, serie: attr(comp, 'Serie') || SERIES.FACTURA, folio: parseInt(folioTxt, 10),
     fecha: mf[1], hora: mf[2],
     subTotal, iva, retencion, total, moneda,
     tipoCambio: moneda === 'MXN' ? 1 : num(attr(comp, 'TipoCambio')) || 1,

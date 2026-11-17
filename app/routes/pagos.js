@@ -14,6 +14,7 @@ const { quienAplica } = require('../services/docs-aplicados');
 // Id_NoPago no es IDENTITY (mismo patrón MAX+1 que el resto del proyecto).
 const trim = v => (v == null ? '' : String(v).trim());
 const num = v => (v === '' || v == null || isNaN(parseFloat(v))) ? 0 : parseFloat(v);
+const SERIES = require('../config/series-default');
 const serieKey = v => { const t = trim(v); return t || null; };
 const hoy = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };   // fecha LOCAL (no UTC: de tarde-noche toISOString ya da el día siguiente)
 // HH:MM o HH:MM:SS -> HH:MM:SS; vacío/ inválido -> null
@@ -281,16 +282,17 @@ router.post('/partida/agregar', requierePermiso('pagos.editar'), async (req, res
           .input('noCheque', sql.VarChar(20), trim(f.noCheque) || null)
           .input('bancoEmisor', sql.VarChar(60), trim(f.bancoEmisor) || null)
           .input('realizo', sql.VarChar(80), [req.session.usuario.nombre, req.session.usuario.apellido].filter(Boolean).join(' '))
+          .input('serie', sql.VarChar(20), SERIES.PAGO)
           .query(`INSERT INTO Empresa2.Pagos(
             Id_NoPago, Fecha, Hora, Id_Cliente, NombreCom, Id_RealPago, NomClientePago, FechaPago, HoraPago, Status,
             c_FormaPago, FormaPago, TipoCambio, TipoFacturas, FlagCompensacion,
             BancoDeposito, TipoDeposito, NoCheuqe, BancoEmisor, ImporteCheque, Realizo,
-            SumaPartidas, TotalComp, TotalIVA, TotalRet, BaseIVA, BaseRet, TotalIVA_C, TotalRet_C, BaseIVA_C, BaseRet_C, TotalImporte
+            SumaPartidas, TotalComp, TotalIVA, TotalRet, BaseIVA, BaseRet, TotalIVA_C, TotalRet_C, BaseIVA_C, BaseRet_C, TotalImporte, Serie
           ) VALUES(
             @id, @fecha, @hora, @idCli, @nombreCom, @idRealPago, @nomClientePago, @fechaPago, @horaPago, @status,
             @cformapago, @formapago, @tipoCambio, @tipoFacturas, @flagComp,
             @bancoDeposito, @tipoDeposito, @noCheque, @bancoEmisor, 0, @realizo,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, @serie
           )`);
       } else {
         estadoCobro = await estadoCobroEditable(tx, idNoPago);
@@ -786,10 +788,12 @@ router.post('/copiar', requierePermiso('pagos.editar'), requierePermiso('pagos.b
       await new sql.Request(tx)
         .input('id', sql.Decimal(9), idNoPago).input('nuevo', sql.Decimal(9), nuevo)
         .input('hoy', sql.Date, hoy()).input('hora', sql.VarChar(8), new Date().toTimeString().slice(0, 8)).input('usr', sql.VarChar(80), usuario)
+        .input('serie', sql.VarChar(20), SERIES.PAGO)
         .query(`SELECT * INTO #p FROM Empresa2.Pagos WHERE Id_NoPago=@id;
           UPDATE #p SET Id_NoPago=@nuevo, Fecha=@hoy, Hora=@hora, FechaPago=@hoy, HoraPago=@hora, Status='BORRADOR', ObsCancela=NULL, Realizo=@usr,
             SelloDigital=NULL, SelloSAT=NULL, NoCertificadoSAT=NULL, SelloCFD=NULL, FechaTimbrado=NULL, UUID=NULL, ProvTim=NULL, CadenaTimbre=NULL, CodBarBin=NULL,
-            ImporteCheque=0, SumaPartidas=0, TotalComp=0, TotalIVA=0, TotalRet=0, BaseIVA=0, BaseRet=0, TotalIVA_C=0, TotalRet_C=0, BaseIVA_C=0, BaseRet_C=0, TotalImporte=0;
+            ImporteCheque=0, SumaPartidas=0, TotalComp=0, TotalIVA=0, TotalRet=0, BaseIVA=0, BaseRet=0, TotalIVA_C=0, TotalRet_C=0, BaseIVA_C=0, BaseRet_C=0, TotalImporte=0,
+            Serie=ISNULL(NULLIF(LTRIM(RTRIM(Serie)),''), @serie);
           INSERT INTO Empresa2.Pagos SELECT * FROM #p;
           DROP TABLE #p;`);
 

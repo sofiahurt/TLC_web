@@ -151,7 +151,7 @@ function cajaFolio(d) {
     table: { widths: ['*'], body: [
       [{ border: [true,true,true,false], margin: [4,3,4,2], columns: [
         { text: tipoTxt, bold: true, fontSize: 8, width: '*' },
-        { text: folioFmt, bold: true, fontSize: 11, color: ROJO, width: 'auto' },
+        { text: [...(fmt(d.nc.Serie) ? [{ text: fmt(d.nc.Serie) + ' ', fontSize: 8 }] : []), folioFmt], bold: true, fontSize: 11, color: ROJO, width: 'auto' },
       ]}],
       [{ border: [true,false,true,false], margin: [4,2,4,2], text: [{ text: 'Lugar Expedición: ', bold: true, fontSize: 7 }, { text: lugarExpedicionDesdeCP(d.nc.LugarExpedicion, d.emp), fontSize: 7 }] }],
       [{ border: [true,false,true,false], margin: [4,2,4,2], columns: [

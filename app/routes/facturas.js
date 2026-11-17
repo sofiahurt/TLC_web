@@ -13,6 +13,7 @@ const { getSatDb } = require('../config/sat-db');
 // (confirmado contra datos reales: existían dos filas con Id_NoFactura=1,
 // una con SerieFac NULL y otra con una serie distinta). Toda consulta sobre
 // Factura o FacDeta debe ir scopeada por ambos campos, nunca solo por el ID.
+const SERIES = require('../config/series-default');
 const serieKey = v => { const t = (v == null ? '' : String(v)).trim(); return t || null; };
 
 const hoy = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };   // fecha LOCAL (no UTC: de tarde-noche toISOString ya da el día siguiente)
@@ -242,7 +243,7 @@ router.get('/', async (req, res) => {
 router.get('/lookup/numero-consecutivo', async (req, res) => {
   try {
     const pool = await getPool();
-    const r = await reqSerieFac(pool.request(), req.query.serieFac)
+    const r = await reqSerieFac(pool.request(), serieKey(req.query.serieFac) || SERIES.FACTURA)
       .query(`SELECT ISNULL(MAX(Id_NoFactura),0)+1 AS next FROM Empresa2.Factura WHERE ${SERIEFAC_EQ}`);
     res.json({ next: r.recordset[0].next });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -491,7 +492,8 @@ router.post('/partida/agregar', requierePermiso('facturas.editar'), async (req, 
 
       // ── Cabecera: crear si es la primera partida de una factura nueva ──────
       let idNoFactura = parseInt(f.idNoFactura) || 0;
-      let serieFac = serieKey(f.serieFac);
+      // Factura nueva sin serie tecleada: serie por default (FTLC). Una factura existente conserva la suya.
+      let serieFac = serieKey(f.serieFac) || (idNoFactura ? null : SERIES.FACTURA);
       if (!idNoFactura) {
         if (!idCliente) throw Object.assign(new Error('Debe seleccionar un cliente.'), { status: 400 });
         const cliRes = await new sql.Request(tx).input('id', sql.Decimal(7), idCliente)

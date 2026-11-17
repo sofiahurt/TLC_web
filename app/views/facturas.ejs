@@ -534,7 +534,7 @@ function clearForm(){
   setSoloLectura(false);
   _factura={idNoFactura:null, confirmada:false, cliente:null};
   document.getElementById('f_Id_NoFactura').value='';
-  document.getElementById('f_SerieFac').value='';
+  document.getElementById('f_SerieFac').value='<%= seriesDefault.FACTURA %>';
   document.getElementById('f_Id_Cliente').value='';
   document.getElementById('f_NombreCom_disp').value='';
   document.getElementById('f_RFC').value='';

@@ -423,7 +423,7 @@ function clearForm(){
   _nota={idNotaCredito:null, serie:'', tipo:_tipoActivo, confirmada:false, cliente:null};
   document.getElementById('f_Tipo').value=_tipoActivo;
   document.getElementById('f_Tipo').disabled=false;
-  document.getElementById('f_Serie').value='';
+  document.getElementById('f_Serie').value=serieDefaultNota(_tipoActivo);
   document.getElementById('f_Serie').readOnly=false;
   document.getElementById('f_Id_NotaCredito').value='';
   document.getElementById('f_Id_Cliente').value='';
@@ -474,8 +474,14 @@ function refrescarNumeroConsecutivo(){
 }
 document.getElementById('f_Serie').addEventListener('input',debounce(refrescarNumeroConsecutivo,300));
 
+// Serie por default según el tipo: NC -> NCTLC, ND -> NDTLC
+function serieDefaultNota(tipo){ return tipo==='ND' ? '<%= seriesDefault.NOTA_DEBITO %>' : '<%= seriesDefault.NOTA_CREDITO %>'; }
+
 function onTipoChange(){
   const tipo=document.getElementById('f_Tipo').value;
+  // si la serie sigue siendo la default del otro tipo (o está vacía) se cambia a la del tipo elegido
+  const ser=document.getElementById('f_Serie');
+  if(!ser.readOnly && (!ser.value.trim() || ser.value.trim()===serieDefaultNota(tipo==='ND'?'NC':'ND'))) ser.value=serieDefaultNota(tipo);
   document.getElementById('frmTitle').textContent='Nueva Nota de '+(tipo==='NC'?'Crédito':'Débito');
   // El default de Tipo de Relación depende del tipo (NC=1, ND=2) -- solo se
   // reajusta antes de crear el documento (el select ya está bloqueado

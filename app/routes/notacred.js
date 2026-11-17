@@ -18,6 +18,7 @@ const { ajustarFacturas } = require('../services/conciliacion-saldos');
 // vez como NC y como ND. Toda consulta sobre NotaCred o NotaCredDeta debe ir
 // scopeada por los tres campos, nunca solo por el ID -- mismo espíritu que el
 // gotcha ya conocido de Factura.SerieFac.
+const SERIES = require('../config/series-default');
 const serieKey = v => { const t = (v == null ? '' : String(v)).trim(); return t || null; };
 const trim = v => (v == null ? '' : String(v).trim());
 const num = v => (v === '' || v == null || isNaN(parseFloat(v))) ? 0 : parseFloat(v);
@@ -279,7 +280,7 @@ router.get('/lookup/numero-consecutivo', async (req, res) => {
   try {
     const pool = await getPool();
     const tipo = req.query.tipo === 'ND' ? 'ND' : 'NC';
-    const serie = req.query.serie;
+    const serie = serieKey(req.query.serie) || SERIES.serieNota(tipo);
     const r = await reqNC(pool.request(), tipo, serie).query(`SELECT ISNULL(MAX(Id_NotaCredito),0)+1 AS next FROM Empresa2.NotaCred WHERE ${NC_EQ}`);
     res.json({ next: r.recordset[0].next });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -458,7 +459,8 @@ router.post('/partida/agregar', requierePermiso('notacred.editar'), async (req, 
 
       // Cabecera: crear en borrador si es la primera línea.
       let idNotaCredito = parseInt(f.idNotaCredito) || 0;
-      let serieCab = serieKey(f.serieCab);
+      // Nota nueva sin serie tecleada: serie por default según el tipo (NCTLC / NDTLC). Una nota existente conserva la suya.
+      let serieCab = serieKey(f.serieCab) || (parseInt(f.idNotaCredito) ? null : SERIES.serieNota(tipo));
       let yaAplicada = false;
       let esResumenNota = !!f.esResumen;
       let monedaCab = monedaNota(f.moneda);
