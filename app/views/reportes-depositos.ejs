@@ -1,0 +1,55 @@
+<%- include('partials/header', { titulo: 'Reportes' }) %>
+<%- include('partials/sidebar') %>
+<div id="page-content">
+  <div class="d-flex align-items-center mb-3">
+    <button class="btn btn-sm btn-outline-secondary me-3 d-md-none" id="sidebarToggle"><i class="bi bi-list fs-5"></i></button>
+    <h4 class="mb-0 fw-bold flex-grow-1">Reportes — Solicitud de Depósitos</h4>
+  </div>
+
+  <div class="card border-0 shadow-sm">
+    <div class="card-body">
+      <div id="dep_Error" class="alert alert-danger d-none py-2 small"></div>
+      <div class="row g-3">
+        <div class="col-md-2">
+          <label class="form-label small mb-1">Fecha inicio <span class="text-danger">*</span></label>
+          <input type="date" id="dep_FechaIni" class="form-control form-control-sm">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label small mb-1">Fecha fin <span class="text-danger">*</span></label>
+          <input type="date" id="dep_FechaFin" class="form-control form-control-sm">
+        </div>
+        <div class="col-md-5">
+          <label class="form-label small mb-1">Operador</label>
+          <select id="dep_Operador" class="form-select form-select-sm"><option value="">Todos</option></select>
+        </div>
+        <div class="col-md-3 d-flex align-items-end">
+          <button class="btn btn-sm btn-success w-100" id="dep_BtnGenerar" onclick="generarExcelDepositos()"><i class="bi bi-file-earmark-excel me-1"></i> Generar Excel</button>
+        </div>
+      </div>
+      <div class="small text-muted mt-2">Incluye solo solicitudes validadas, un renglón por concepto con monto.</div>
+      <div id="dep_Progreso" class="mt-3 d-none">
+        <div class="small text-muted mb-1"><span class="spinner-border spinner-border-sm text-success me-1"></span> Generando el reporte, esto puede tardar unos segundos...</div>
+        <div class="progress" style="height:6px">
+          <div class="progress-bar progress-bar-striped progress-bar-animated bg-success" style="width:100%"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<%- include('partials/footer') %>
+<script>
+fetch('/reportes/depositos/operadores').then(r=>r.json()).then(d=>{
+  const sel=document.getElementById('dep_Operador');
+  (d.operadores||[]).forEach(o=>{ const op=document.createElement('option'); op.value=o.id; op.textContent=o.id+' - '+o.nombre; sel.appendChild(op); });
+}).catch(()=>{});
+
+function generarExcelDepositos(){
+  const fechaIni=document.getElementById('dep_FechaIni').value;
+  const fechaFin=document.getElementById('dep_FechaFin').value;
+  const errorEl=document.getElementById('dep_Error'); errorEl.classList.add('d-none');
+  if(!fechaIni || !fechaFin){ errorEl.textContent='El rango de fechas es obligatorio.'; errorEl.classList.remove('d-none'); return; }
+  const params=new URLSearchParams({ fechaIni, fechaFin, idOperador: document.getElementById('dep_Operador').value });
+  descargarReporte({ url:'/reportes/depositos/excel', params, btnId:'dep_BtnGenerar', progresoId:'dep_Progreso', errorId:'dep_Error', nombrePorDefecto:'SolicitudDepositos.xlsx' });
+}
+</script>

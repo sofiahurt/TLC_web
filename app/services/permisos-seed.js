@@ -4,6 +4,8 @@
 const { getPool, sql } = require('../config/db');
 
 const PERMISOS = [
+  { clave: 'reportes.depositos.ver',     modulo: 'reportes',   descripcion: 'Ver reporte de Solicitud de Depósitos',                  orden: 3 },
+  { clave: 'reportes.liquidaciones.ver', modulo: 'reportes',   descripcion: 'Ver reporte de Liquidaciones',                           orden: 4 },
   { clave: 'cartaporte.btn_desbloquear', modulo: 'cartaporte', descripcion: 'Botón Desbloquear edición de CP Emitida (Carta Porte)', orden: 5 },
   { clave: 'depositos.ver',              modulo: 'depositos',  descripcion: 'Ver módulos Solicitar Depósitos y Depósitos, y exportar a Excel',      orden: 1 },
   { clave: 'depositos.verificar',        modulo: 'depositos',  descripcion: 'Depósitos: capturar monto depositado, comprobante y validar', orden: 3 },

@@ -336,4 +336,138 @@ router.get('/facturas/excel', requierePermiso('reportes.facturas.ver'), async (r
   }
 });
 
+// ═══════════════════ REPORTE: SOLICITUD DE DEPÓSITOS ═════════════════════
+
+// Un renglón por solicitud VALIDADA y por concepto con monto (> 0).
+const CONCEPTOS_DEPO = ['Prestamo','Talachas','Llantas','Diesel','Comidas','Pension','Bascula','Casetas','Refacciones','Maniobra','Otros','Estadias','Demoras'];
+const COLUMNAS_DEPOSITOS = [
+  { header: 'Fecha',          campo: 'Fecha',       tipo: 'fecha' },
+  { header: 'Carta Porte',    campo: 'CartaPorte',  tipo: 'texto' },
+  { header: 'Origen-Destino', campo: 'OrigenDestino', tipo: 'texto' },
+  { header: 'Id Operador',    campo: 'ID_OPERADOR', tipo: 'entero' },
+  { header: 'Operador',       campo: 'OPERADOR',    tipo: 'texto' },
+  { header: 'Concepto',       campo: 'Concepto',    tipo: 'texto' },
+  { header: 'Monto',          campo: 'Monto',       tipo: 'moneda' },
+];
+
+router.get('/depositos', requierePermiso('reportes.depositos.ver'), (req, res) => res.render('reportes-depositos', { usuario: req.session.usuario, modulo: 'reportes-depositos' }));
+
+// Operadores con solicitudes (para el combo "Operador").
+router.get('/depositos/operadores', requierePermiso('reportes.depositos.ver'), async (req, res) => {
+  try {
+    const pool = await getPool();
+    const r = await pool.request().query(`SELECT DISTINCT ID_OPERADOR, LTRIM(RTRIM(OPERADOR)) AS OPERADOR FROM Empresa2.DepoSolicitud
+      WHERE ID_OPERADOR IS NOT NULL ORDER BY OPERADOR`);
+    res.json({ operadores: r.recordset.map(o => ({ id: o.ID_OPERADOR, nombre: trim(o.OPERADOR) })) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.get('/depositos/excel', requierePermiso('reportes.depositos.ver'), async (req, res) => {
+  try {
+    const fechaIni = trim(req.query.fechaIni);
+    const fechaFin = trim(req.query.fechaFin);
+    if (!fechaIni || !fechaFin) return res.status(400).json({ error: 'El rango de fechas es obligatorio.' });
+    const idOperador = parseInt(req.query.idOperador) || null;   // vacío = todos
+
+    const pool = await getPool();
+    const result = await pool.request()
+      .input('fechaIni', sql.Date, fechaIni).input('fechaFin', sql.Date, fechaFin)
+      .input('op', sql.Decimal(9, 0), idOperador)
+      .query(`SELECT CONVERT(varchar(10), ds.Fecha, 103) AS Fecha,
+                     LTRIM(RTRIM(ds.Serie)) + '-' + LTRIM(RTRIM(ds.CartaPorte)) AS CartaPorte,
+                     LTRIM(RTRIM(ISNULL(ds.Origen,''))) + CASE WHEN ISNULL(ds.Origen,'') <> '' AND ISNULL(ds.Destino,'') <> '' THEN ' - ' ELSE '' END + LTRIM(RTRIM(ISNULL(ds.Destino,''))) AS OrigenDestino,
+                     ds.ID_OPERADOR, LTRIM(RTRIM(ds.OPERADOR)) AS OPERADOR, c.Concepto, c.Monto
+                FROM Empresa2.DepoSolicitud ds
+                CROSS APPLY (VALUES ${CONCEPTOS_DEPO.map((c, i) => `(${i}, '${c}', ISNULL(ds.${c},0))`).join(', ')}) AS c(Ord, Concepto, Monto)
+               WHERE ds.Fecha BETWEEN @fechaIni AND @fechaFin AND ISNULL(ds.Validado,0) = 1 AND c.Monto > 0
+                 AND (@op IS NULL OR ds.ID_OPERADOR = @op)
+                 AND NOT EXISTS (SELECT 1 FROM Empresa2.CartaPorte cpc WHERE cpc.Serie = ds.Serie AND cpc.CartaPorte = ds.CartaPorte AND UPPER(LTRIM(RTRIM(cpc.Status))) LIKE 'CANCELAD%')
+               ORDER BY ds.Fecha, ds.Id_DepoSol, c.Ord`);
+
+    const operador = idOperador ? (result.recordset[0] ? trim(result.recordset[0].OPERADOR) : `Id ${idOperador}`) : 'Todos los operadores';
+    const workbook = construirWorkbookReporte({
+      nombreHoja: 'Solicitud de Depositos',
+      titulo: 'Reporte de Solicitud de Depósitos',
+      subtitulo: `Del ${fmtFechaTitulo(fechaIni)} al ${fmtFechaTitulo(fechaFin)} — ${operador} (solo validadas)`,
+      columnas: COLUMNAS_DEPOSITOS,
+      filas: result.recordset,
+      columnasTotales: ['Monto'],
+    });
+    await enviarWorkbook(res, workbook, 'SolicitudDepositos', fechaIni, fechaFin);
+  } catch (err) {
+    console.error('reportes/depositos/excel error:', err);
+    if (!res.headersSent) res.status(500).json({ error: err.message }); else res.end();
+  }
+});
+
+// ═══════════════════════ REPORTE: LIQUIDACIONES ══════════════════════════
+
+// Costos reales capturados en la liquidación (columnas *REAL de Empresa2.Liquida).
+const REALES_LIQ = [
+  ['Maniobras', 'TOTALMANREAL'], ['Préstamo', 'COSTOPRESTAMOREAL'], ['Talacha', 'COSTOTALACHAREAL'], ['Llanta', 'COSTOCOMPLLANTAREAL'],
+  ['Comidas', 'COSTOCOMIDASREAL'], ['Casetas', 'COSTOCASETATICKREAL'], ['Maniobras extra / báscula', 'COSTOMANIOBRASEXTREAL'],
+  ['Pensión', 'COSTOPENSIONREAL'], ['Refacciones', 'COSTOREFACCIONESREAL'], ['Diesel', 'COSTODIESELREAL'],
+  ['Estadías', 'COSTOESTADIASREAL'], ['Demoras', 'COSTODEMORASREAL'], ['Otros', 'COSTOOTROSREAL'],
+];
+const COLUMNAS_LIQUIDACIONES = [
+  { header: 'Mes',               campo: 'MES',              tipo: 'entero' },
+  { header: 'Id Liquidación',    campo: 'ID_LIQUIDACION',   tipo: 'entero' },
+  { header: 'Fecha',             campo: 'Fecha',            tipo: 'fecha' },
+  { header: 'Id Operador',       campo: 'ID_OPERADOR',      tipo: 'entero' },
+  { header: 'Operador',          campo: 'OPERADOR',         tipo: 'texto' },
+  { header: 'Total Liquidación', campo: 'TOTALLIQUIDACION', tipo: 'moneda' },
+  ...REALES_LIQ.map(([h, c]) => ({ header: `Real ${h}`, campo: c, tipo: 'moneda' })),
+  { header: 'Total Diferencia',  campo: 'TOTALDIF',         tipo: 'moneda' },
+  { header: 'Dif. Aplicada',     campo: 'Aplicada',         tipo: 'texto' },
+];
+
+router.get('/liquidaciones', requierePermiso('reportes.liquidaciones.ver'), (req, res) => res.render('reportes-liquidaciones', { usuario: req.session.usuario, modulo: 'reportes-liquidaciones' }));
+
+// Operadores con liquidaciones (para el combo "Operador").
+router.get('/liquidaciones/operadores', requierePermiso('reportes.liquidaciones.ver'), async (req, res) => {
+  try {
+    const pool = await getPool();
+    const r = await pool.request().query(`SELECT DISTINCT ID_OPERADOR, LTRIM(RTRIM(OPERADOR)) AS OPERADOR FROM Empresa2.Liquida
+      WHERE ID_OPERADOR IS NOT NULL ORDER BY OPERADOR`);
+    res.json({ operadores: r.recordset.map(o => ({ id: o.ID_OPERADOR, nombre: trim(o.OPERADOR) })) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.get('/liquidaciones/excel', requierePermiso('reportes.liquidaciones.ver'), async (req, res) => {
+  try {
+    const fechaIni = trim(req.query.fechaIni);
+    const fechaFin = trim(req.query.fechaFin);
+    if (!fechaIni || !fechaFin) return res.status(400).json({ error: 'El rango de fechas es obligatorio.' });
+    const idOperador = parseInt(req.query.idOperador) || null;   // vacío = todos
+
+    const pool = await getPool();
+    const result = await pool.request()
+      .input('fechaIni', sql.Date, fechaIni).input('fechaFin', sql.Date, fechaFin)
+      .input('op', sql.Int, idOperador)
+      .query(`SELECT MES, ID_LIQUIDACION, CONVERT(varchar(10), FECHA, 103) AS Fecha, ID_OPERADOR, LTRIM(RTRIM(OPERADOR)) AS OPERADOR,
+                     ISNULL(TOTALLIQUIDACION,0) AS TOTALLIQUIDACION,
+                     ${REALES_LIQ.map(([, c]) => `ISNULL(${c},0) AS ${c}`).join(', ')},
+                     ISNULL(TOTALDIF,0) AS TOTALDIF,
+                     CASE WHEN ISNULL(DifAplicada,0) <> 0 THEN 'Sí' ELSE 'No' END AS Aplicada
+                FROM Empresa2.Liquida
+               WHERE FECHA BETWEEN @fechaIni AND @fechaFin AND UPPER(LTRIM(RTRIM(ISNULL(STATUS,'')))) NOT LIKE 'CANCEL%'
+                 AND (@op IS NULL OR ID_OPERADOR = @op)
+               ORDER BY FECHA, MES, ID_LIQUIDACION`);
+
+    const operador = idOperador ? (result.recordset[0] ? trim(result.recordset[0].OPERADOR) : `Id ${idOperador}`) : 'Todos los operadores';
+    const workbook = construirWorkbookReporte({
+      nombreHoja: 'Liquidaciones',
+      titulo: 'Reporte de Liquidaciones',
+      subtitulo: `Del ${fmtFechaTitulo(fechaIni)} al ${fmtFechaTitulo(fechaFin)} — ${operador} (sin canceladas)`,
+      columnas: COLUMNAS_LIQUIDACIONES,
+      filas: result.recordset,
+      columnasTotales: ['Total Liquidación', ...REALES_LIQ.map(([h]) => `Real ${h}`), 'Total Diferencia'],
+    });
+    await enviarWorkbook(res, workbook, 'Liquidaciones', fechaIni, fechaFin);
+  } catch (err) {
+    console.error('reportes/liquidaciones/excel error:', err);
+    if (!res.headersSent) res.status(500).json({ error: err.message }); else res.end();
+  }
+});
+
 module.exports = router;

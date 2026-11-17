@@ -103,7 +103,7 @@
     </div>
     <% } %>
 
-    <% if (typeof tienePermiso === 'function' && (tienePermiso('reportes.cartaporte.ver') || tienePermiso('reportes.facturas.ver'))) { %>
+    <% if (typeof tienePermiso === 'function' && (tienePermiso('reportes.cartaporte.ver') || tienePermiso('reportes.facturas.ver') || tienePermiso('reportes.depositos.ver') || tienePermiso('reportes.liquidaciones.ver'))) { %>
     <div class="sidebar-group" data-group="reportes">
       <div class="sidebar-section sidebar-toggle">
         <span>Reportes</span>
@@ -112,6 +112,8 @@
       <div class="sidebar-group-body">
         <% if (tienePermiso('reportes.cartaporte.ver')) { %><a href="/reportes/cartaporte" class="sidebar-link <%= modulo==='reportes-cartaporte' ?'active':'' %>"><i class="bi bi-file-earmark-excel"></i> Cartas Porte</a><% } %>
         <% if (tienePermiso('reportes.facturas.ver')) { %><a href="/reportes/facturas" class="sidebar-link <%= modulo==='reportes-facturas' ?'active':'' %>"><i class="bi bi-file-earmark-excel"></i> Facturas</a><% } %>
+        <% if (tienePermiso('reportes.depositos.ver')) { %><a href="/reportes/depositos" class="sidebar-link <%= modulo==='reportes-depositos' ?'active':'' %>"><i class="bi bi-file-earmark-excel"></i> Solicitud de Depósitos</a><% } %>
+        <% if (tienePermiso('reportes.liquidaciones.ver')) { %><a href="/reportes/liquidaciones" class="sidebar-link <%= modulo==='reportes-liquidaciones' ?'active':'' %>"><i class="bi bi-file-earmark-excel"></i> Liquidaciones</a><% } %>
       </div>
     </div>
     <% } %>
