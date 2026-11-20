@@ -48,12 +48,11 @@
     <div id="incError" class="alert alert-danger py-2 small d-none"></div>
     <div class="row g-2">
       <div class="col-md-3"><label class="form-label small mb-0">Fecha</label><input type="date" id="i_fecha" class="form-control form-control-sm ed"></div>
-      <div class="col-md-5 position-relative"><label class="form-label small mb-0">Carta Porte <span class="text-danger">*</span></label>
-        <input type="text" id="i_cp" class="form-control form-control-sm ed" placeholder="Buscar por número de carta porte..." autocomplete="off"
-               oninput="clearTimeout(window._t2);window._t2=setTimeout(buscarCP,300)">
-        <div id="i_cpLista" class="list-group position-absolute w-100 shadow-sm d-none" style="z-index:1056;max-height:260px;overflow:auto"></div></div>
-      <div class="col-md-4"><label class="form-label small mb-0">Unidad</label><input type="text" id="i_camion" class="form-control form-control-sm" readonly></div>
-      <div class="col-12"><label class="form-label small mb-0">Operador (el de la Carta Porte)</label><input type="text" id="i_operador" class="form-control form-control-sm" readonly></div>
+      <div class="col-md-9"><label class="form-label small mb-0">Operador <span class="text-danger">*</span></label>
+        <div class="input-group input-group-sm"><input type="text" id="i_operador" class="form-control" readonly placeholder="Seleccione el operador..."><button type="button" class="btn btn-outline-secondary ed" id="btnOp" title="Buscar operador" onclick="abrirOperadores()"><i class="bi bi-search"></i></button></div></div>
+      <div class="col-md-8"><label class="form-label small mb-0">Carta Porte <span class="text-danger">*</span></label>
+        <div class="input-group input-group-sm"><input type="text" id="i_cp" class="form-control" readonly placeholder="Seleccione la carta porte del operador..."><button type="button" class="btn btn-outline-secondary ed" id="btnCP" title="Buscar carta porte del operador" onclick="abrirCartas()"><i class="bi bi-search"></i></button></div></div>
+      <div class="col-md-4"><label class="form-label small mb-0">Unidad</label><input type="text" id="i_camion" class="form-control form-control-sm" readonly tabindex="-1"></div>
       <div class="col-md-6"><label class="form-label small mb-0">Tipo de incidencia <span class="text-danger">*</span></label><input type="text" id="i_tipo" maxlength="60" class="form-control form-control-sm ed" autocomplete="off"></div>
       <div class="col-md-6"><label class="form-label small mb-0">Importe</label><input type="number" step="0.01" min="0" id="i_importe" class="form-control form-control-sm text-end ed" oninput="calcParcial()"></div>
       <div class="col-12"><label class="form-label small mb-0">Descripción de lo sucedido</label><textarea id="i_desc" rows="4" class="form-control form-control-sm ed"></textarea></div>
@@ -82,6 +81,24 @@
   </div>
 </div></div></div>
 
+<!-- Buscar operador -->
+<div class="modal fade" id="mdlOp" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
+  <div class="modal-header py-2"><h6 class="modal-title">Buscar operador</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <input type="text" id="opQ" class="form-control form-control-sm mb-2" placeholder="Id o nombre del operador..." autocomplete="off" oninput="clearTimeout(window._t2);window._t2=setTimeout(buscarOperadores,250)">
+    <div class="list-group" id="opLista" style="max-height:340px;overflow:auto"></div>
+  </div>
+</div></div></div>
+
+<!-- Buscar carta porte del operador -->
+<div class="modal fade" id="mdlCP" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable"><div class="modal-content">
+  <div class="modal-header py-2"><h6 class="modal-title" id="cpTitulo">Cartas Porte del operador</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <input type="text" id="cpQ" class="form-control form-control-sm mb-2" placeholder="Filtrar por número de carta porte..." autocomplete="off" oninput="clearTimeout(window._t3);window._t3=setTimeout(buscarCP,250)">
+    <table class="table table-sm table-hover mb-0"><thead class="table-light"><tr><th>Carta Porte</th><th>Fecha</th><th>Unidad</th><th>Status</th></tr></thead><tbody id="cpLista"></tbody></table>
+  </div>
+</div></div></div>
+
 <!-- Cobro manual -->
 <div class="modal fade" id="mdlCobro" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-sm"><div class="modal-content">
   <div class="modal-header py-2"><h6 class="modal-title">Registrar cobro</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
@@ -103,7 +120,8 @@ const fechaMx = iso => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso ||
 const hoy = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
 const PUEDE_EDITAR = <%= can('incidencias.editar') ? 'true' : 'false' %>, PUEDE_CREAR = <%= can('incidencias.crear') ? 'true' : 'false' %>;
 const mdlInc = new bootstrap.Modal(el('mdlInc'), { keyboard: false }), mdlCobro = new bootstrap.Modal(el('mdlCobro'), { keyboard: false });
-let _pag = 1, _inc = null, _cp = null;
+let _pag = 1, _inc = null, _cp = null, _op = null;
+const mdlOp = new bootstrap.Modal(el('mdlOp')), mdlCP = new bootstrap.Modal(el('mdlCP'));
 
 async function api(url, opts = {}) {
   const r = await fetch(url, { ...opts, headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) }, body: opts.body ? JSON.stringify(opts.body) : undefined });
@@ -139,10 +157,10 @@ async function cargar(p) {
 
 // ── Alta / edición ──
 function limpiarForma() {
-  _cp = null;
+  _cp = null; _op = null;
   ['i_cp', 'i_camion', 'i_operador', 'i_tipo', 'i_importe', 'i_desc', 'i_obs', 'i_parcial'].forEach(i => { el(i).value = ''; });
   el('i_fecha').value = hoy(); el('i_cobra').checked = false; el('i_parc').value = '';
-  el('i_cpLista').classList.add('d-none'); verErrorInc('');
+  verErrorInc('');
 }
 function abrirNueva() {
   _inc = null; limpiarForma();
@@ -157,7 +175,7 @@ async function abrir(id) {
 }
 function pintar(i) {
   _inc = i; limpiarForma();
-  _cp = { serie: i.serie, cartaPorte: i.cartaPorte };
+  _cp = { serie: i.serie, cartaPorte: i.cartaPorte }; _op = { id: i.idOperador, nombre: i.operador };
   el('incTitulo').textContent = `Incidencia ${i.id} · ${i.status}`;
   el('i_fecha').value = i.fecha; el('i_cp').value = `${i.serie}-${i.cartaPorte}`; el('i_camion').value = i.idCamion;
   el('i_operador').value = `${i.idOperador} - ${i.operador}`; el('i_tipo').value = i.tipoIncidencia; el('i_importe').value = Number(i.importe).toFixed(2);
@@ -187,31 +205,54 @@ function calcParcial() {
 }
 
 // ── Carta Porte ──
-async function buscarCP() {
-  const q = el('i_cp').value.trim(), lista = el('i_cpLista');
-  if (q.length < 3 || el('i_cp').readOnly) { lista.classList.add('d-none'); return; }
+// ── Operador ──
+function abrirOperadores() { el('opQ').value = ''; mdlOp.show(); buscarOperadores(); setTimeout(() => el('opQ').focus(), 300); }
+async function buscarOperadores() {
   try {
-    const d = await api('/incidencias/cartasporte?q=' + encodeURIComponent(q));
+    const d = await api('/incidencias/operadores?q=' + encodeURIComponent(el('opQ').value.trim()));
+    window._opRows = d.rows;
+    el('opLista').innerHTML = d.rows.map((o, i) => `<button type="button" class="list-group-item list-group-item-action py-1 small" onclick="elegirOperador(${i})">
+      <b>${esc(o.idOperador)}</b> - ${esc(o.operador)}${/^ACTIVO/i.test(o.status) ? '' : ` <span class="badge bg-secondary">${esc(o.status || 'inactivo')}</span>`}</button>`).join('')
+      || '<div class="list-group-item small text-muted">Sin operadores.</div>';
+  } catch (e) { el('opLista').innerHTML = `<div class="list-group-item small text-danger">${esc(e.message)}</div>`; }
+}
+function elegirOperador(i) {
+  const o = window._opRows[i];
+  if (!_op || _op.id !== o.idOperador) { _cp = null; el('i_cp').value = ''; el('i_camion').value = ''; }   // otra persona: la carta porte anterior ya no aplica
+  _op = { id: o.idOperador, nombre: o.operador };
+  el('i_operador').value = `${o.idOperador} - ${o.operador}`;
+  verErrorInc(''); mdlOp.hide();
+}
+
+// ── Carta Porte (solo las del operador elegido); al elegirla copia la unidad (solo lectura) ──
+function abrirCartas() {
+  if (!_op) { verErrorInc('Elija primero el operador.'); return; }
+  verErrorInc('');
+  el('cpTitulo').textContent = `Cartas Porte de ${_op.id} - ${_op.nombre}`; el('cpQ').value = '';
+  mdlCP.show(); buscarCP();
+}
+async function buscarCP() {
+  try {
+    const d = await api(`/incidencias/cartasporte?idOperador=${_op.id}&q=${encodeURIComponent(el('cpQ').value.trim())}`);
     window._cpRows = d.rows;
-    lista.innerHTML = d.rows.map((c, i) => `<button type="button" class="list-group-item list-group-item-action py-1 small" onclick="elegirCP(${i})">
-      <b>${esc(c.serie)}-${esc(c.cartaPorte)}</b> · ${fechaMx(c.fecha)} · ${esc(c.idOperador)} - ${esc(c.operador)}${/^CANCELAD/i.test(c.status) ? ' <span class="badge bg-danger">cancelada</span>' : ''}</button>`).join('')
-      || '<div class="list-group-item small text-muted">Sin resultados.</div>';
-    lista.classList.remove('d-none');
-  } catch (e) { lista.classList.add('d-none'); }
+    el('cpLista').innerHTML = d.rows.map((c, i) => `<tr style="cursor:pointer" onclick="elegirCP(${i})"><td class="text-nowrap fw-semibold">${esc(c.serie)}-${esc(c.cartaPorte)}</td><td>${fechaMx(c.fecha)}</td><td>${esc(c.idCamion)}</td>
+      <td>${/^CANCELAD/i.test(c.status) ? '<span class="badge bg-danger">cancelada</span>' : esc(c.status)}</td></tr>`).join('')
+      || '<tr><td colspan="4" class="text-center text-muted">Este operador no tiene cartas porte' + (el('cpQ').value.trim() ? ' con ese número' : '') + '.</td></tr>';
+  } catch (e) { el('cpLista').innerHTML = `<tr><td colspan="4" class="text-danger">${esc(e.message)}</td></tr>`; }
 }
 function elegirCP(i) {
   const c = window._cpRows[i];
-  if (/^CANCELAD/i.test(c.status)) { verErrorInc('Esa Carta Porte está cancelada.'); return; }
+  if (/^CANCELAD/i.test(c.status)) { el('cpLista').closest('.modal-body').querySelector('input').focus(); return; }
   verErrorInc(''); _cp = { serie: c.serie, cartaPorte: c.cartaPorte };
-  el('i_cp').value = `${c.serie}-${c.cartaPorte}`; el('i_camion').value = c.idCamion; el('i_operador').value = `${c.idOperador} - ${c.operador}`;
-  el('i_cpLista').classList.add('d-none');
+  el('i_cp').value = `${c.serie}-${c.cartaPorte}`; el('i_camion').value = c.idCamion;
+  mdlCP.hide();
 }
-document.addEventListener('click', e => { if (!e.target.closest('#i_cpLista') && e.target.id !== 'i_cp') el('i_cpLista').classList.add('d-none'); });
 
 async function guardar() {
   verErrorInc('');
-  if (!_cp) { verErrorInc('Elija la Carta Porte de la lista de resultados.'); return; }
-  const body = { fecha: el('i_fecha').value, serie: _cp.serie, cartaPorte: _cp.cartaPorte, tipoIncidencia: el('i_tipo').value, importe: el('i_importe').value,
+  if (!_op) { verErrorInc('Elija el operador.'); return; }
+  if (!_cp) { verErrorInc('Elija la Carta Porte del operador.'); return; }
+  const body = { fecha: el('i_fecha').value, idOperador: _op.id, serie: _cp.serie, cartaPorte: _cp.cartaPorte, tipoIncidencia: el('i_tipo').value, importe: el('i_importe').value,
     descripcion: el('i_desc').value, observaciones: el('i_obs').value, flagCobOpe: el('i_cobra').checked, parcialidades: el('i_parc').value };
   try {
     const d = _inc ? await api('/incidencias/' + _inc.id, { method: 'PUT', body }) : await api('/incidencias', { method: 'POST', body });

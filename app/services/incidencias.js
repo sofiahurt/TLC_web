@@ -163,17 +163,33 @@ async function tablasCP(pool) {
   return _tablasCP;
 }
 
-// Busca cartas porte por número (parcial) para ligarlas a una incidencia. Trae el operador y la unidad del viaje.
-async function buscarCartasPorte(q) {
+// Operadores para elegir en el formulario (por id o nombre); los ACTIVOS primero.
+async function buscarOperadores(q) {
+  const pool = await getPool();
+  q = trim(q);
+  const r = await pool.request().input('q', sql.VarChar(80), '%' + q + '%').query(
+    `SELECT TOP 40 ID_OPERADOR, LTRIM(RTRIM(OPERADOR)) AS OPERADOR, LTRIM(RTRIM(STATUS)) AS STATUS FROM Empresa2.Operadores
+      WHERE OPERADOR LIKE @q OR CAST(ID_OPERADOR AS VARCHAR(10)) LIKE @q
+      ORDER BY CASE WHEN UPPER(LTRIM(RTRIM(STATUS)))='ACTIVO' THEN 0 ELSE 1 END, OPERADOR`);
+  return r.recordset.map(o => ({ idOperador: num(o.ID_OPERADOR), operador: trim(o.OPERADOR), status: trim(o.STATUS) }));
+}
+
+// Cartas porte DEL OPERADOR (año actual + históricas), con búsqueda opcional por número, para ligarlas a una incidencia.
+// Trae la unidad del viaje.
+async function buscarCartasPorte(q, idOperador) {
   q = trim(q).toUpperCase();
-  if (q.length < 3) return [];
+  idOperador = parseInt(idOperador, 10) || 0;
+  if (!idOperador) throw err(400, 'Elija primero el operador.');
   const pool = await getPool();
   const out = [];
   for (const tabla of await tablasCP(pool)) {
-    const r = await pool.request().input('q', sql.VarChar(40), '%' + q + '%').query(
-      `SELECT TOP 30 Serie, CartaPorte, Id_Operador, Operador, Id_Camion, FehcaCarga, FechaPedido, Status
+    const rq = pool.request().input('op', sql.Int, idOperador);
+    if (q) rq.input('q', sql.VarChar(40), '%' + q + '%');
+    const r = await rq.query(
+      `SELECT TOP 40 Serie, CartaPorte, Id_Operador, Operador, Id_Camion, FehcaCarga, FechaPedido, Status
          FROM ${tabla}
-        WHERE UPPER(LTRIM(RTRIM(CartaPorte))) LIKE @q OR UPPER(LTRIM(RTRIM(Serie))) + '-' + UPPER(LTRIM(RTRIM(CartaPorte))) LIKE @q
+        WHERE Id_Operador=@op
+          ${q ? "AND (UPPER(LTRIM(RTRIM(CartaPorte))) LIKE @q OR UPPER(LTRIM(RTRIM(Serie))) + '-' + UPPER(LTRIM(RTRIM(CartaPorte))) LIKE @q)" : ''}
         ORDER BY FechaPedido DESC`);
     r.recordset.forEach(c => out.push({
       serie: trim(c.Serie), cartaPorte: trim(c.CartaPorte), idOperador: num(c.Id_Operador), operador: trim(c.Operador),
@@ -251,6 +267,7 @@ async function crear(d, quien) {
     if (!c) throw err(400, `No existe la Carta Porte ${serie}-${cp}.`);
     if (trim(c.Status).toUpperCase().startsWith('CANCELAD')) throw err(400, `La Carta Porte ${serie}-${cp} está cancelada.`);
     if (!num(c.Id_Operador)) throw err(400, 'La Carta Porte no tiene operador asignado.');
+    if (parseInt(d.idOperador, 10) && parseInt(d.idOperador, 10) !== num(c.Id_Operador)) throw err(400, `La Carta Porte ${serie}-${cp} es del operador ${num(c.Id_Operador)}, no del operador elegido.`);
     const id = (await new sql.Request(tx).query(`SELECT ISNULL(MAX(Id_Incidencia),0)+1 AS n FROM Empresa2.Incidencias WITH (UPDLOCK, HOLDLOCK)`)).recordset[0].n;
     await new sql.Request(tx).input('id', sql.Int, id).input('f', sql.Date, cap.fecha).input('op', sql.Int, num(c.Id_Operador))
       .input('opn', sql.VarChar(80), trim(c.Operador).slice(0, 80) || null).input('s', sql.VarChar(3), trim(c.Serie)).input('cp', sql.VarChar(30), trim(c.CartaPorte))
@@ -282,6 +299,7 @@ async function editar(id, d, quien) {
       const c = await cartaPorteExacta(pool, trim(d.serie), trim(d.cartaPorte));
       if (!c) throw err(400, `No existe la Carta Porte ${trim(d.serie)}-${trim(d.cartaPorte)}.`);
       if (trim(c.Status).toUpperCase().startsWith('CANCELAD')) throw err(400, 'La Carta Porte está cancelada.');
+      if (parseInt(d.idOperador, 10) && parseInt(d.idOperador, 10) !== num(c.Id_Operador)) throw err(400, `La Carta Porte ${trim(d.serie)}-${trim(d.cartaPorte)} es del operador ${num(c.Id_Operador)}, no del operador elegido.`);
       serie = trim(c.Serie); cp = trim(c.CartaPorte); idOp = num(c.Id_Operador); opn = trim(c.Operador); cam = trim(c.Id_Camion);
     }
     if (nPagos.n > 0) {
@@ -427,6 +445,6 @@ async function totalLiquidacion(db, mes, numero) {
 }
 
 module.exports = {
-  asegurarEsquema, listar, obtener, crear, editar, cancelar, buscarCartasPorte, registrarCobroManual, quitarCobroManual,
+  asegurarEsquema, listar, obtener, crear, editar, cancelar, buscarOperadores, buscarCartasPorte, registrarCobroManual, quitarCobroManual,
   paraLiquidacion, aplicarEnLiquidacion, quitarDeLiquidacion, revertirLiquidacion, totalLiquidacion,
 };

@@ -24,7 +24,8 @@ router.get('/', requierePermiso('incidencias.ver'), manejar(async (req, res) => 
 router.get('/data', requierePermiso('incidencias.ver'), manejar(async (req, res) => res.json(await svc.listar(req.query))));
 
 // Cartas porte para ligar la incidencia (antes de /:id)
-router.get('/cartasporte', requierePermiso('incidencias.ver'), manejar(async (req, res) => res.json({ rows: await svc.buscarCartasPorte(req.query.q) })));
+router.get('/operadores', requierePermiso('incidencias.ver'), manejar(async (req, res) => res.json({ rows: await svc.buscarOperadores(req.query.q) })));
+router.get('/cartasporte', requierePermiso('incidencias.ver'), manejar(async (req, res) => res.json({ rows: await svc.buscarCartasPorte(req.query.q, req.query.idOperador) })));
 
 router.get('/:id', requierePermiso('incidencias.ver'), manejar(async (req, res) => res.json(await svc.obtener(req.params.id))));
 router.post('/', requierePermiso('incidencias.crear'), manejar(async (req, res) => res.status(201).json(await svc.crear(req.body, quien(req)))));
